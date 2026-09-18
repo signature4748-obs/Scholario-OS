@@ -1,0 +1,195 @@
+'use client'
+
+import { useState, useMemo, useEffect } from 'react'
+import {
+  LayoutDashboard, UserPlus, GraduationCap, School, CalendarCheck, IndianRupee,
+  Wallet, FileText, Megaphone, CalendarDays, ClipboardList,
+  BookMarked, Bus, Package, Award, Settings, MessageSquare,
+  PieChart, Download, LayoutGrid, Users, Layers, Clock
+} from 'lucide-react'
+import { AppShell, type NavGroup } from '@/components/shell/app-shell'
+import dynamic from 'next/dynamic'
+import { ModuleLoading } from '@/components/shared/module-loading'
+import { useLiveAlerts } from '@/lib/store/live-alerts-store'
+import { useAdmissionStore } from '@/lib/store/admission-store'
+import { ensureApplicationSeedData } from '@/lib/store/applications-store'
+// SaaS-STAGE-2A — TENANT MODULE GATING (single choke point). The nav is
+// filtered through the ACTIVE school's module flags via the canonical
+// PRINCIPAL_NAV_MODULE_KEYS map — no scattered school conditionals.
+import { useFeatureGate } from '@/lib/tenant/store'
+import { PRINCIPAL_NAV_MODULE_KEYS } from '@/lib/tenant/registry'
+import type { UnifiedTab } from './modules/students-classes'
+
+// Every module is a separate lazily-loaded chunk: navigating compiles just
+// that module (small memory spikes) instead of one giant principal bundle.
+const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
+  dynamic(() => loader().then((m) => m[pick] as React.ComponentType<any>), {
+    loading: ModuleLoading,
+  })
+
+// Wave 1 scope: Homework & Assignments are intentionally deferred from the
+// Principal role. They will be rebuilt as a connected Teacher → Student →
+// Parent → Principal ecosystem in a future phase. Code preserved for reuse.
+
+const PrincipalDashboard = lazy(() => import('./modules/dashboard'), 'PrincipalDashboard')
+const StudentsClassesModule = lazy(() => import('./modules/students-classes'), 'StudentsClassesModule')
+const FeesModule = lazy(() => import('./modules/fees'), 'FeesModule')
+const FinanceDashboardModule = lazy(() => import('./modules/finance-dashboard'), 'FinanceDashboardModule')
+
+const moduleRegistry: Record<string, React.ComponentType<any>> = {
+  dashboard: PrincipalDashboard,
+  admission: lazy(() => import('./modules/admission'), 'AdmissionModule'),
+  teachers: lazy(() => import('./modules/teachers'), 'TeachersModule'),
+  students: StudentsClassesModule,
+  'students:overview': StudentsClassesModule,
+  'students:directory': StudentsClassesModule,
+  'students:classes': StudentsClassesModule,
+  classes: StudentsClassesModule,
+  timetable: lazy(() => import('./modules/timetable'), 'TimetableModule'),
+  attendance: lazy(() => import('./modules/attendance'), 'AttendanceModule'),
+  fees: FeesModule,
+  applications: lazy(() => import('./modules/applications/applications-module'), 'ApplicationsModule'),
+  salary: lazy(() => import('./modules/salary'), 'SalaryModule'),
+  finance: FinanceDashboardModule,
+  exams: lazy(() => import('./modules/exams'), 'ExamsModule'),
+  // homework / assignments: deferred (Wave 1) — see note above.
+  communication: lazy(() => import('./modules/communication'), 'CommunicationModule'),
+  messaging: lazy(() => import('./modules/messaging'), 'MessagingModule'),
+  calendar: lazy(() => import('./modules/calendar'), 'CalendarModule'),
+  library: lazy(() => import('./modules/library'), 'LibraryModule'),
+  transport: lazy(() => import('./modules/transport'), 'TransportModule'),
+  inventory: lazy(() => import('./modules/inventory'), 'InventoryModule'),
+  certificates: lazy(() => import('./modules/certificates'), 'CertificatesModule'),
+  downloads: lazy(() => import('./modules/downloads'), 'DownloadsModule'),
+  settings: lazy(() => import('./modules/school-settings'), 'SchoolSettingsModule'),
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [
+      { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4.5 w-4.5" /> },
+    ],
+  },
+  {
+    label: 'Academics',
+    items: [
+      { key: 'admission', label: 'Admissions', icon: <UserPlus className="h-4.5 w-4.5" /> },
+      { key: 'teachers', label: 'Teachers', icon: <GraduationCap className="h-4.5 w-4.5" /> },
+      { key: 'students', label: 'Students & Classes', icon: <School className="h-4.5 w-4.5" /> },
+      { key: 'timetable', label: 'Timetable', icon: <Clock className="h-4.5 w-4.5" /> },
+      { key: 'attendance', label: 'Attendance', icon: <CalendarCheck className="h-4.5 w-4.5" /> },
+      { key: 'exams', label: 'Examinations', icon: <FileText className="h-4.5 w-4.5" /> },
+      // { key: 'homework', label: 'Homework', icon: <BookOpen className="h-4.5 w-4.5" /> },        // Wave 1: deferred
+      // { key: 'assignments', label: 'Assignments', icon: <ClipboardList className="h-4.5 w-4.5" /> }, // Wave 1: deferred
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { key: 'fees', label: 'Fee Management', icon: <IndianRupee className="h-4.5 w-4.5" /> },
+      { key: 'salary', label: 'Salary & Payroll', icon: <Wallet className="h-4.5 w-4.5" /> },
+      { key: 'finance', label: 'Finance Dashboard', icon: <PieChart className="h-4.5 w-4.5" /> },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { key: 'applications', label: 'Applications & Forms', icon: <ClipboardList className="h-4.5 w-4.5" /> },
+      { key: 'communication', label: 'Communication', icon: <Megaphone className="h-4.5 w-4.5" /> },
+      { key: 'messaging', label: 'Messages', icon: <MessageSquare className="h-4.5 w-4.5" /> },
+      { key: 'calendar', label: 'Calendar', icon: <CalendarDays className="h-4.5 w-4.5" /> },
+      { key: 'library', label: 'Library', icon: <BookMarked className="h-4.5 w-4.5" /> },
+      { key: 'transport', label: 'Transport', icon: <Bus className="h-4.5 w-4.5" /> },
+      { key: 'inventory', label: 'Inventory', icon: <Package className="h-4.5 w-4.5" /> },
+      { key: 'certificates', label: 'Certificates', icon: <Award className="h-4.5 w-4.5" /> },
+      { key: 'downloads', label: 'Downloads', icon: <Download className="h-4.5 w-4.5" /> },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { key: 'settings', label: 'Settings', icon: <Settings className="h-4.5 w-4.5" /> },
+    ],
+  },
+]
+
+export function PrincipalPanel() {
+  const [active, setActive] = useState('dashboard')
+  const alertCount = useLiveAlerts((s) => s.alerts.length)
+  const { isModuleEnabled } = useFeatureGate()
+  const pendingAdmissions = useAdmissionStore((s) =>
+    s.applications.filter((a) =>
+      a.status === 'Submitted' || a.status === 'Under Review' || a.status === 'Need Correction'
+    ).length
+  )
+
+  // Seed applications demo data once per session (idempotent).
+  useEffect(() => { ensureApplicationSeedData() }, [])
+
+  const groups: NavGroup[] = useMemo(() => navGroups
+    // SaaS-STAGE-2A — drop nav items whose module is disabled for the
+    // ACTIVE school (e.g. Examinations OFF for a school, Transport OFF for
+    // another). Dashboard/Settings are always available.
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((item) => {
+        const moduleKey = PRINCIPAL_NAV_MODULE_KEYS[item.key]
+        return !moduleKey || isModuleEnabled(moduleKey)
+      }),
+    }))
+    .map((g) => {
+      if (g.label === 'Overview') {
+        return { ...g, items: g.items.map((item) => item.key === 'dashboard' ? { ...item, badge: alertCount > 0 ? alertCount : undefined } : item) }
+      }
+      if (g.label === 'Academics') {
+        return { ...g, items: g.items.map((item) => item.key === 'admission' ? { ...item, badge: pendingAdmissions > 0 ? pendingAdmissions : undefined } : item) }
+      }
+      return g
+    }), [alertCount, pendingAdmissions, isModuleEnabled])
+
+  // If the active module gets disabled while viewing it (platform toggle
+  // + tenant switch), fall back to the dashboard — never render a module
+  // the school doesn't have.
+  useEffect(() => {
+    const moduleKey = PRINCIPAL_NAV_MODULE_KEYS[active]
+    if (moduleKey && !isModuleEnabled(moduleKey)) setActive('dashboard')
+  }, [active, isModuleEnabled])
+
+  const ActiveModule = moduleRegistry[active] ?? PrincipalDashboard
+
+  let initialTab: UnifiedTab = 'overview'
+  if (active === 'students:directory') initialTab = 'directory'
+  else if (active === 'students:classes' || active === 'classes') initialTab = 'classes'
+  else if (active === 'students:archived') initialTab = 'archived'
+
+  const isStudentModule = active === 'students' || active.startsWith('students:') || active === 'classes'
+
+  return (
+    <AppShell
+      groups={groups}
+      activeKey={isStudentModule ? 'students' : active}
+      onNavigate={setActive}
+      role="principal"
+      roleLabel="Principal · Admin"
+    >
+      {isStudentModule ? (
+        <StudentsClassesModule initialTab={initialTab} />
+      ) : active === 'dashboard' ? (
+        <PrincipalDashboard onNavigate={setActive} />
+      ) : active === 'fees' ? (
+        // Fees receives cross-module navigation so the Fee Structure editor
+        // can deep-link to the Examination module ("Go to Examinations" —
+        // the source of truth for exam definitions).
+        <FeesModule onNavigate={setActive} />
+      ) : active === 'finance' ? (
+        // Finance Dashboard gets cross-module navigation so its Receivables
+        // "View" and Fee/Payroll quick-nav cards jump to the real modules
+        // instead of dead toasts.
+        <FinanceDashboardModule onModuleNavigate={setActive} />
+      ) : (
+        <ActiveModule />
+      )}
+    </AppShell>
+  )
+}
