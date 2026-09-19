@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { useTimetableStore } from '@/lib/store/timetable-store'
 import { useStudentsStore } from '@/lib/store/students-store'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
+import { useCurrentUser } from '@/lib/store/current-user-store'
 import { ACTIVE_SESSION_ID, normalizeSessionId, formatSessionLabel } from '@/lib/academic-session'
 import { ClassView } from './class-view'
 import { SchoolView } from './school-view'
@@ -38,7 +39,9 @@ export function TimetableModule() {
 
   // ── Identity — enrollment decides the class, settings decide the session ──
   const student = useStudentsStore((s) => s.students.find((x) => x.id === STUDENT_ID))
-  const classLabel = student ? `${student.className}-${student.section}` : 'Class 2-A'
+  // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
+  const srvClassLabel = useCurrentUser((s) => s.me?.student?.classLabel)
+  const classLabel = srvClassLabel ?? (student ? `${student.className}-${student.section}` : 'My Class')
   const section = student?.section ?? 'A'
   const rawSession = useSchoolSettingsStore((s) => s.academics?.currentSession)
   const sessionLabel = formatSessionLabel(normalizeSessionId(rawSession) ?? ACTIVE_SESSION_ID)

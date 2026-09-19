@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import type { StudentRecord } from '@/lib/store/students-store'
 import { ACTIVE_SESSION_ID, normalizeSessionId, formatSessionLabel } from '@/lib/academic-session'
+import type { EnrollmentIdentity } from '@/components/student/modules/shared/enrollment'
 
 /* ── School-configured themes (the card's institutional accent) ───────── */
 
@@ -59,9 +60,14 @@ export interface StudentIdCardProps {
   student: StudentRecord
   /** Root adds the print hook class (see globals.css @media print). */
   className?: string
+  /** SD-3b — server-first enrollment overrides (session truth). When
+   *  present, class/roll/admission/dob/blood render from the DB session
+   *  instead of the seed record, keeping the card consistent with the
+   *  sidebar and profile. */
+  enrollment?: Pick<EnrollmentIdentity, 'classLabel' | 'rollNo' | 'admissionNo' | 'dob' | 'bloodGroup'>
 }
 
-export function StudentIdCard({ student, className }: StudentIdCardProps) {
+export function StudentIdCard({ student, className, enrollment }: StudentIdCardProps) {
   const school = useSchoolSettingsStore((s) => s.general)
   const idCard = useSchoolSettingsStore((s) => s.idCard)
   const rawSession = useSchoolSettingsStore((s) => s.academics?.currentSession)
@@ -75,14 +81,15 @@ export function StudentIdCard({ student, className }: StudentIdCardProps) {
 
   // Configured particulars — each prints ONLY when the school enabled it
   // (and only when the data genuinely exists on the record).
+  // Identity-bearing values prefer the SERVER enrollment (SD-3b).
   const fields: { label: string; value: string; mono?: boolean }[] = [
-    { label: 'Class · Section', value: `${student.className} · ${student.section}` },
-    { label: 'Roll No', value: student.rollNo, mono: true },
+    { label: 'Class · Section', value: enrollment?.classLabel ?? `${student.className} · ${student.section}` },
+    { label: 'Roll No', value: enrollment?.rollNo ?? student.rollNo, mono: true },
   ]
-  if (idCard?.showAdmissionNo) fields.push({ label: 'Admission No', value: student.admissionNo, mono: true })
+  if (idCard?.showAdmissionNo) fields.push({ label: 'Admission No', value: enrollment?.admissionNo ?? student.admissionNo, mono: true })
   if (idCard?.showHouse && student.houseName) fields.push({ label: 'House', value: student.houseName })
-  if (idCard?.showDob) fields.push({ label: 'Date of Birth', value: student.dob, mono: true })
-  if (idCard?.showBloodGroup) fields.push({ label: 'Blood Group', value: student.bloodGroup })
+  if (idCard?.showDob) fields.push({ label: 'Date of Birth', value: enrollment?.dob ?? student.dob, mono: true })
+  if (idCard?.showBloodGroup) fields.push({ label: 'Blood Group', value: enrollment?.bloodGroup ?? student.bloodGroup })
   fields.push({ label: 'Student ID', value: student.id, mono: true })
 
   return (
@@ -139,7 +146,7 @@ export function StudentIdCard({ student, className }: StudentIdCardProps) {
           <div className="min-w-0 flex-1">
             <p className="font-display text-lg font-bold leading-tight text-foreground">{student.name}</p>
             <p className="mt-1 text-xs font-medium text-muted-foreground">
-              {student.className}-{student.section} · Roll {student.rollNo}
+              {enrollment ? `${enrollment.classLabel} · Roll ${enrollment.rollNo}` : `${student.className}-${student.section} · Roll ${student.rollNo}`}
             </p>
             <p className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground/80">
               <ShieldCheck className={cn('h-3 w-3', theme.text)} aria-hidden />
@@ -199,9 +206,11 @@ interface StudentIdCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   student: StudentRecord
+  /** SD-3b — passed through to the card (session truth overrides). */
+  enrollment?: StudentIdCardProps['enrollment']
 }
 
-export function StudentIdCardDialog({ open, onOpenChange, student }: StudentIdCardDialogProps) {
+export function StudentIdCardDialog({ open, onOpenChange, student, enrollment }: StudentIdCardDialogProps) {
   // Print ONLY the card (physical proportions) — toggles a body class the
   // print stylesheet in globals.css resolves; cleanup after the dialog.
   const printCard = () => {
@@ -225,7 +234,7 @@ export function StudentIdCardDialog({ open, onOpenChange, student }: StudentIdCa
           Your {`school's`} configured student identity card — print it exactly as designed by your school.
         </DialogDescription>
 
-        <StudentIdCard student={student} className="mx-auto" />
+        <StudentIdCard student={student} enrollment={enrollment} className="mx-auto" />
 
         <div className="mt-3 flex gap-2 print:hidden">
           <Button size="sm" className="flex-1 gap-2" onClick={printCard}>

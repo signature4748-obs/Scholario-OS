@@ -37,6 +37,7 @@ import {
 } from '@/lib/store/student-attendance-store'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { useStudentsStore } from '@/lib/store/students-store'
+import { useCurrentUser } from '@/lib/store/current-user-store'
 import { Snapshot, type TodayStatus } from './snapshot'
 import { CalendarView } from './calendar-view'
 import { MonthRecords } from './month-records'
@@ -68,7 +69,9 @@ export function AttendanceModule() {
 
   // ── Identity — enrollment decides the class (never hardcoded, §38) ──
   const student = useStudentsStore((s) => s.students.find((x) => x.id === STUDENT_ID))
-  const classLabel = student ? `${student.className}-${student.section}` : 'Class 2-A'
+  // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
+  const srvClassLabel = useCurrentUser((s) => s.me?.student?.classLabel)
+  const classLabel = srvClassLabel ?? (student ? `${student.className}-${student.section}` : 'My Class')
 
   // ── Time + month navigation (local-timezone safe) ──
   const todayIso = isoOf(new Date())

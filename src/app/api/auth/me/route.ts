@@ -40,7 +40,10 @@ export async function GET() {
 }
 
 /** Server-side enrollment resolution: user → student → class (never the
- *  client roster). Returns null when the account has no student record. */
+ *  client roster). Returns null when the account has no student record.
+ *  Carries every identity-bearing particular the student-facing surfaces
+ *  (profile, ID card, headers) display — so they can never disagree with
+ *  the session/DB truth. */
 async function getStudentContext(user: { id: string; schoolId: string | null }) {
   const { db } = await import('@/lib/db')
   const row = await db.user.findUnique({
@@ -57,7 +60,17 @@ async function getStudentContext(user: { id: string; schoolId: string | null }) 
       ? cls.name
       : `${cls.name}${cls.section ? ` - ${cls.section}` : ''}`
     : null
-  return { classLabel, rollNo: student.rollNo }
+  return {
+    classLabel,
+    rollNo: student.rollNo,
+    admissionNo: student.admissionNo,
+    dob: student.dob,
+    gender: student.gender,
+    bloodGroup: student.bloodGroup,
+    guardianName: student.guardianName,
+    guardianPhone: student.guardianPhone,
+    address: student.address,
+  }
 }
 
 async function getLastLoginAt(userId: string) {

@@ -28,6 +28,7 @@ import { useDismissOnEscape } from '@/hooks/use-dismiss-on-escape'
 import { formatDate, formatRelativeTime } from '@/lib/format'
 import { toast } from 'sonner'
 import { DEMO_STUDENT_ID } from '../applications/student'
+import { useCurrentUser } from '@/lib/store/current-user-store'
 
 const CAPABILITY_META: Record<StudentCapability, { label: string; icon: typeof Crown }> = {
   'post-class-updates': { label: 'Class updates', icon: Megaphone },
@@ -93,6 +94,10 @@ export function MyClassModule() {
   const myTasks = useMemo(() => tasks.filter((t) => t.studentId === DEMO_STUDENT_ID), [tasks])
   const myRequests = useMemo(() => requests.filter((r) => r.studentId === DEMO_STUDENT_ID), [requests])
 
+  // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
+  // (Declared before the early return — hooks must run unconditionally.)
+  const srvClassLabel = useCurrentUser((s) => s.me?.student?.classLabel)
+
   if (!student || positions.length === 0) {
     // No active responsibility — the panel hides the nav entry entirely; this
     // is a defensive empty state.
@@ -114,7 +119,7 @@ export function MyClassModule() {
       {/* LR-1 — compact context line, no giant module title. The position
           hero below carries the real identity of this surface. */}
       <p className="truncate text-xs text-muted-foreground">
-        {student.className}-{student.section} · Class responsibility
+        {srvClassLabel ?? `${student.className}-${student.section}`} · Class responsibility
       </p>
 
       {/* Position hero */}
@@ -137,7 +142,7 @@ export function MyClassModule() {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-              <span>{student.className}-{student.section}</span>
+              <span>{srvClassLabel ?? `${student.className}-${student.section}`}</span>
               <span className="text-border">·</span>
               <span>Since {formatDate(primary.assignedOn)}</span>
               <span className="text-border">·</span>

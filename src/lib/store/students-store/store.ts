@@ -69,7 +69,9 @@ export const useStudentsStore = create<StudentsState>()(
       studentName: 'Aarav Sharma',
       sessionId: ACTIVE_SESSION_ID,
       classId: 'C05',
-      className: 'Class 2',
+      // SD-3b — display label matches the server enrollment (Grade 9) so
+      // the captaincy never contradicts the sidebar/profile identity.
+      className: 'Grade 9',
       section: 'A',
       key: 'class-captain',
       assignedById: 'PRINCIPAL',

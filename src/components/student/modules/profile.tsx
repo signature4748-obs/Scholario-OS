@@ -40,6 +40,7 @@ import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession, ACTIVE_SESSION_ID, formatSessionLabel } from '@/lib/academic-session'
 import { useMyResults, fmtPct } from '@/lib/store/student-results-store'
 import { DEMO_STUDENT_ID } from './applications/student'
+import { useEnrollmentIdentity, type EnrollmentIdentity } from './shared/enrollment'
 import { formatDate } from '@/lib/format'
 import { StudentIdCardDialog } from '@/components/student/shell/student-id-card'
 
@@ -100,6 +101,22 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
     [allPositions, sessionId],
   )
 
+  // SD-3b — server-first identity (session truth): class, roll, admission
+  // number and personal particulars come from /api/auth/me; the seed
+  // record only fills the gaps, so this profile can never disagree with
+  // the sidebar / dashboard / ID card.
+  const identity = useEnrollmentIdentity({
+    className: 'Class 2',
+    section: 'A',
+    rollNo: student?.rollNo ?? '18',
+    admissionNo: student?.admissionNo ?? 'DSO2024058',
+    dob: student?.dob,
+    gender: student?.gender,
+    bloodGroup: student?.bloodGroup,
+    guardianName: student?.guardianName,
+    guardianPhone: student?.guardianPhone,
+  })
+
   if (!student) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -150,10 +167,10 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
               ))}
             </div>
             <p className="text-sm text-muted-foreground mt-1.5">
-              {s.className}-{s.section} · Roll #{s.rollNo} · {s.houseName} House
+              {identity.classLabel} · Roll #{identity.rollNo} · {s.houseName} House
             </p>
             <p className="text-[11px] text-muted-foreground/80 mt-0.5">
-              Admission No {s.admissionNo} · {formatSessionLabel(ACTIVE_SESSION_ID)}
+              Admission No {identity.admissionNo} · {formatSessionLabel(ACTIVE_SESSION_ID)}
             </p>
           </div>
 
@@ -258,8 +275,8 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
       >
-        {activeTab === 'personal' && <PersonalTab student={s} />}
-        {activeTab === 'parents' && <ParentsTab student={s} />}
+        {activeTab === 'personal' && <PersonalTab student={s} identity={identity} />}
+        {activeTab === 'parents' && <ParentsTab student={s} identity={identity} />}
         {activeTab === 'records' && (
           <RecordsTab
             student={s}
@@ -278,7 +295,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">
-                {POSITION_DEFS[positions[0].key]?.title ?? 'Class Monitor'} · {positions[0].className}-{positions[0].section}
+                {POSITION_DEFS[positions[0].key]?.title ?? 'Class Monitor'} · {identity.classLabel}
               </p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 Since {formatDate(positions[0].assignedOn)} · appointed by {positions[0].assignedByName}
@@ -297,7 +314,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
       )}
 
       {/* ── School ID — school-configured institutional card (§27–28) ── */}
-      <StudentIdCardDialog open={idOpen} onOpenChange={setIdOpen} student={s} />
+      <StudentIdCardDialog open={idOpen} onOpenChange={setIdOpen} student={s} enrollment={identity} />
     </div>
   )
 }
@@ -346,11 +363,11 @@ function InfoRow({ icon, label, value, accent }: {
 }
 
 /** ── Personal: only the genuinely useful personal information ────────── */
-function PersonalTab({ student: s }: { student: StudentRecord }) {
+function PersonalTab({ student: s, identity }: { student: StudentRecord; identity: EnrollmentIdentity }) {
   const rows = [
-    { label: 'Date of Birth', value: formatDate(s.dob), icon: <Calendar className="h-4 w-4" />, accent: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
-    { label: 'Gender', value: s.gender, icon: <User className="h-4 w-4" />, accent: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
-    { label: 'Blood Group', value: s.bloodGroup, icon: <Droplet className="h-4 w-4" />, accent: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+    { label: 'Date of Birth', value: identity.dob ? formatDate(identity.dob) : '—', icon: <Calendar className="h-4 w-4" />, accent: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+    { label: 'Gender', value: identity.gender ?? '—', icon: <User className="h-4 w-4" />, accent: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
+    { label: 'Blood Group', value: identity.bloodGroup ?? '—', icon: <Droplet className="h-4 w-4" />, accent: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
   ]
   return (
     <GlassCard className="p-4 sm:p-5">
@@ -368,15 +385,17 @@ function PersonalTab({ student: s }: { student: StudentRecord }) {
 }
 
 /** ── Parents & Guardian: polished, privacy-respecting ────────────────── */
-function ParentsTab({ student: s }: { student: StudentRecord }) {
+function ParentsTab({ student: s, identity }: { student: StudentRecord; identity: EnrollmentIdentity }) {
+  // Server guardian first (session truth); the seed parents fill the rest.
+  const guardianName = identity.guardianName ?? s.fatherName
   return (
     <GlassCard className="p-4 sm:p-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
-          <GradientAvatar name={s.fatherName} size="lg" gradient="from-violet-400 to-purple-500" />
+          <GradientAvatar name={guardianName} size="lg" gradient="from-violet-400 to-purple-500" />
           <div className="min-w-0">
             <p className="text-[11px] text-muted-foreground">Father</p>
-            <p className="text-sm font-semibold truncate">{s.fatherName}</p>
+            <p className="text-sm font-semibold truncate">{guardianName}</p>
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
@@ -386,7 +405,7 @@ function ParentsTab({ student: s }: { student: StudentRecord }) {
             <p className="text-sm font-semibold truncate">{s.motherName}</p>
           </div>
         </div>
-        <InfoRow icon={<Phone className="h-4 w-4" />} label="Guardian Phone" value={s.guardianPhone} accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" />
+        <InfoRow icon={<Phone className="h-4 w-4" />} label="Guardian Phone" value={identity.guardianPhone ?? s.guardianPhone} accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" />
         <InfoRow icon={<Mail className="h-4 w-4" />} label="Guardian Email" value={s.guardianEmail} accent="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" />
       </div>
       <p className="text-[11px] text-muted-foreground mt-3.5 flex items-center gap-1.5">

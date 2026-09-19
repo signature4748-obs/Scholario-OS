@@ -29,8 +29,22 @@ export interface MeUser {
   avatarUrl: string | null
   phone: string | null
   status: string
-  /** SD-3 — server-resolved enrollment context (STUDENT role only). */
-  student?: { classLabel: string | null; rollNo: string | null } | null
+  /** SD-3 — server-resolved enrollment context (STUDENT role only).
+   *  Extended identity: every particular the student-facing surfaces
+   *  display (profile, ID card, module headers) — the DB is the single
+   *  truth; the client seed roster is only a fallback. */
+  student?: {
+    classLabel: string | null
+    rollNo: string | null
+    admissionNo?: string | null
+    dob?: string | null
+    /** Raw DB enum ("MALE"/"FEMALE"/…) — surfaces title-case it. */
+    gender?: string | null
+    bloodGroup?: string | null
+    guardianName?: string | null
+    guardianPhone?: string | null
+    address?: string | null
+  } | null
   school?: {
     id: string
     name: string
