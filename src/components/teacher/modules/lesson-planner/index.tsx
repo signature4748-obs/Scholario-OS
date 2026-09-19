@@ -1,18 +1,19 @@
 'use client'
 
 /**
- * lesson-planner/index — the Lesson Planner module (TWC-FE-1), rewritten
- * around the curriculum architecture:
+ * lesson-planner/index — the Lesson Planner module, LP-2 rewrite.
  *
- *   Teacher → Class + Subject → Curriculum → automatic day-wise schedule →
- *   Today's topic → completion.
+ *   Teacher → Class + Subject → board syllabus feeds the COMPLETE session
+ *   plan automatically (CBSE / UP Board) → timetable-driven day-wise
+ *   schedule → Today's topic → completion. Adding anything on top is
+ *   deliberately easy: a per-unit quick-add row, one-tap syllabus merges
+ *   and an authoring sheet with a new-unit option.
  *
- * Composition: quiet context toolbar carrying the Class + Subject selectors
- * (only assigned pairs ever appear) → Today's Lesson hero → two-column body
- * (Curriculum Progress + Curriculum Map on the left, Upcoming + Schedule
- * basis on the right). Every number on screen comes from
- * /api/teacher/lesson-planner* — the old mock tabs, "New Plan" button, donut
- * chart and fake AI suggestions are gone for good.
+ * Composition: quiet context toolbar (Class + Subject selectors + the
+ * "Add topic" action) → Today's Lesson hero (gradient cover + session
+ * ring + confetti) → two-column body — left: Curriculum Progress + the
+ * Session Plan (inline add/edit/delete); right: the Syllabus Library,
+ * Upcoming and the Schedule basis.
  *
  * module-router.tsx imports the named `LessonPlannerModule` and renders it
  * with no props.
@@ -20,13 +21,14 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { BookOpen, BookX, CircleAlert } from 'lucide-react'
+import { BookOpen, BookPlus, BookX, CircleAlert, Sparkles } from 'lucide-react'
 import { GlassCard, PageTransition } from '@/components/shared/ui'
 import { ModuleToolbar } from '@/components/teacher/teacher-panel/module-toolbar'
 import {
   HubEmptyState,
   HubSectionError,
 } from '@/components/teacher/modules/shared/hub-stat-cards'
+import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -36,21 +38,35 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
+  addTopic,
+  deleteTopic,
   fetchLessonPlan,
   fetchTeachingAssignments,
+  mergeSyllabus,
   setTopicCompletion,
+  updateTopic,
   type LessonPlanPayload,
+  type ScheduledTopic,
+  type SyllabusMissingTopic,
   type TeachingAssignment,
 } from './api'
+import { AddTopicSheet, type TopicDraft } from './add-topic-sheet'
 import { CurriculumMapCard } from './curriculum-map'
 import { ProgressPanel } from './progress-panel'
 import { ScheduleBasisCard, UpcomingPanel } from './upcoming-panel'
+import { SyllabusLibraryCard } from './syllabus-library'
 import { TodayLessonCard } from './today-lesson'
-import { applyCompletion } from './shared'
+import { applyCompletion, applyTopicRemoval } from './shared'
 
 interface Selection {
   classId: string
   subjectId: string
+}
+
+interface SheetTarget {
+  editing: ScheduledTopic | null
+  defaultUnitNo: number | null
+  forceNewUnit: boolean
 }
 
 // ─── Layout-matched skeletons (pulse rows, never spinners) ──────────────
@@ -85,6 +101,7 @@ function PlanSkeleton() {
           <div className="h-[420px] animate-pulse rounded-xl border border-border bg-card" />
         </div>
         <div className="hidden min-w-0 space-y-4 lg:block">
+          <div className="h-72 animate-pulse rounded-xl border border-border bg-card" />
           <div className="h-64 animate-pulse rounded-xl border border-border bg-card" />
           <div className="h-48 animate-pulse rounded-xl border border-border bg-card" />
         </div>
@@ -158,6 +175,19 @@ export function LessonPlannerModule() {
   // Topic completion in flight (optimistic toggle)
   const [pendingTopicId, setPendingTopicId] = useState<string | null>(null)
 
+  // LP-2 authoring state
+  const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null)
+  const [quickAddPending, setQuickAddPending] = useState(false)
+  const [pendingMissingName, setPendingMissingName] = useState<string | null>(null)
+  const [mergingAll, setMergingAll] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetSubmitting, setSheetSubmitting] = useState(false)
+  const [sheetTarget, setSheetTarget] = useState<SheetTarget>({
+    editing: null,
+    defaultUnitNo: null,
+    forceNewUnit: false,
+  })
+
   // ── assignments load (mount + retry) ──
   useEffect(() => {
     let cancelled = false
@@ -204,7 +234,14 @@ export function LessonPlannerModule() {
     setPlanError(null)
     fetchLessonPlan(selection.classId, selection.subjectId)
       .then((p) => {
-        if (!cancelled) setPlan(p)
+        if (cancelled) return
+        setPlan(p)
+        if (p.autoProvisioned && p.topics.length > 0) {
+          toast.success('Complete session plan loaded from the board syllabus', {
+            description: `${p.topics.length} topics auto-scheduled for ${p.subjectName} · ${p.classLabel} (${p.syllabus?.boardLabel ?? p.sourceBoard}).`,
+            icon: <Sparkles className="h-4 w-4 text-emerald-500" aria-hidden="true" />,
+          })
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -279,6 +316,173 @@ export function LessonPlannerModule() {
     [plan],
   )
 
+  // ── LP-2: quick-add (per unit + from the syllabus library) ──
+  const runAdd = useCallback(
+    async (input: {
+      unitNo: number | null
+      unitName: string | null
+      topicName: string
+      description: string | null
+      periodsNeeded: number
+      successMessage?: string
+    }) => {
+      if (!selection) return
+      try {
+        await addTopic({
+          classId: selection.classId,
+          subjectId: selection.subjectId,
+          unitNo: input.unitNo,
+          unitName: input.unitName,
+          topicName: input.topicName,
+          description: input.description,
+          periodsNeeded: input.periodsNeeded,
+        })
+        toast.success(input.successMessage ?? `“${input.topicName}” added to the plan`)
+        setPlanTick((t) => t + 1)
+      } catch (e: unknown) {
+        toast.error('Could not add the topic', {
+          description: e instanceof Error ? e.message : undefined,
+        })
+        throw e
+      }
+    },
+    [selection],
+  )
+
+  const handleQuickAdd = useCallback(
+    (unitNo: number, topicName: string, periodsNeeded: number) => {
+      setQuickAddPending(true)
+      runAdd({ unitNo, unitName: null, topicName, description: null, periodsNeeded })
+        .catch(() => undefined)
+        .finally(() => setQuickAddPending(false))
+    },
+    [runAdd],
+  )
+
+  const handleQuickAddMissing = useCallback(
+    (topic: SyllabusMissingTopic) => {
+      setPendingMissingName(topic.topicName)
+      runAdd({
+        unitNo: topic.unitNo,
+        unitName: null,
+        topicName: topic.topicName,
+        description: topic.description,
+        periodsNeeded: topic.periodsNeeded,
+        successMessage: `“${topic.topicName}” copied from the syllabus`,
+      })
+        .catch(() => undefined)
+        .finally(() => setPendingMissingName(null))
+    },
+    [runAdd],
+  )
+
+  const handleMergeAll = useCallback(async () => {
+    if (!selection || !plan?.syllabus) return
+    setMergingAll(true)
+    try {
+      const added = await mergeSyllabus(selection.classId, selection.subjectId)
+      if (added > 0) {
+        toast.success(`${added} syllabus ${added === 1 ? 'topic' : 'topics'} added to the plan`, {
+          description: `From the ${plan.syllabus.boardLabel} session syllabus.`,
+        })
+      } else {
+        toast.info('Your plan already covers the full syllabus')
+      }
+      setPlanTick((t) => t + 1)
+    } catch (e: unknown) {
+      toast.error('Could not merge the syllabus', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setMergingAll(false)
+    }
+  }, [selection, plan?.syllabus])
+
+  // ── LP-2: the authoring sheet (add + edit) ──
+  const openAddSheet = useCallback(
+    (unitNo: number | null) => {
+      setSheetTarget({ editing: null, defaultUnitNo: unitNo, forceNewUnit: false })
+      setSheetOpen(true)
+    },
+    [],
+  )
+
+  const openNewUnitSheet = useCallback(() => {
+    setSheetTarget({ editing: null, defaultUnitNo: null, forceNewUnit: true })
+    setSheetOpen(true)
+  }, [])
+
+  const openEditSheet = useCallback((topic: ScheduledTopic) => {
+    setSheetTarget({ editing: topic, defaultUnitNo: topic.unitNo, forceNewUnit: false })
+    setSheetOpen(true)
+  }, [])
+
+  const handleSheetSubmit = useCallback(
+    async (draft: TopicDraft) => {
+      if (!selection || !plan) return
+      setSheetSubmitting(true)
+      try {
+        if (sheetTarget.editing) {
+          await updateTopic({
+            topicId: sheetTarget.editing.id,
+            topicName: draft.topicName,
+            description: draft.description,
+            periodsNeeded: draft.periodsNeeded,
+            unitNo: draft.unitNo ?? undefined,
+          })
+          toast.success('Topic updated')
+        } else {
+          await addTopic({
+            classId: selection.classId,
+            subjectId: selection.subjectId,
+            unitNo: draft.unitNo,
+            unitName: draft.unitName,
+            topicName: draft.topicName,
+            description: draft.description,
+            periodsNeeded: draft.periodsNeeded,
+          })
+          toast.success(
+            draft.unitNo == null
+              ? `Unit “${draft.unitName}” added with its first topic`
+              : `“${draft.topicName}” added to the plan`,
+          )
+        }
+        setSheetOpen(false)
+        setPlanTick((t) => t + 1)
+      } catch (e: unknown) {
+        toast.error(sheetTarget.editing ? 'Could not save the changes' : 'Could not add the topic', {
+          description: e instanceof Error ? e.message : undefined,
+        })
+      } finally {
+        setSheetSubmitting(false)
+      }
+    },
+    [selection, plan, sheetTarget.editing],
+  )
+
+  // ── LP-2: delete (optimistic removal + rollback) ──
+  const handleDeleteTopic = useCallback(
+    async (topic: ScheduledTopic) => {
+      const snapshot = plan
+      if (!snapshot) return
+      setDeletingTopicId(topic.id)
+      setPlan(applyTopicRemoval(snapshot, topic.id))
+      try {
+        await deleteTopic(topic.id)
+        toast.success(`“${topic.topicName}” removed`)
+        setPlanTick((t) => t + 1)
+      } catch (e: unknown) {
+        setPlan(snapshot)
+        toast.error('Could not delete the topic', {
+          description: e instanceof Error ? e.message : undefined,
+        })
+      } finally {
+        setDeletingTopicId(null)
+      }
+    },
+    [plan],
+  )
+
   // ── render: full-module states ──
 
   if (assignmentsLoading && !assignments) {
@@ -340,7 +544,7 @@ export function LessonPlannerModule() {
   return (
     <PageTransition className="space-y-4">
       {/* quiet context toolbar — the top bar already names the module.
-          NO "New Plan" action: the schedule is derived, not authored. */}
+          The schedule is board-fed, and adding on top is one tap away. */}
       <ModuleToolbar
         context={toolbarContext}
         action={
@@ -384,6 +588,17 @@ export function LessonPlannerModule() {
                 ))}
               </SelectContent>
             </Select>
+
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => openAddSheet(plan?.units[0]?.unitNo ?? null)}
+              disabled={!plan || plan.topics.length === 0}
+              className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <BookPlus className="h-3.5 w-3.5" aria-hidden="true" />
+              Add topic
+            </Button>
           </div>
         }
       />
@@ -395,13 +610,23 @@ export function LessonPlannerModule() {
         <PlanSkeleton />
       ) : plan ? (
         plan.topics.length === 0 ? (
-          /* honest zero-topic state — the curriculum was never configured */
+          /* honest zero-topic state — no template matched this subject */
           <GlassCard hover={false} className="p-4 sm:p-6">
             <HubEmptyState
               icon={BookX}
-              title="Curriculum unavailable for this subject yet"
-              hint={`Topics for ${plan.subjectName} in ${plan.classLabel} haven't been configured.`}
+              title={`No plan for ${plan.subjectName} in ${plan.classLabel} yet`}
+              hint="This subject has no board syllabus template — build the plan yourself in seconds."
             />
+            <div className="mt-1 flex justify-center">
+              <Button
+                type="button"
+                onClick={() => openAddSheet(null)}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                <BookPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                Add the first topic
+              </Button>
+            </div>
           </GlassCard>
         ) : (
           <motion.div
@@ -420,16 +645,32 @@ export function LessonPlannerModule() {
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0 space-y-4">
-                {/* 3 — curriculum progress */}
+                {/* 2 — curriculum progress */}
                 <ProgressPanel plan={plan} />
-                {/* 4 — the curriculum map (primary experience) */}
+                {/* 3 — the session plan (primary experience) */}
                 <CurriculumMapCard
                   plan={plan}
                   pendingTopicId={pendingTopicId}
+                  deletingTopicId={deletingTopicId}
                   onToggleCompletion={toggleCompletion}
+                  onEditTopic={openEditSheet}
+                  onDeleteTopic={(t) => void handleDeleteTopic(t)}
+                  onQuickAdd={handleQuickAdd}
+                  onAddUnit={openNewUnitSheet}
+                  quickAddPending={quickAddPending}
                 />
               </div>
               <div className="min-w-0 space-y-4">
+                {/* 4 — the board syllabus library (auto-feed + merges) */}
+                {plan.syllabus && (
+                  <SyllabusLibraryCard
+                    plan={plan}
+                    onQuickAddMissing={handleQuickAddMissing}
+                    onMergeAll={() => void handleMergeAll()}
+                    pendingTopicName={pendingMissingName}
+                    mergingAll={mergingAll}
+                  />
+                )}
                 {/* 5 — upcoming queue */}
                 <UpcomingPanel plan={plan} />
                 <ScheduleBasisCard plan={plan} />
@@ -444,6 +685,20 @@ export function LessonPlannerModule() {
           onRetry={retryPlan}
         />
       ) : null}
+
+      {/* the authoring sheet (add + edit) */}
+      {plan && (
+        <AddTopicSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          plan={plan}
+          editing={sheetTarget.editing}
+          defaultUnitNo={sheetTarget.defaultUnitNo}
+          forceNewUnit={sheetTarget.forceNewUnit}
+          submitting={sheetSubmitting}
+          onSubmit={(draft) => void handleSheetSubmit(draft)}
+        />
+      )}
     </PageTransition>
   )
 }

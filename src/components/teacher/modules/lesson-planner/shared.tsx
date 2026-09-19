@@ -6,10 +6,120 @@
  * every value that ends up on screen comes from the API payload (types in
  * ./api). Day-keys ("2026-09-17") are calendar dates, so they are parsed as
  * LOCAL midnight — never UTC — to keep date-fns formatting stable.
+ *
+ * LP-2 additions: entrance/exit motion variants, the AnimatedBar primitive
+ * (spring width), a lightweight ConfettiBurst, and the per-unit accent
+ * palette used across the Session Plan + Syllabus Library.
  */
 
+import { motion, type Variants } from 'framer-motion'
+import { useMemo } from 'react'
 import { format, isSameDay, isSameMonth } from 'date-fns'
 import type { LessonPlanPayload, ScheduledTopic, TopicStatus, UnitProgress } from './api'
+
+// ─── Motion variants ─────────────────────────────────────────────────────
+
+export const LIST_STAGGER: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.045, delayChildren: 0.05 } },
+}
+
+export const LIST_ITEM: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } },
+}
+
+// ─── AnimatedBar — spring-driven progress bar ────────────────────────────
+
+export function AnimatedBar({
+  pct,
+  className,
+  barClassName,
+  delay = 0,
+  ariaLabel,
+}: {
+  pct: number
+  className?: string
+  barClassName?: string
+  delay?: number
+  ariaLabel?: string
+}) {
+  return (
+    <div
+      className={className ?? 'h-2 overflow-hidden rounded-full bg-muted'}
+      role="progressbar"
+      aria-label={ariaLabel}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+    >
+      <motion.div
+        className={`h-full rounded-full ${barClassName ?? 'bg-emerald-500'}`}
+        initial={{ width: 0 }}
+        animate={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+        transition={{ type: 'spring', stiffness: 90, damping: 20, delay }}
+      />
+    </div>
+  )
+}
+
+// ─── ConfettiBurst — tiny celebration particles (no deps) ───────────────
+
+const CONFETTI_COLORS = ['#10b981', '#f59e0b', '#14b8a6', '#f97316', '#84cc16']
+
+/**
+ * Fires a one-shot particle burst. Re-render with a new `fireKey` to
+ * explode again. Render inside a `relative` container near the trigger.
+ */
+export function ConfettiBurst({ fireKey }: { fireKey: number }) {
+  const burst = useMemo(
+    () =>
+      Array.from({ length: 16 }).map((_, i) => {
+        const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.4
+        const dist = 46 + Math.random() * 42
+        return {
+          key: `${fireKey}-${i}`,
+          x: Math.cos(angle) * dist,
+          y: Math.sin(angle) * dist,
+          scale: 0.5 + Math.random() * 0.9,
+          rotate: Math.random() * 280 - 140,
+          color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+          round: i % 3 === 0,
+        }
+      }),
+    [fireKey],
+  )
+  if (fireKey === 0) return null
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
+      {burst.map((p) => (
+        <motion.span
+          key={p.key}
+          className={p.round ? 'absolute h-1.5 w-1.5 rounded-full' : 'absolute h-2 w-1.5 rounded-[2px]'}
+          style={{ backgroundColor: p.color }}
+          initial={{ opacity: 1, x: 0, y: 0, scale: 0.4, rotate: 0 }}
+          animate={{ opacity: 0, x: p.x, y: p.y, scale: p.scale, rotate: p.rotate }}
+          transition={{ duration: 0.85, ease: [0.15, 0.8, 0.35, 1] }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ─── Unit accent palette (cycled per unit) ───────────────────────────────
+
+export const UNIT_ACCENTS: { chip: string; bar: string; dot: string }[] = [
+  { chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
+  { chip: 'bg-teal-500/10 text-teal-700 dark:text-teal-400', bar: 'bg-teal-500', dot: 'bg-teal-500' },
+  { chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-400', bar: 'bg-amber-500', dot: 'bg-amber-500' },
+  { chip: 'bg-orange-500/10 text-orange-700 dark:text-orange-400', bar: 'bg-orange-500', dot: 'bg-orange-500' },
+  { chip: 'bg-rose-500/10 text-rose-700 dark:text-rose-400', bar: 'bg-rose-500', dot: 'bg-rose-500' },
+  { chip: 'bg-lime-600/10 text-lime-700 dark:text-lime-400', bar: 'bg-lime-600', dot: 'bg-lime-600' },
+]
+
+export function unitAccent(unitNo: number) {
+  return UNIT_ACCENTS[(unitNo - 1 + UNIT_ACCENTS.length) % UNIT_ACCENTS.length]
+}
 
 // ─── Status config ──────────────────────────────────────────────────────
 
@@ -17,6 +127,10 @@ export interface TopicStatusConfig {
   label: string
   /** Full chip recipe (base size — hero overrides via cn/tailwind-merge). */
   chip: string
+  /** Small solid dot for dense rows. */
+  dot: string
+  /** Tailwind text tone for the row's date emphasis. */
+  text: string
 }
 
 /** Status chip tones: completed=emerald · today=amber · in-progress=sky ·
@@ -25,22 +139,32 @@ export const TOPIC_STATUS: Record<TopicStatus, TopicStatusConfig> = {
   completed: {
     label: 'Completed',
     chip: 'rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400',
+    dot: 'bg-emerald-500',
+    text: 'text-emerald-600 dark:text-emerald-400',
   },
   today: {
     label: 'Today',
-    chip: 'rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400',
+    chip: 'rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400',
+    dot: 'bg-amber-500',
+    text: 'text-amber-700 dark:text-amber-400',
   },
   'in-progress': {
     label: 'In progress',
-    chip: 'rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400',
+    chip: 'rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 text-[10px] font-medium text-teal-700 dark:text-teal-400',
+    dot: 'bg-teal-500',
+    text: 'text-teal-700 dark:text-teal-400',
   },
   'needs-rescheduling': {
     label: 'Behind schedule',
     chip: 'rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-600 dark:text-rose-400',
+    dot: 'bg-rose-500',
+    text: 'text-rose-600 dark:text-rose-400',
   },
   upcoming: {
     label: 'Upcoming',
     chip: 'rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground',
+    dot: 'bg-muted-foreground/40',
+    text: 'text-muted-foreground',
   },
 }
 
@@ -145,6 +269,27 @@ export function applyCompletion(
       : t,
   )
 
+  return recompute(plan, topics)
+}
+
+/**
+ * Pure optimistic DELETE of one topic: drops it, recomputes progress + unit
+ * counts and, when it was today's hero, falls back to the honest empty
+ * state. The plan refetch immediately replaces this snapshot.
+ */
+export function applyTopicRemoval(plan: LessonPlanPayload, topicId: string): LessonPlanPayload {
+  const topics = plan.topics.filter((t) => t.id !== topicId)
+  const next = recompute(plan, topics)
+  if (plan.today.topic?.id === topicId) {
+    return {
+      ...next,
+      today: { ...plan.today, topic: null, reason: 'No lesson scheduled for today' },
+    }
+  }
+  return next
+}
+
+function recompute(plan: LessonPlanPayload, topics: ScheduledTopic[]): LessonPlanPayload {
   const completedCount = topics.filter((t) => t.status === 'completed').length
   const unitMap = new Map<string, UnitProgress>()
   for (const t of topics) {

@@ -23,6 +23,12 @@ import {
   type HolidayRange,
   type ScheduledTopic,
 } from '@/lib/lesson-schedule'
+import {
+  BOARD_LABELS,
+  findSyllabusTemplate,
+  normalizeTopicName,
+  type SyllabusTemplate,
+} from '@/lib/syllabus-templates'
 
 export type { ScheduledTopic, TopicStatus, HolidayRange } from '@/lib/lesson-schedule'
 
@@ -41,6 +47,27 @@ export interface UnitProgress {
   unitName: string
   total: number
   completed: number
+}
+
+/** One template topic the teacher's plan does not contain yet (LP-2). */
+export interface SyllabusMissingTopic {
+  unitNo: number
+  unitName: string
+  topicName: string
+  description: string
+  periodsNeeded: number
+}
+
+/** Board-syllabus coverage for the selected class + subject (LP-2). */
+export interface SyllabusInfo {
+  board: 'CBSE' | 'UP_BOARD'
+  boardLabel: string
+  bookLabel: string
+  subjectLabel: string
+  totalTopics: number
+  coveredTopics: number
+  units: { unitNo: number; unitName: string; topicCount: number; coveredCount: number }[]
+  missingTopics: SyllabusMissingTopic[]
 }
 
 export interface LessonPlanPayload {
@@ -65,6 +92,11 @@ export interface LessonPlanPayload {
     reason: string | null
   }
   nextUp: ScheduledTopic[]
+  /** Board-syllabus coverage — null when no template matches this pair. */
+  syllabus: SyllabusInfo | null
+  /** True when THIS request auto-fed the full session plan from the board
+   *  syllabus (first open of a newly adopted subject). */
+  autoProvisioned: boolean
 }
 
 // ─── Teacher scope resolution ───────────────────────────────────────────
@@ -174,7 +206,306 @@ export async function getHolidays(schoolId: string): Promise<HolidayRange[]> {
   }))
 }
 
-// ─── The full plan payload ──────────────────────────────────────────────
+// ─── Board-syllabus templates (LP-2) ───────────────────────────────────
+
+async function loadTemplateFor(
+  schoolId: string,
+  classLabel: string,
+  subjectName: string,
+): Promise<SyllabusTemplate | null> {
+  const school = await db.school.findUnique({
+    where: { id: schoolId },
+    select: { board: true },
+  })
+  return findSyllabusTemplate(school?.board, classLabel, subjectName)
+}
+
+/** Instantiate board-template topics as the class+subject's curriculum.
+ *  `topicsToCreate` defaults to the whole template (auto-feed) — the merge
+ *  path passes only the missing ones. */
+async function instantiateTemplate(
+  schoolId: string,
+  classId: string,
+  subjectId: string,
+  template: SyllabusTemplate,
+  existing: { orderIndex: number; topicNo: number }[],
+  topicsToCreate: SyllabusTemplate['topics'],
+): Promise<number> {
+  if (topicsToCreate.length === 0) return 0
+  const baseOrder = existing.length > 0 ? Math.max(...existing.map((t) => t.orderIndex)) : 0
+  let topicNo = existing.length > 0 ? Math.max(...existing.map((t) => t.topicNo)) : 0
+  for (let i = 0; i < topicsToCreate.length; i++) {
+    const t = topicsToCreate[i]
+    await db.curriculumTopic.create({
+      data: {
+        schoolId,
+        classId,
+        subjectId,
+        sourceBoard: template.sourceBoard,
+        unitNo: t.unitNo,
+        unitName: t.unitName,
+        topicNo: ++topicNo,
+        topicName: t.topicName,
+        description: t.description,
+        periodsNeeded: t.periodsNeeded,
+        orderIndex: baseOrder + (i + 1) * 10,
+      },
+    })
+  }
+  return topicsToCreate.length
+}
+
+function buildSyllabusInfo(
+  template: SyllabusTemplate,
+  planTopicNames: Set<string>,
+): SyllabusInfo {
+  const missingTopics: SyllabusMissingTopic[] = []
+  const unitMap = new Map<number, { unitNo: number; unitName: string; topicCount: number; coveredCount: number }>()
+  for (const u of template.units) {
+    unitMap.set(u.unitNo, { ...u, coveredCount: 0 })
+  }
+  for (const t of template.topics) {
+    const unit = unitMap.get(t.unitNo)
+    if (planTopicNames.has(normalizeTopicName(t.topicName))) {
+      if (unit) unit.coveredCount += 1
+    } else {
+      missingTopics.push({
+        unitNo: t.unitNo,
+        unitName: t.unitName,
+        topicName: t.topicName,
+        description: t.description,
+        periodsNeeded: t.periodsNeeded,
+      })
+    }
+  }
+  return {
+    board: template.board,
+    boardLabel: BOARD_LABELS[template.board],
+    bookLabel: template.bookLabel,
+    subjectLabel: template.subjectLabel,
+    totalTopics: template.topics.length,
+    coveredTopics: template.topics.length - missingTopics.length,
+    units: [...unitMap.values()],
+    missingTopics,
+  }
+}
+
+// ─── Custom topic authoring (LP-2: “very easy to add”) ───────────────────
+
+export interface AddTopicInput {
+  classId: string
+  subjectId: string
+  /** Existing unit number, or null to append a brand-new unit. */
+  unitNo: number | null
+  /** Required when creating a new unit. */
+  unitName: string | null
+  topicName: string
+  description: string | null
+  periodsNeeded: number
+}
+
+async function assertOwnsAssignment(
+  user: AuthUser,
+  classId: string,
+  subjectId: string,
+): Promise<{ schoolId: string; classLabel: string; subjectName: string }> {
+  const schoolId = schoolScoped(user)
+  const assignments = await getTeachingAssignments(user)
+  const owns = assignments.find((a) => a.classId === classId && a.subjectId === subjectId)
+  if (!owns) throw new Error('FORBIDDEN')
+  return { schoolId, classLabel: owns.classLabel, subjectName: owns.subjectName }
+}
+
+/** Rewrite orderIndex positions after a splice (keeps the schedule order). */
+async function rewriteOrderIndexes(
+  rows: { id: string; orderIndex: number }[],
+  orderedIds: string[],
+): Promise<void> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    const desired = (i + 1) * 10
+    const row = rows.find((r) => r.id === orderedIds[i])
+    if (row && row.orderIndex !== desired) {
+      await db.curriculumTopic.update({ where: { id: orderedIds[i] }, data: { orderIndex: desired } })
+    }
+  }
+}
+
+/** Add a custom topic at the end of its unit — position-aware. */
+export async function addCustomTopic(user: AuthUser, input: AddTopicInput): Promise<string> {
+  const { schoolId } = await assertOwnsAssignment(user, input.classId, input.subjectId)
+
+  const name = input.topicName.trim()
+  if (!name || name.length > 160) throw new Error('A topic name (1–160 characters) is required')
+  const periods = Math.min(60, Math.max(1, Math.round(input.periodsNeeded || 4)))
+
+  const existing = await db.curriculumTopic.findMany({
+    where: { schoolId, classId: input.classId, subjectId: input.subjectId },
+    orderBy: { orderIndex: 'asc' },
+    select: { id: true, unitNo: true, unitName: true, topicNo: true, orderIndex: true },
+  })
+
+  // Resolve the target unit.
+  const unitNumbers = [...new Set(existing.map((t) => t.unitNo))]
+  let unitNo: number
+  let unitName: string
+  if (input.unitNo != null && unitNumbers.includes(input.unitNo)) {
+    unitNo = input.unitNo
+    unitName = existing.find((t) => t.unitNo === input.unitNo)?.unitName ?? 'Topics'
+  } else {
+    unitNo = unitNumbers.length > 0 ? Math.max(...unitNumbers) + 1 : 1
+    unitName = (input.unitName ?? '').trim() || 'My Topics'
+  }
+
+  const topicNo = existing.reduce((m, t) => Math.max(m, t.topicNo), 0) + 1
+
+  const created = await db.curriculumTopic.create({
+    data: {
+      schoolId,
+      classId: input.classId,
+      subjectId: input.subjectId,
+      sourceBoard: 'CUSTOM',
+      unitNo,
+      unitName,
+      topicNo,
+      topicName: name,
+      description: input.description?.trim() ? input.description.trim().slice(0, 400) : null,
+      periodsNeeded: periods,
+      orderIndex: 0, // rewritten below
+    },
+    select: { id: true },
+  })
+
+  // Position: after the last topic of the target unit (new units go last).
+  let insertAt = existing.length
+  if (existing.some((t) => t.unitNo === unitNo)) {
+    for (let i = 0; i < existing.length; i++) {
+      if (existing[i].unitNo === unitNo) insertAt = i + 1
+    }
+  }
+  const orderedIds = existing.map((t) => t.id)
+  orderedIds.splice(insertAt, 0, created.id)
+  const rowsForOrder = [...existing.map((t) => ({ id: t.id, orderIndex: t.orderIndex })), { id: created.id, orderIndex: 0 }]
+  await rewriteOrderIndexes(rowsForOrder, orderedIds)
+  return created.id
+}
+
+export interface UpdateTopicInput {
+  topicId: string
+  topicName?: string
+  description?: string | null
+  periodsNeeded?: number
+  /** Move to another EXISTING unit. */
+  unitNo?: number
+}
+
+export async function updateCustomTopic(user: AuthUser, input: UpdateTopicInput): Promise<void> {
+  const topic = await db.curriculumTopic.findUnique({
+    where: { id: input.topicId },
+    select: { id: true, schoolId: true, classId: true, subjectId: true, unitNo: true, orderIndex: true, topicNo: true },
+  })
+  if (!topic) throw new Error('Topic not found')
+  await assertOwnsAssignment(user, topic.classId, topic.subjectId)
+  if (topic.schoolId !== schoolScoped(user)) throw new Error('FORBIDDEN')
+
+  const data: { topicName?: string; description?: string | null; periodsNeeded?: number; unitNo?: number; unitName?: string } = {}
+  if (input.topicName != null) {
+    const name = input.topicName.trim()
+    if (!name || name.length > 160) throw new Error('A topic name (1–160 characters) is required')
+    data.topicName = name
+  }
+  if (input.description !== undefined) {
+    data.description = input.description?.trim() ? input.description.trim().slice(0, 400) : null
+  }
+  if (input.periodsNeeded != null) {
+    data.periodsNeeded = Math.min(60, Math.max(1, Math.round(input.periodsNeeded)))
+  }
+
+  const siblings = await db.curriculumTopic.findMany({
+    where: { schoolId: topic.schoolId, classId: topic.classId, subjectId: topic.subjectId },
+    orderBy: { orderIndex: 'asc' },
+    select: { id: true, unitNo: true, unitName: true, orderIndex: true },
+  })
+
+  if (input.unitNo != null && input.unitNo !== topic.unitNo) {
+    const target = siblings.find((t) => t.unitNo === input.unitNo)
+    if (!target) throw new Error('That unit does not exist in this plan')
+    data.unitNo = target.unitNo
+    data.unitName = target.unitName
+  }
+
+  await db.curriculumTopic.update({ where: { id: topic.id }, data })
+
+  // If the unit changed, move the topic to the end of its new unit.
+  if (data.unitNo != null) {
+    const others = siblings.filter((t) => t.id !== topic.id)
+    const orderedIds = others.map((t) => t.id)
+    let insertAt = orderedIds.length
+    for (let i = 0; i < others.length; i++) {
+      if (others[i].unitNo === data.unitNo) insertAt = i + 1
+    }
+    orderedIds.splice(insertAt, 0, topic.id)
+    const rowsForOrder = [...others.map((t) => ({ id: t.id, orderIndex: t.orderIndex })), { id: topic.id, orderIndex: topic.orderIndex }]
+    await rewriteOrderIndexes(rowsForOrder, orderedIds)
+  }
+}
+
+export async function deleteCustomTopic(user: AuthUser, topicId: string): Promise<void> {
+  const topic = await db.curriculumTopic.findUnique({
+    where: { id: topicId },
+    select: { id: true, schoolId: true, classId: true, subjectId: true },
+  })
+  if (!topic) throw new Error('Topic not found')
+  await assertOwnsAssignment(user, topic.classId, topic.subjectId)
+  if (topic.schoolId !== schoolScoped(user)) throw new Error('FORBIDDEN')
+
+  const completion = await db.lessonTopicCompletion.findUnique({
+    where: { curriculumTopicId: topic.id },
+    select: { id: true },
+  })
+  if (completion) {
+    throw new Error('This topic is already completed — undo the completion before deleting it')
+  }
+
+  const siblings = await db.curriculumTopic.findMany({
+    where: { schoolId: topic.schoolId, classId: topic.classId, subjectId: topic.subjectId },
+    orderBy: { orderIndex: 'asc' },
+    select: { id: true, orderIndex: true },
+  })
+  await db.curriculumTopic.delete({ where: { id: topic.id } })
+  const orderedIds = siblings.filter((t) => t.id !== topic.id).map((t) => t.id)
+  await rewriteOrderIndexes(siblings, orderedIds)
+}
+
+/** Add every template topic the plan is missing (LP-2 syllabus merge). */
+export async function mergeSyllabusTemplate(
+  user: AuthUser,
+  classId: string,
+  subjectId: string,
+): Promise<{ added: number }> {
+  const { schoolId, classLabel, subjectName } = await assertOwnsAssignment(user, classId, subjectId)
+  const template = await loadTemplateFor(schoolId, classLabel, subjectName)
+  if (!template) throw new Error('No board syllabus template exists for this subject')
+
+  const existing = await db.curriculumTopic.findMany({
+    where: { schoolId, classId, subjectId },
+    orderBy: { orderIndex: 'asc' },
+    select: { orderIndex: true, topicNo: true, topicName: true },
+  })
+  const existingNames = new Set(existing.map((t) => normalizeTopicName(t.topicName)))
+  const missing = template.topics.filter((t) => !existingNames.has(normalizeTopicName(t.topicName)))
+  if (missing.length === 0) return { added: 0 }
+
+  const added = await instantiateTemplate(
+    schoolId,
+    classId,
+    subjectId,
+    template,
+    existing.map((t) => ({ orderIndex: t.orderIndex, topicNo: t.topicNo })),
+    missing,
+  )
+  return { added }
+}
+
 
 export async function getLessonPlan(
   user: AuthUser,
@@ -186,7 +517,7 @@ export async function getLessonPlan(
   if (!assignment) return null
 
   const schoolId = schoolScoped(user)
-  const [school, topicRows, completionRows, pace, holidays] = await Promise.all([
+  let [school, topicRows, completionRows, pace, holidays] = await Promise.all([
     db.school.findUnique({ where: { id: schoolId }, select: { academicYear: true, board: true } }),
     db.curriculumTopic.findMany({
       where: { schoolId, classId, subjectId },
@@ -199,6 +530,29 @@ export async function getLessonPlan(
     getClassPace(schoolId, classId, subjectId),
     getHolidays(schoolId),
   ])
+
+  // ── LP-2 AUTO-FEED: a newly adopted subject has no curriculum yet —
+  // instantiate the COMPLETE session plan from the school's board syllabus
+  // (CBSE / UP Board) the moment the teacher opens it. Failures are quiet:
+  // the plan simply renders its honest empty state.
+  let autoProvisioned = false
+  if (topicRows.length === 0) {
+    const template = findSyllabusTemplate(school?.board, assignment.classLabel, assignment.subjectName)
+    if (template) {
+      try {
+        const fed = await instantiateTemplate(schoolId, classId, subjectId, template, [], template.topics)
+        if (fed > 0) {
+          autoProvisioned = true
+          topicRows = await db.curriculumTopic.findMany({
+            where: { schoolId, classId, subjectId },
+            orderBy: { orderIndex: 'asc' },
+          })
+        }
+      } catch {
+        // Auto-feed is best-effort; never block the plan read.
+      }
+    }
+  }
 
   const today = new Date()
   const sessionStart = sessionStartFor(school?.academicYear, today)
@@ -221,6 +575,11 @@ export async function getLessonPlan(
     today,
     pace,
     holidays,
+  })
+  // Display numbering follows the SCHEDULE order (custom inserts keep the
+  // on-screen sequence tidy even though stored topicNo stays insert-stable).
+  topics.forEach((t, i) => {
+    t.topicNo = i + 1
   })
 
   const completed = topics.filter((t) => t.status === 'completed').length
@@ -263,6 +622,16 @@ export async function getLessonPlan(
     ? pace.periodsPerWeek / Math.max(1, pace.teachingDaysPerWeek)
     : 1
 
+  // Board-syllabus coverage (LP-2) — null when no template matches.
+  let syllabus: SyllabusInfo | null = null
+  {
+    const template = findSyllabusTemplate(school?.board, assignment.classLabel, assignment.subjectName)
+    if (template) {
+      const planNames = new Set(topicRows.map((t) => normalizeTopicName(t.topicName)))
+      syllabus = buildSyllabusInfo(template, planNames)
+    }
+  }
+
   return {
     classId,
     classLabel: assignment.classLabel,
@@ -281,5 +650,7 @@ export async function getLessonPlan(
     topics,
     today: { date: todayKeyStr, topic: todayTopic, reason },
     nextUp: topics.filter((t) => t.status === 'upcoming' || t.status === 'today').slice(0, 5),
+    syllabus,
+    autoProvisioned,
   }
 }

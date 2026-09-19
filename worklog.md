@@ -1117,3 +1117,132 @@ Stage Summary:
    → dues-summary store auto-refresh; keepalive "recycle" subcommand;
    absence-notice-to-guardians workflow off the new attendance save
    (Message rows + live fan-out, mirrors the fee-reminder pattern).
+
+---
+
+Task ID: 12
+Agent: Z.ai Code (main orchestrator)
+Task: LP-2 — Lesson Planner upgrade (user request): board-syllabus auto-fed
+complete-session plans (CBSE / UP Board), very-easy custom topic authoring,
+full UI/UX redesign with rich animations. Browser QA + gates + handover.
+
+Work Log:
+- Read worklog (rounds 1–8), mapped the lesson-planner module end-to-end:
+  index.tsx orchestration, today-lesson hero, progress/map/upcoming panels,
+  api.ts transport, src/lib/lesson-planner.ts server layer,
+  prisma/curriculum-data.ts (the seeded NCERT source), lesson-schedule.ts
+  scheduler, CurriculumTopic/LessonTopicCompletion prisma models.
+- NEW src/lib/syllabus-templates.ts (~800 lines): master board-syllabus
+  registry — CBSE 9/10 reuse the seeded NCERT structures verbatim (imported
+  from prisma/curriculum-data.ts → exact name-matching when merging) + a
+  "Revision and Assessment" enrichment unit per subject; NEW CBSE Computer
+  Applications 9/10 (code 165); compact NCERT middle-school sets (6–8 ×
+  Math/Science/English/Hindi/SST); UP_BOARD 9/10 (NCERT-based गणित/सामाजिक
+  विज्ञान/English, COMBINED विज्ञान = भौतिकी+रसायन+जीव विज्ञान, custom
+  गोधूलि हिंदी, computer) + 6–8. Matching: classLevelFor (digits + roman),
+  subjectKeyFor (English + देवनागरी aliases, exact-match-wins so
+  सामाजिक विज्ञान ≠ विज्ञान), normalizeTopicName (\p{M} preserved so
+  Devanagari matras survive — fixed "व ज ञ न" bug), findSyllabusTemplate
+  (board → template; ICSE/STATE/CUSTOM → null → manual-add empty state).
+- Server (src/lib/lesson-planner.ts): AUTO-FEED — getLessonPlan
+  instantiates the FULL board template when a class+subject has zero
+  CurriculumTopics (best-effort, quiet failure); topicNo display now
+  derived from schedule position; new SyllabusInfo payload (board badge,
+  book label, per-unit coverage, missingTopics) + autoProvisioned flag;
+  addCustomTopic (position-aware insert at end of unit / new unit append,
+  orderIndex rewrite, sourceBoard CUSTOM), updateCustomTopic (rename/
+  periods/description/move-to-existing-unit), deleteCustomTopic (completed
+  topics protected), mergeSyllabusTemplate (adds ONLY missing template
+  topics, idempotent). All mutations re-verify teacher assignment
+  ownership (getTeachingAssignments ∩ ACTIVE CSA).
+- NEW API routes: POST/PATCH/DELETE /api/teacher/lesson-planner/topics,
+  POST /api/teacher/lesson-planner/syllabus (merge). Client api.ts gained
+  addTopic/updateTopic/deleteTopic/mergeSyllabus + SyllabusInfo types.
+- UI REDESIGN (7 files): shared.tsx (→ .tsx for JSX): LIST_STAGGER/
+  LIST_ITEM variants, AnimatedBar (spring width), ConfettiBurst (16
+  particles, no deps), unitAccent palette (6 hues cycled), dot/text status
+  config, applyTopicRemoval optimistic helper; today-lesson.tsx: emerald
+  gradient hero with blur atmosphere, animated SVG session-progress ring,
+  AnimatePresence CTA morph (Mark Completed ⇄ Completed+Undo), confetti
+  on complete, quiet footline; progress-panel.tsx: spring % counter,
+  stats row (topics left / pace / teaching days), staggered per-unit bars
+  in unit accents; curriculum-map.tsx → "Session Plan": accent unit
+  badges, sticky headers + animated per-unit progress, animated check-glyph
+  pop, today pulse ring, hover actions (Done/Undo + edit + delete w/
+  AlertDialog), inline QuickAddRow per unit (motion height), "New unit"
+  footer; syllabus-library.tsx (NEW): CBSE/UP badge, book label, coverage
+  meter, unit coverage chips, missing-topic list w/ one-tap + quick-add,
+  "Add all N", "Full syllabus covered" celebratory state, custom-topics
+  footline; add-topic-sheet.tsx (NEW): side sheet, autofocus name (Enter
+  submits), unit picker w/ inline "+ New unit", −/+ periods stepper w/
+  teaching-day estimate, notes, emerald footer; upcoming-panel.tsx: date
+  tiles (day + MMM, amber today), stagger, schedule-basis polish;
+  index.tsx: full orchestration (all handlers w/ optimistic updates +
+  toasts + refetch, autoProvisioned success toast, Add-topic toolbar
+  action, honest no-template empty state w/ CTA).
+- Demo showcase seed: prisma/seed-computer-apps.ts (idempotent, ran OK) —
+  Computer Applications subject (CA165) + CSAs + Rohan's 3×/week
+  computer-lab periods (9-A P8 Wed/Fri/Sat 14:45, 10-A P7 Wed/Fri/Sat
+  14:00, room "Computer Lab") → first open of the planner AUTO-FEEDS the
+  full 10-topic CBSE session plan live.
+- API QA via curl (rohan.mehta@greenwood.edu.in / teacher123): assignments
+  show 4 pairs (incl. Computer Applications); Computer 9-A plan GET →
+  autoProvisioned:true, 10 topics/4 units, syllabus 10/10; math merge +2;
+  custom add → position-correct; PATCH rename; DELETE ok; delete of a
+  COMPLETED topic correctly rejected; FORBIDDEN on non-owned subject
+  (Hindi) — permission gate works.
+- Browser QA (gateway :81, short batches, memory protocol): teacher login →
+  Lesson Planner → Grade 10-A Computer Applications auto-fed LIVE (hero,
+  ring, units, plan, syllabus library all rendered — VLM-verified clean);
+  Mark Completed → confetti + toast + Undo morph; inline quick-add
+  ("Typing Speed Drill — Home Row"); sheet add w/ NEW UNIT "Enrichment
+  Club"; edit rename; delete w/ confirm; subject switch → Mathematics →
+  syllabus 17/19 → one-tap add → 18/19 → "Add all" → 19/19 "Full syllabus
+  covered"; class switch → Grade 9-A Math 59%; mobile 390px single column,
+  no overflow; dev.log: all lesson-planner APIs 200, zero errors.
+- Gates: bunx tsc --noEmit 0 errors; bun run lint clean (after removing a
+  stale eslint-disable); robots 200; no chrome zombies; memory protocol
+  respected (fresh server + warmed compile + short bursts + pkill).
+
+Stage Summary:
+- USER REQUEST DELIVERED: "already a plan will be there you have to feed
+  it, as per boards syllabus, whatever school will be cbse or up the plan
+  will be automatically there for the complete session and if he want to
+  add something, there should very easy to add plan also" —
+  1) AUTO-FED COMPLETE-SESSION BOARD PLANS: opening any template-backed
+     class+subject with no curriculum instantiates the full CBSE/UP-Board
+     session plan (school.board decides; UP = NCERT-based + गोधूलि हिंदी
+     + combined विज्ञान); 2) VERY EASY TO ADD: inline per-unit quick-add,
+     one-tap syllabus merges, authoring sheet w/ new-unit flow; 3) UI/UX:
+     gradient hero + animated ring + confetti, staggered session plan,
+     syllabus library panel, spring bars everywhere.
+- KEY FILES: src/lib/syllabus-templates.ts (NEW), lesson-planner.ts
+  (extended), api/teacher/lesson-planner/{topics,syllabus}/route.ts (NEW),
+  lesson-planner/{syllabus-library,add-topic-sheet}.tsx (NEW),
+  shared.tsx/today-lesson/curriculum-map/progress-panel/upcoming-panel/
+  index (rewritten), prisma/seed-computer-apps.ts (NEW, executed).
+- Demo data: Computer Applications auto-feed showcase live in both grades;
+  Math 9/10 plans now 19/19 syllabus coverage (enrichment merged);
+  Computer 10-A carries a custom "Enrichment Club" unit (showcases the
+  "+N custom topics" footline). 141→ preserved completions intact.
+- Teacher credentials: rohan.mehta@greenwood.edu.in / teacher123.
+
+## Unresolved issues / risks, next-phase priorities
+
+1. UP_BOARD path is code-complete + unit-tested at the template level but
+   NOT demo-visible (the demo school is CBSE). To showcase: create a
+   second UP-BOARD tenant school (or flip a test school's board) and
+   verify the गोधूलि/विज्ञान feed end-to-end.
+2. Auto-feed anchors at session start (April 1) — a subject adopted
+   mid-session honestly shows early topics as "Behind schedule" until the
+   teacher marks completions; a future enhancement could offer "start
+   schedule from adoption date".
+3. Unit rename/delete (topics move only) not yet supported; edit-mode
+   unit moves are limited to existing units.
+4. Memory ceiling unchanged (this round needed the fresh-server +
+   pre-compile-without-browser + short-bursts protocol twice); keep
+   following it.
+5. Next-phase candidates: principal-side syllabus adoption/preview panel
+   (same template library); print/PDF export of the session plan;
+   "behind schedule" catch-up assist (one-tap mark-previous-N-completed);
+   the round-8 leftovers (notification preferences, payment auto-refresh).

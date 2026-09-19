@@ -1,19 +1,52 @@
 'use client'
 
 /**
- * lesson-planner/upcoming-panel — the compact right rail. "Upcoming" lists
- * the next scheduled topics (server-capped at 5, today included — today's
- * row is highlighted in amber) with name, date range and periods. Below it,
- * "Schedule basis" states where the dates come from: syllabus board, session
- * anchor, and the class timetable pace — all from the plan payload.
+ * lesson-planner/upcoming-panel — the right rail (LP-2 polish). "Upcoming"
+ * lists the next scheduled topics (server-capped at 5, today included) as
+ * date-tile rows: a day-number tile with month, the topic name and its
+ * unit/periods meta; today's tile is amber with a pulse. Below it,
+ * "Schedule basis" states where the dates come from as quiet chips: syllabus
+ * board, session anchor, and the class timetable pace.
  */
 
-import { CalendarCheck, CalendarDays } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { CalendarCheck, CalendarDays, GraduationCap, Route } from 'lucide-react'
+import { format } from 'date-fns'
 import { GlassCard } from '@/components/shared/ui'
 import { HubEmptyState } from '@/components/teacher/modules/shared/hub-stat-cards'
 import { cn } from '@/lib/utils'
-import type { LessonPlanPayload } from './api'
-import { formatDayLong, formatDayRange } from './shared'
+import type { LessonPlanPayload, ScheduledTopic } from './api'
+import { LIST_ITEM, LIST_STAGGER } from './shared'
+import { formatDayLong, formatDayRange, parseDayKey } from './shared'
+
+function DateTile({ topic }: { topic: ScheduledTopic }) {
+  const isToday = topic.status === 'today'
+  const d = parseDayKey(topic.startDate)
+  return (
+    <span
+      className={cn(
+        'flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl border leading-none',
+        isToday
+          ? 'border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-400'
+          : 'border-border bg-muted/50 text-muted-foreground',
+      )}
+      aria-hidden="true"
+    >
+      {d ? (
+        <>
+          <span className={cn('text-[13px] font-bold tabular-nums', isToday && 'text-amber-800 dark:text-amber-300')}>
+            {d.getDate()}
+          </span>
+          <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide">
+            {format(d, 'MMM')}
+          </span>
+        </>
+      ) : (
+        <span className="text-[10px]">—</span>
+      )}
+    </span>
+  )
+}
 
 export function UpcomingPanel({ plan }: { plan: LessonPlanPayload }) {
   const items = plan.nextUp
@@ -36,32 +69,47 @@ export function UpcomingPanel({ plan }: { plan: LessonPlanPayload }) {
           className="py-8"
         />
       ) : (
-        <div className="divide-y divide-border/60">
+        <motion.div
+          variants={LIST_STAGGER}
+          initial="hidden"
+          animate="show"
+          className="divide-y divide-border/60"
+        >
           {items.map((topic) => {
             const isToday = topic.status === 'today'
             return (
-              <div key={topic.id} className="px-4 py-2.5">
-                <p className="min-w-0 truncate text-sm font-medium" title={topic.topicName}>
-                  {topic.topicName}
-                </p>
-                <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-                  <span
-                    className={cn(
-                      'font-medium tabular-nums',
-                      isToday && 'text-amber-600 dark:text-amber-400',
-                    )}
-                  >
-                    {isToday ? 'Today' : formatDayRange(topic.startDate, topic.endDate)}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span className="truncate">Unit {topic.unitNo}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">{topic.periodsNeeded} periods</span>
-                </p>
-              </div>
+              <motion.div
+                key={topic.id}
+                variants={LIST_ITEM}
+                className={cn(
+                  'flex items-center gap-3 px-4 py-2.5',
+                  isToday && 'bg-amber-500/5',
+                )}
+              >
+                <DateTile topic={topic} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" title={topic.topicName}>
+                    {topic.topicName}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                    <span
+                      className={cn(
+                        'font-medium tabular-nums',
+                        isToday && 'font-semibold text-amber-700 dark:text-amber-400',
+                      )}
+                    >
+                      {isToday ? 'Today' : formatDayRange(topic.startDate, topic.endDate)}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="truncate">Unit {topic.unitNo}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="tabular-nums">{topic.periodsNeeded} periods</span>
+                  </p>
+                </div>
+              </motion.div>
             )
           })}
-        </div>
+        </motion.div>
       )}
     </GlassCard>
   )
@@ -78,7 +126,8 @@ export function ScheduleBasisCard({ plan }: { plan: LessonPlanPayload }) {
 
   return (
     <GlassCard hover={false} className="p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Route className="h-3.5 w-3.5" aria-hidden="true" />
         Schedule basis
       </p>
       <dl className="mt-2.5 space-y-2">
@@ -91,7 +140,8 @@ export function ScheduleBasisCard({ plan }: { plan: LessonPlanPayload }) {
           </div>
         ))}
       </dl>
-      <p className="mt-3 border-t border-border/60 pt-2.5 text-[10px] leading-relaxed text-muted-foreground/80">
+      <p className="mt-3 flex items-start gap-1.5 border-t border-border/60 pt-2.5 text-[10px] leading-relaxed text-muted-foreground/80">
+        <GraduationCap className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
         Dates follow the class timetable and school holidays. Marking topics complete keeps the
         plan on pace.
       </p>

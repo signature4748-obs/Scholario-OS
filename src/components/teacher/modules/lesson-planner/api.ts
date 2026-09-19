@@ -56,6 +56,27 @@ export interface UnitProgress {
   completed: number
 }
 
+/** One board-syllabus topic the plan does not contain yet (LP-2). */
+export interface SyllabusMissingTopic {
+  unitNo: number
+  unitName: string
+  topicName: string
+  description: string
+  periodsNeeded: number
+}
+
+/** Board-syllabus coverage for the selected class + subject (LP-2). */
+export interface SyllabusInfo {
+  board: 'CBSE' | 'UP_BOARD'
+  boardLabel: string
+  bookLabel: string
+  subjectLabel: string
+  totalTopics: number
+  coveredTopics: number
+  units: { unitNo: number; unitName: string; topicCount: number; coveredCount: number }[]
+  missingTopics: SyllabusMissingTopic[]
+}
+
 export interface LessonPlanPayload {
   classId: string
   classLabel: string
@@ -78,6 +99,8 @@ export interface LessonPlanPayload {
     reason: string | null
   }
   nextUp: ScheduledTopic[]
+  syllabus: SyllabusInfo | null
+  autoProvisioned: boolean
 }
 
 // ─── Transport ──────────────────────────────────────────────────────────
@@ -162,4 +185,60 @@ export async function setTopicCompletion(
     },
   )
   return d.completed
+}
+
+// ─── Topic authoring + syllabus merge (LP-2) ────────────────────────────
+
+export interface AddTopicPayload {
+  classId: string
+  subjectId: string
+  /** Existing unit number; null appends a brand-new unit. */
+  unitNo: number | null
+  /** Name for the new unit (when unitNo is null). */
+  unitName: string | null
+  topicName: string
+  description: string | null
+  periodsNeeded: number
+}
+
+/** Add a custom topic — returns the created topic id. */
+export async function addTopic(payload: AddTopicPayload): Promise<string> {
+  const d = await lpRequest<{ topicId: string }>('/api/teacher/lesson-planner/topics', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return d.topicId
+}
+
+export interface UpdateTopicPayload {
+  topicId: string
+  topicName?: string
+  description?: string | null
+  periodsNeeded?: number
+  unitNo?: number
+}
+
+/** Edit a topic (rename, description, periods, move unit). */
+export async function updateTopic(payload: UpdateTopicPayload): Promise<void> {
+  await lpRequest<{ ok: boolean }>('/api/teacher/lesson-planner/topics', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** Delete a topic (completed topics are protected server-side). */
+export async function deleteTopic(topicId: string): Promise<void> {
+  await lpRequest<{ ok: boolean }>(
+    `/api/teacher/lesson-planner/topics?topicId=${encodeURIComponent(topicId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** Merge every missing board-syllabus topic into the plan. */
+export async function mergeSyllabus(classId: string, subjectId: string): Promise<number> {
+  const d = await lpRequest<{ added: number }>('/api/teacher/lesson-planner/syllabus', {
+    method: 'POST',
+    body: JSON.stringify({ classId, subjectId }),
+  })
+  return d.added
 }
