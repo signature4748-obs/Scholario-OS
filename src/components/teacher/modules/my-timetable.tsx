@@ -37,6 +37,7 @@ import {
   AlertTriangle,
   BookOpen,
   CalendarDays,
+  ClipboardCheck,
   Clock,
   MapPin,
   Radio,
@@ -84,6 +85,21 @@ interface ConflictEntry {
   room: string | null
 }
 
+/** An invigilation duty assigned to this teacher by the principal
+ * (one examination paper — real ExamScheduleItem data). */
+interface ExamDuty {
+  id: string
+  examId: string
+  examName: string
+  subject: string
+  classLabel: string
+  /** UTC day key, e.g. "2026-09-21" */
+  date: string
+  startTime: string
+  endTime: string
+  room: string | null
+}
+
 type TimetableConflict =
   | { kind: 'teacher'; day: string; period: number; entries: ConflictEntry[] }
   | { kind: 'room'; day: string; period: number; label: string; detail: string }
@@ -101,6 +117,8 @@ interface TimetablePayload {
   periodTimes: PeriodTime[]
   schoolDays: string[]
   conflicts: TimetableConflict[]
+  /** Invigilation duties assigned to this teacher (today + upcoming). */
+  examDuties: ExamDuty[]
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
@@ -293,6 +311,192 @@ function DayPeriodList({
   )
 }
 
+// ── examination duties (invigilation, assigned by the principal) ─────
+
+/** The client's local day key (YYYY-MM-DD) — duty dates are day keys. */
+function localDateKey(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Date-tile pieces for a duty (UTC day key → weekday / day / month). */
+const TILE_FMT = {
+  weekday: new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: 'UTC' }),
+  day: new Intl.DateTimeFormat('en-IN', { day: 'numeric', timeZone: 'UTC' }),
+  month: new Intl.DateTimeFormat('en-IN', { month: 'short', timeZone: 'UTC' }),
+}
+
+function dutyTile(dateKey: string): { weekday: string; day: string; month: string } {
+  const d = new Date(`${dateKey}T00:00:00Z`)
+  return {
+    weekday: TILE_FMT.weekday.format(d),
+    day: TILE_FMT.day.format(d),
+    month: TILE_FMT.month.format(d),
+  }
+}
+
+/** Days between the local today and a duty's day key (0 = today, 1 = tomorrow). */
+function daysUntil(dateKey: string, todayKeyLocal: string): number {
+  const a = Date.parse(`${dateKey}T00:00:00Z`)
+  const b = Date.parse(`${todayKeyLocal}T00:00:00Z`)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0
+  return Math.round((a - b) / 86_400_000)
+}
+
+/** Live state of a TODAY paper from the client clock. */
+function todayDutyState(
+  start: string,
+  end: string,
+  nowMin: number,
+): { label: string; tone: 'now' | 'soon' | 'done' } {
+  const s = minutesOf(start) ?? 0
+  const e = minutesOf(end) ?? 0
+  if (nowMin < s) return { label: `Starts ${prettyTime(start) ?? start}`, tone: 'soon' }
+  if (nowMin < e) return { label: 'In progress', tone: 'now' }
+  return { label: 'Concluded', tone: 'done' }
+}
+
+/**
+ * Examination Duties — the invigilation papers assigned to this teacher by
+ * the principal. Today's papers carry a live state chip (Starts / In
+ * progress / Concluded); upcoming ones count down ("Tomorrow", "In 3 days").
+ */
+function ExamDutiesSection({
+  duties,
+  clock,
+  reduce,
+}: {
+  duties: ExamDuty[]
+  clock: Date
+  reduce: boolean | null
+}) {
+  const todayKey = localDateKey(clock)
+  const nowMin = clock.getHours() * 60 + clock.getMinutes()
+  const todays = duties.filter((d) => d.date === todayKey)
+  const upcoming = duties.filter((d) => d.date > todayKey)
+
+  return (
+    <motion.section
+      id="exam-duties"
+      initial={reduce ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.05 }}
+      aria-label="Examination duties"
+      className="overflow-hidden rounded-xl border border-border bg-card"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border bg-muted/20 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <ClipboardCheck
+            className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden="true"
+          />
+          <h2 className="text-sm font-semibold text-foreground">Examination Duties</h2>
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          {duties.length > 0
+            ? `${todays.length} today · ${upcoming.length} upcoming`
+            : 'Invigilation'}
+        </p>
+      </header>
+
+      {duties.length === 0 ? (
+        <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          No invigilation duties assigned. When the principal assigns you to supervise an
+          examination paper, it appears here with a notification.
+        </p>
+      ) : (
+        <ol className="divide-y divide-border/40">
+          {[...todays, ...upcoming].map((duty, i) => {
+            const isToday = duty.date === todayKey
+            const tile = dutyTile(duty.date)
+            const state = isToday ? todayDutyState(duty.startTime, duty.endTime, nowMin) : null
+            const until = isToday ? 0 : daysUntil(duty.date, todayKey)
+            return (
+              <motion.li
+                key={duty.id}
+                initial={reduce ? false : { opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: Math.min(i * 0.05, 0.3), duration: 0.25 }}
+                className={cn(
+                  'border-l-2 border-l-transparent px-4 py-3',
+                  isToday && 'border-l-emerald-500 bg-emerald-500/[0.04]',
+                )}
+              >
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div
+                    className={cn(
+                      'flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border',
+                      isToday
+                        ? 'border-emerald-500/40 bg-emerald-500/10'
+                        : 'border-border bg-muted/40',
+                    )}
+                  >
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                      {isToday ? 'Today' : tile.weekday}
+                    </span>
+                    <span className="font-display text-base font-bold leading-none tabular-nums text-foreground">
+                      {tile.day}
+                    </span>
+                    <span className="text-[9px] text-muted-foreground">{tile.month}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {duty.subject}
+                      <span className="ml-1.5 font-normal text-muted-foreground">
+                        · {duty.classLabel}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {duty.examName}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        {prettyRange(duty.startTime, duty.endTime)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        {duty.room ?? 'Room to be assigned'}
+                      </span>
+                    </p>
+                  </div>
+                  {state ? (
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums',
+                        state.tone === 'now' &&
+                          'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                        state.tone === 'soon' &&
+                          'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+                        state.tone === 'done' &&
+                          'border-border bg-muted/40 text-muted-foreground',
+                      )}
+                    >
+                      {state.tone === 'now' && (
+                        <span
+                          aria-hidden="true"
+                          className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500 align-middle"
+                        />
+                      )}
+                      {state.label}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {until === 1 ? 'Tomorrow' : `In ${until} days`}
+                    </span>
+                  )}
+                </div>
+              </motion.li>
+            )
+          })}
+        </ol>
+      )}
+    </motion.section>
+  )
+}
+
 // ── module ────────────────────────────────────────────────────────────
 
 export function MyTimetableModule() {
@@ -368,6 +572,7 @@ export function MyTimetableModule() {
   const periodTimes = useMemo(() => data?.periodTimes ?? [], [data])
   const schoolDays = useMemo(() => data?.schoolDays ?? [], [data])
   const conflicts = useMemo(() => data?.conflicts ?? [], [data])
+  const examDuties = useMemo(() => data?.examDuties ?? [], [data])
   const stats = data?.stats ?? { periodsPerWeek: 0, classes: 0, subjects: 0, teachingDays: 0 }
   const session = sessionLabel(data?.academicSession ?? null)
 
@@ -655,6 +860,9 @@ export function MyTimetableModule() {
           </>
         )}
       </section>
+
+      {/* ── Examination duties (invigilation assigned by the principal) ── */}
+      <ExamDutiesSection duties={examDuties} clock={clock} reduce={reduce} />
 
       {/* ── Desktop weekly grid (period rows × day columns) ─────────── */}
       <section

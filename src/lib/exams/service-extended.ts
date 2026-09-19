@@ -18,6 +18,8 @@ import {
 import { toScheduleDTO, toMarkDTO, audit, deleteScheduleItem } from './service'
 import { getGradeForPercentage } from './types'
 import { computeAllResults } from './result-engine'
+import { getTeacherPreferences } from '@/lib/user-preferences'
+import { classLabelOf } from '@/lib/teacher-hub'
 
 // Re-export deleteScheduleItem so callers of service-extended have a single import surface
 export { deleteScheduleItem }
@@ -80,6 +82,12 @@ export async function updateScheduleItem(
 }
 
 // ─── Invigilator Duty Roster ──────────────────────────────────────────
+//
+// The canonical invigilation layer. ExamScheduleItem.invigilatorId stores
+// the invigilator's USER id (matching every seeded row) with the display
+// name kept in sync on invigilatorName; matching helpers below accept the
+// user id, the teacher id AND the name so legacy rows written by any path
+// keep resolving.
 
 export interface InvigilatorDTO {
   id: string
@@ -90,20 +98,90 @@ export interface InvigilatorDTO {
   assignedCount: number
 }
 
+/** Does this schedule item belong to the given teacher (id or name)? */
+function itemBelongsTo(
+  item: { invigilatorId: string | null; invigilatorName: string | null },
+  teacher: { userId: string | null; id: string; name: string },
+): boolean {
+  if (item.invigilatorId != null) {
+    if (item.invigilatorId === teacher.userId || item.invigilatorId === teacher.id) {
+      return true
+    }
+  }
+  const n = (item.invigilatorName || '').trim().toLowerCase()
+  return n.length > 0 && n === teacher.name.trim().toLowerCase()
+}
+
 export async function listTeachers(schoolId: string): Promise<InvigilatorDTO[]> {
-  const teachers = await db.teacher.findMany({
-    where: { schoolId },
-    include: { user: { select: { name: true, email: true } } },
-    orderBy: { user: { name: 'asc' } },
+  const [teachers, items] = await Promise.all([
+    db.teacher.findMany({
+      where: { schoolId },
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { user: { name: 'asc' } },
+    }),
+    db.examScheduleItem.findMany({
+      where: { exam: { schoolId } },
+      select: { invigilatorId: true, invigilatorName: true },
+    }),
+  ])
+  return teachers.map((t) => {
+    const name = t.user?.name ?? ''
+    return {
+      id: t.id,
+      name,
+      email: t.user?.email ?? null,
+      department: t.department,
+      employeeId: t.employeeId,
+      assignedCount: items.filter((i) =>
+        itemBelongsTo(i, { userId: t.userId, id: t.id, name }),
+      ).length,
+    }
   })
-  return teachers.map((t) => ({
-    id: t.id,
-    name: t.user?.name ?? '',
-    email: t.user?.email ?? null,
-    department: t.department,
-    employeeId: t.employeeId,
-    assignedCount: 0,
-  }))
+}
+
+// ─── Duty-change notifications ─────────────────────────────────────────
+//
+// Assignment / reassignment / removal push a direct Message to the
+// affected teacher — it lands in their notification bell immediately (the
+// :3003 event stream broadcasts new Message rows live, filtered by
+// recipientId) and persists as an unread message until acknowledged.
+// The teacher's "Examination duty" preference (Settings → Notifications)
+// is honored server-side: opting out skips the message, never the duty.
+
+function prettyDate(iso: Date | string): string {
+  const d = typeof iso === 'string' ? new Date(`${iso}T00:00:00Z`) : iso
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+async function notifyDutyChange(
+  schoolId: string,
+  recipientUserId: string | null,
+  sender: { id: string; name: string | null } | null,
+  message: { subject: string; body: string },
+): Promise<boolean> {
+  if (!recipientUserId) return false
+  try {
+    const prefs = await getTeacherPreferences(recipientUserId)
+    if (!prefs.notifications.examDuty) return false
+    await db.message.create({
+      data: {
+        schoolId,
+        senderId: sender?.id ?? null,
+        recipientId: recipientUserId,
+        subject: message.subject,
+        body: message.body,
+      },
+    })
+    return true
+  } catch {
+    // A notification failure must never break the assignment itself.
+    return false
+  }
 }
 
 export async function assignInvigilator(
@@ -111,51 +189,211 @@ export async function assignInvigilator(
   scheduleItemId: string,
   schoolId: string,
   user: AuthUserLike | null,
-  teacherId: string
+  teacherId: string | null,
 ): Promise<ScheduleItemDTO> {
   const exam = await db.exam.findFirst({ where: { id: examId, schoolId } })
   if (!exam) throw new Error('Exam not found')
   const item = await db.examScheduleItem.findFirst({
     where: { id: scheduleItemId, examId },
-    include: { exam: true },
+    include: { exam: true, class: true, subject: true },
   })
   if (!item || item.exam.schoolId !== schoolId) throw new Error('Schedule item not found')
 
-  const teacher = await db.teacher.findFirst({
-    where: { id: teacherId, schoolId },
-    include: { user: { select: { name: true } } },
-  })
-  if (!teacher) throw new Error('Teacher not found')
+  const paperLabel = `${item.subject.name} · ${classLabelOf(item.class)}`
+  const whenLabel = `${prettyDate(item.date)}, ${item.startTime}–${item.endTime}${item.room ? ` · ${item.room}` : ''}`
+  const previousName = item.invigilatorName
+  const previousId = item.invigilatorId
 
-  // Check teacher availability — same date + overlapping time
-  const sameDay = await db.examScheduleItem.findMany({
-    where: {
-      examId,
-      invigilatorId: teacherId,
-      id: { not: scheduleItemId },
-      date: item.date,
-    },
-  })
-  const overlap = sameDay.find((s) => {
-    return !(item.endTime <= s.startTime || s.endTime <= item.startTime)
-  })
-  if (overlap) {
-    throw new Error(`Teacher ${teacher.user?.name} already assigned to another exam at this time`)
+  // ── CLEAR (teacherId null) ──────────────────────────────────────────
+  if (teacherId == null) {
+    const updated = await db.examScheduleItem.update({
+      where: { id: scheduleItemId },
+      data: { invigilatorId: null, invigilatorName: null },
+      include: { class: true, subject: true },
+    })
+    if (previousId != null || previousName != null) {
+      // Tell the released teacher — resolve their user id by id first, then
+      // by display name (invigilatorId holds a USER id on seeded rows).
+      const releasedUser = await db.user
+        .findFirst({
+          where: {
+            schoolId,
+            ...(previousId != null
+              ? { id: previousId }
+              : { name: previousName ?? '__none__' }),
+          },
+        })
+        .catch(() => null)
+      await notifyDutyChange(schoolId, releasedUser?.id ?? previousId, user, {
+        subject: `Exam duty released · ${paperLabel}`,
+        body: `You are no longer assigned as invigilator for ${paperLabel} (${whenLabel}) in ${exam.name}.${user?.name ? ` Released by ${user.name}.` : ''}`,
+      })
+    }
+    await audit(examId, user, 'INVIGILATOR_CLEARED', 'SCHEDULE', scheduleItemId, { invigilatorName: previousName }, null)
+    return toScheduleDTO(updated)
   }
 
+  // ── ASSIGN / REASSIGN ───────────────────────────────────────────────
+  const teacher = await db.teacher.findFirst({
+    where: { id: teacherId, schoolId },
+    include: { user: { select: { id: true, name: true } } },
+  })
+  if (!teacher) throw new Error('Teacher not found')
+  const teacherName = teacher.user?.name ?? ''
+  if (itemBelongsTo(item, { userId: teacher.userId, id: teacher.id, name: teacherName })) {
+    // Already assigned to this teacher — nothing to do (idempotent).
+    return toScheduleDTO(item)
+  }
+
+  // Availability — school-wide: the teacher cannot invigilate two papers
+  // that overlap on the same day, across ANY examination of the school.
+  const sameDay = await db.examScheduleItem.findMany({
+    where: {
+      id: { not: scheduleItemId },
+      date: item.date,
+      exam: { schoolId },
+      OR: [
+        { invigilatorId: teacher.userId ?? '__none__' },
+        { invigilatorId: teacher.id },
+        { invigilatorName: { not: null } },
+      ],
+    },
+    select: { invigilatorId: true, invigilatorName: true, startTime: true, endTime: true },
+  })
+  const conflict = sameDay.find((s) => {
+    if (!itemBelongsTo(s, { userId: teacher.userId, id: teacher.id, name: teacherName })) return false
+    return !(item.endTime <= s.startTime || s.endTime <= item.startTime)
+  })
+  if (conflict) {
+    throw new Error(`${teacherName} already has an overlapping invigilation duty at ${conflict.startTime}–${conflict.endTime} on ${prettyDate(item.date)}`)
+  }
+
+  // invigilatorId stores the teacher's USER id — the same convention every
+  // seeded row follows, so duty lookups resolve by session user id.
   const updated = await db.examScheduleItem.update({
     where: { id: scheduleItemId },
     data: {
-      invigilatorId: teacherId,
+      invigilatorId: teacher.userId ?? teacher.id,
       invigilatorName: teacher.user?.name ?? null,
     },
     include: { class: true, subject: true },
   })
-  await audit(examId, user, 'INVIGILATOR_ASSIGNED', 'SCHEDULE', scheduleItemId, null, {
+
+  // Notify the newly assigned teacher (and quietly release-notify the
+  // previous one when this was a reassignment).
+  if (previousId != null && previousId !== (teacher.userId ?? teacher.id)) {
+    const prevUser = await db.user
+      .findFirst({ where: { id: previousId, schoolId } })
+      .catch(() => null)
+    await notifyDutyChange(schoolId, prevUser?.id ?? previousId, user, {
+      subject: `Exam duty reassigned · ${paperLabel}`,
+      body: `Your invigilation duty for ${paperLabel} (${whenLabel}) in ${exam.name} has been assigned to ${teacherName}.`,
+    })
+  }
+  await notifyDutyChange(schoolId, teacher.userId, user, {
+    subject: `Exam duty assigned · ${paperLabel}`,
+    body: `You are assigned as invigilator for ${paperLabel} (${whenLabel}) in ${exam.name}.${user?.name ? ` Assigned by ${user.name}.` : ''} You can view this duty under My Timetable → Examination Duties.`,
+  })
+
+  await audit(examId, user, 'INVIGILATOR_ASSIGNED', 'SCHEDULE', scheduleItemId, { invigilatorName: previousName }, {
     teacherId,
     teacherName: teacher.user?.name,
   })
   return toScheduleDTO(updated)
+}
+
+// ─── Duty roster (principal's invigilation timetable) ─────────────────
+
+export interface DutyPaperDTO {
+  id: string
+  examId: string
+  date: string
+  startTime: string
+  endTime: string
+  room: string | null
+  className: string
+  subjectName: string
+  invigilatorId: string | null
+  invigilatorName: string | null
+}
+
+export interface DutyExamDTO {
+  id: string
+  name: string
+  type: string
+  status: string
+  startDate: string | null
+  endDate: string | null
+  papers: DutyPaperDTO[]
+}
+
+export interface DutyRosterDTO {
+  todayKey: string
+  exams: DutyExamDTO[]
+  teachers: InvigilatorDTO[]
+}
+
+const PRETTY_EXAM_STATUS: Record<string, string> = {
+  DRAFT: 'Draft',
+  SCHEDULED: 'Scheduled',
+  ONGOING: 'Ongoing',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+}
+
+/**
+ * The complete, real invigilation picture for a school: every examination
+ * with its papers + assigned invigilators, and every teacher with their
+ * duty count. Powers the principal's Invigilation tab.
+ */
+export async function listDutyRoster(schoolId: string): Promise<DutyRosterDTO> {
+  const [exams, teachers] = await Promise.all([
+    db.exam.findMany({
+      where: { schoolId },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+        scheduleItems: {
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+          include: {
+            class: { select: { name: true, section: true } },
+            subject: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { startDate: 'asc' },
+    }),
+    listTeachers(schoolId),
+  ])
+
+  return {
+    todayKey: new Date().toISOString().slice(0, 10),
+    exams: exams.map((e) => ({
+      id: e.id,
+      name: e.name,
+      type: e.type ?? 'Unit Test',
+      status: PRETTY_EXAM_STATUS[e.status ?? ''] ?? e.status ?? 'Draft',
+      startDate: e.startDate ? e.startDate.toISOString().slice(0, 10) : null,
+      endDate: e.endDate ? e.endDate.toISOString().slice(0, 10) : null,
+      papers: e.scheduleItems.map((i) => ({
+        id: i.id,
+        examId: e.id,
+        date: i.date.toISOString().slice(0, 10),
+        startTime: i.startTime,
+        endTime: i.endTime,
+        room: i.room,
+        className: classLabelOf(i.class),
+        subjectName: i.subject.name,
+        invigilatorId: i.invigilatorId,
+        invigilatorName: i.invigilatorName,
+      })),
+    })),
+    teachers,
+  }
 }
 
 // ─── Seating Plan ─────────────────────────────────────────────────────

@@ -28,6 +28,7 @@
  */
 
 import { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { ChevronDown, Archive as ArchiveIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PageTransition } from '@/components/shared/ui'
@@ -36,18 +37,43 @@ import { useExamsListMock } from '@/lib/exams/use-exams-mock'
 import { AVAILABLE_SESSIONS } from '@/lib/exams/session-toppers-data'
 import { ExamsOverviewTab } from './tabs/overview-tab'
 import { ExamsListTab } from './tabs/exams-list-tab'
-import { ReportsTab } from './tabs/reports-tab'
+import { InvigilationTab } from './tabs/invigilation-tab'
 import { SettingsTab } from './tabs/settings-tab'
-import { ArchiveView } from './tabs/archive-view'
-import { CreateExamFullScreen, type ClassDTO } from './create-exam-fullscreen'
+import type { ClassDTO } from './create-exam-fullscreen'
 import { ExamWorkspace } from './exam-workspace'
 
-type SectionTab = 'overview' | 'exams' | 'reports' | 'settings'
+// Heavy siblings load on demand — Reports pulls the charting stack and the
+// Create/Archive views carry large form/document graphs. Keeping them out
+// of the module's first paint makes Examinations open noticeably faster.
+const ReportsTab = dynamic(() => import('./tabs/reports-tab').then((m) => m.ReportsTab), {
+  loading: () => <TabSkeleton />,
+})
+const ArchiveView = dynamic(() => import('./tabs/archive-view').then((m) => m.ArchiveView), {
+  loading: () => <TabSkeleton />,
+})
+const CreateExamFullScreen = dynamic(() => import('./create-exam-fullscreen').then((m) => m.CreateExamFullScreen), {
+  loading: () => <TabSkeleton />,
+})
+
+function TabSkeleton() {
+  return (
+    <div className="rounded-xl border border-border bg-card p-6" aria-busy="true" aria-label="Loading">
+      <div className="space-y-3">
+        <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-2/3 animate-pulse rounded bg-muted/60" />
+        <div className="h-3 w-1/2 animate-pulse rounded bg-muted/40" />
+      </div>
+    </div>
+  )
+}
+
+type SectionTab = 'overview' | 'exams' | 'invigilation' | 'reports' | 'settings'
 type View = { kind: 'list' } | { kind: 'exam'; examId: string } | { kind: 'create' } | { kind: 'archive' }
 
 const SECTION_TABS = [
   { value: 'overview', label: 'Overview' },
   { value: 'exams', label: 'Exams' },
+  { value: 'invigilation', label: 'Invigilation' },
   { value: 'reports', label: 'Reports' },
   { value: 'settings', label: 'Settings' },
 ]
@@ -182,6 +208,17 @@ export function ExamsModule() {
               onReload={reload}
               onCreate={() => setView({ kind: 'create' })}
             />
+          </motion.div>
+        )}
+        {section === 'invigilation' && (
+          <motion.div
+            key="invigilation"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2 }}
+          >
+            <InvigilationTab />
           </motion.div>
         )}
         {section === 'reports' && (

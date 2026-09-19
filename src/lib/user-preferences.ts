@@ -96,7 +96,7 @@ export interface TeacherNotificationPrefs {
   attendance: boolean
   /** Academic activity — marks & lesson progress surfaces. */
   academic: boolean
-  /** Examination duty reminders (proctoring duties). */
+  /** Examination duty notifications (invigilation assignments/releases). */
   examDuty: boolean
   /** Parent messages (server-enforced in /api/notifications-feed). */
   parentMessages: boolean

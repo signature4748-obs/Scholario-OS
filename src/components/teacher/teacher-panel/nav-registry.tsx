@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, CalendarCheck, BookMarked,
   FileText, Users, BarChart3, Megaphone,
-  Shield, ClipboardCheck, Wallet, ClipboardList, Settings,
+  Shield, Wallet, ClipboardList, Settings,
   CalendarDays, MessagesSquare,
 } from 'lucide-react'
 import type { NavGroup } from '@/components/shell/app-shell'
@@ -44,7 +44,6 @@ export function buildTeacherNavGroups({ isRelieved, activePermissions, hubUnread
         { key: 'attendance', label: 'Class Attendance', icon: <CalendarCheck className="h-4.5 w-4.5" /> },
         { key: 'lesson-planner', label: 'Lesson Planner', icon: <BookMarked className="h-4.5 w-4.5" /> },
         { key: 'marks', label: 'Marks Entry', icon: <FileText className="h-4.5 w-4.5" /> },
-        { key: 'proctoring', label: 'Exam Duties', icon: <ClipboardCheck className="h-4.5 w-4.5" /> },
         { key: 'students', label: 'Student Directory', icon: <Users className="h-4.5 w-4.5" /> },
       ],
     },

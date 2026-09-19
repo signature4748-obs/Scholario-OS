@@ -21,8 +21,6 @@ import { MARK_STATUSES, type MarkStatus } from '@/lib/exams/types'
 import {
   useSeatingPlan,
   useGenerateSeating,
-  useTeachers,
-  useAssignInvigilator,
   useImportMarksCsv,
   downloadCsvTemplate,
   type CsvImportRow,

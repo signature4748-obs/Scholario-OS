@@ -28,6 +28,13 @@ const MySalaryModule = dynamic(
   { loading: ModuleLoading }
 )
 
+/** Module keys the ModuleRouter knows — validates ?module= deep-links. */
+const TEACHER_MODULE_KEYS = [
+  'dashboard', 'payroll', 'my-attendance', 'my-timetable', 'attendance',
+  'lesson-planner', 'marks', 'students', 'app-reviews', 'behavior',
+  'analytics', 'settings', 'communication', 'profile', 'fee-management',
+] as const
+
 export function TeacherPanel() {
   const { teachers, positionsList, confirmPayrollRevision } = useTeachersStore()
   // Live server-derived Teacher Hub counts (published by the Communication Hub
@@ -37,7 +44,16 @@ export function TeacherPanel() {
   // Default to Rohan Mehta (EMP-014) for Teacher View preview or active teacher
   const currentTeacher = teachers.find((t) => t.id === 'T-014') || teachers[0]
   const isRelieved = (currentTeacher?.status as string) === 'Relieved' || currentTeacher?.status === 'Suspended' || (currentTeacher?.status as string) === 'Terminated'
-  const [active, setActive] = useState(isRelieved ? 'profile' : 'dashboard')
+  const [active, setActive] = useState(() => {
+    const fallback = isRelieved ? 'profile' : 'dashboard'
+    if (typeof window === 'undefined') return fallback
+    // ?module=<key> deep-link — opens a specific module directly (bookmarks,
+    // shared links). Unknown keys fall back to the default landing module.
+    const requested = new URLSearchParams(window.location.search).get('module')
+    return requested && (TEACHER_MODULE_KEYS as readonly string[]).includes(requested)
+      ? requested
+      : fallback
+  })
 
   const activePermissions = currentTeacher && !isRelieved ? getTeacherActivePermissions(currentTeacher, positionsList) : []
 

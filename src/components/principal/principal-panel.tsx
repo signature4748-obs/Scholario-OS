@@ -115,7 +115,14 @@ const navGroups: NavGroup[] = [
 ]
 
 export function PrincipalPanel() {
-  const [active, setActive] = useState('dashboard')
+  // ?module=<key> deep-link — lets a bookmark (or a colleague-shared link)
+  // open a specific module directly. The value must exist in the registry;
+  // anything else falls back to the dashboard.
+  const [active, setActive] = useState(() => {
+    if (typeof window === 'undefined') return 'dashboard'
+    const requested = new URLSearchParams(window.location.search).get('module')
+    return requested && moduleRegistry[requested] ? requested : 'dashboard'
+  })
   const alertCount = useLiveAlerts((s) => s.alerts.length)
   const { isModuleEnabled } = useFeatureGate()
   const pendingAdmissions = useAdmissionStore((s) =>

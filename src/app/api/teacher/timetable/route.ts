@@ -189,6 +189,53 @@ export async function GET() {
         select: { academicYear: true },
       })
 
+      // ── examination invigilation duties (assigned by the principal) ──
+      // Real ExamScheduleItems where the signed-in teacher is the
+      // invigilator — today's papers first, then upcoming ones. Matching
+      // accepts the user id, the teacher id or the display name (the same
+      // defensive triple the assignment service writes with).
+      const examDuties = await (async () => {
+        const teacherRow = await db.teacher.findFirst({
+          where: { userId: user.id },
+          select: { id: true },
+        })
+        const teacherName = (user.name || '').trim()
+        const today = new Date()
+        const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+        const items = await db.examScheduleItem.findMany({
+          where: {
+            date: { gte: todayStart },
+            exam: { schoolId },
+          },
+          include: {
+            exam: { select: { id: true, name: true, status: true } },
+            class: { select: { name: true, section: true } },
+            subject: { select: { name: true } },
+          },
+          orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+          take: 400,
+        })
+        const mine = items.filter((i) => {
+          if (i.invigilatorId != null) {
+            if (i.invigilatorId === user.id) return true
+            if (teacherRow && i.invigilatorId === teacherRow.id) return true
+          }
+          const n = (i.invigilatorName || '').trim().toLowerCase()
+          return teacherName.length > 0 && n === teacherName.toLowerCase()
+        })
+        return mine.slice(0, 12).map((i) => ({
+          id: i.id,
+          examId: i.exam.id,
+          examName: i.exam.name,
+          subject: i.subject.name,
+          classLabel: classLabelOf(i.class),
+          date: i.date.toISOString().slice(0, 10),
+          startTime: i.startTime,
+          endTime: i.endTime,
+          room: i.room,
+        }))
+      })()
+
       return {
         cells,
         stats: {
@@ -201,6 +248,7 @@ export async function GET() {
         periodTimes,
         schoolDays,
         conflicts,
+        examDuties,
       }
     },
     { roles: ['TEACHER'] }

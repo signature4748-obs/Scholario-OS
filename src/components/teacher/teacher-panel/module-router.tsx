@@ -16,7 +16,6 @@ const MyTimetableModule = lazy(() => import('../modules/my-timetable'), 'MyTimet
 const AttendanceModule = lazy(() => import('../modules/attendance'), 'AttendanceModule')
 const LessonPlannerModule = lazy(() => import('../modules/lesson-planner'), 'LessonPlannerModule')
 const MarksEntryModule = lazy(() => import('../modules/marks'), 'MarksEntryModule')
-const ExamProctoringModule = lazy(() => import('../modules/exam-proctoring'), 'ExamProctoringModule')
 const StudentsModule = lazy(() => import('../modules/students'), 'StudentsModule')
 const ApplicationReviewsModule = lazy(() => import('../modules/applications'), 'ApplicationReviewsModule')
 const StudentBehaviorModule = lazy(() => import('../modules/student-behavior'), 'StudentBehaviorModule')
@@ -38,7 +37,6 @@ export function ModuleRouter({ active, onNavigate }: ModuleRouterProps) {
       {active === 'attendance' && <AttendanceModule />}
       {active === 'lesson-planner' && <LessonPlannerModule />}
       {active === 'marks' && <MarksEntryModule />}
-      {active === 'proctoring' && <ExamProctoringModule />}
       {active === 'students' && <StudentsModule />}
       {active === 'app-reviews' && <ApplicationReviewsModule />}
       {active === 'behavior' && <StudentBehaviorModule onNavigate={onNavigate} />}

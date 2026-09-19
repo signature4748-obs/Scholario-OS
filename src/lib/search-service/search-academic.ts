@@ -12,7 +12,7 @@ type Role = 'principal' | 'teacher' | 'student' | 'superadmin' | 'parent'
 const NAV_KEYS: Record<'classes' | 'timetable' | 'exams', Record<Role, string>> = {
   classes: { principal: 'students', teacher: 'students', student: 'my-class', superadmin: 'students', parent: 'my-class' },
   timetable: { principal: 'timetable', teacher: 'my-timetable', student: 'timetable', superadmin: 'timetable', parent: 'timetable' },
-  exams: { principal: 'exams', teacher: 'proctoring', student: 'results', superadmin: 'exams', parent: 'results' },
+  exams: { principal: 'exams', teacher: 'my-timetable', student: 'results', superadmin: 'exams', parent: 'results' },
 }
 
 export function searchAcademic(q: string, role: Role = 'principal'): SearchResultItem[] {

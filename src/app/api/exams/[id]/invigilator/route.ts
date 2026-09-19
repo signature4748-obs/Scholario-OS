@@ -16,6 +16,9 @@ export async function GET(
 }
 
 // POST /api/exams/[id]/invigilator  body: { scheduleItemId, teacherId }
+// teacherId = null → release the assigned invigilator from that paper.
+// Assigning creates a direct Message notification for the teacher (their
+// "Examination duty" preference is honored server-side).
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,7 +28,11 @@ export async function POST(
       const schoolId = schoolScoped(user)
       const { id } = await params
       const body = await req.json().catch(() => ({}))
-      const result = await assignInvigilator(id, body.scheduleItemId, schoolId, user, body.teacherId)
+      const teacherId =
+        body.teacherId === null || body.teacherId === undefined || body.teacherId === ''
+          ? null
+          : String(body.teacherId)
+      const result = await assignInvigilator(id, body.scheduleItemId, schoolId, user, teacherId)
       return result
     },
     { roles: ['PRINCIPAL', 'MANAGEMENT'] }

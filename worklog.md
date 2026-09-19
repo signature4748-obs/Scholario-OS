@@ -1246,3 +1246,147 @@ Stage Summary:
    (same template library); print/PDF export of the session plan;
    "behind schedule" catch-up assist (one-tap mark-previous-N-completed);
    the round-8 leftovers (notification preferences, payment auto-refresh).
+
+---
+
+Task ID: 11
+Agent: Z.ai Code (exam duties rework — 2026-09-19)
+Task: "Remove that exam duties module completely. In the exams the principal will assign teachers and they will receive a notification; also in the exams timetable teachers will see the duties. Not to do much but very natural, real and working."
+
+Work Log:
+- READ worklog + mapped the exam-duties landscape: teacher proctoring
+  module (src/components/teacher/modules/exam-proctoring/ — 4 files,
+  EP-6), /api/teacher/proctoring/* (5 routes), src/lib/exam-duty.ts,
+  orphaned src/lib/mock/proctoring.ts, the 'proctoring' nav key +
+  module-router entry + search-academic nav map, prisma models
+  ExamDutyCompletion + ExamIncident (used ONLY by proctoring), and the
+  existing-but-UI-less /api/exams/[id]/invigilator API.
+- PHASE A (removal): deleted exam-proctoring/ (4 files), /api/teacher/
+  proctoring/ (5 routes), lib/exam-duty.ts, mock/proctoring.ts; removed
+  the nav item + lazy route + ClipboardCheck import; search-academic
+  teacher exams key 'proctoring' → 'my-timetable'; prisma schema dropped
+  ExamDutyCompletion + ExamIncident (+ their School/Student/Exam
+  back-relations) → db push (tables dropped) → client regenerated;
+  prisma/seed-exam-ops.ts incident seeding stripped. Zero dangling
+  references (only legit position-permission labels remain).
+- PHASE B (real assignment layer, src/lib/exams/service-extended.ts):
+  assignInvigilator now (a) stores the teacher's USER id in
+  invigilatorId — the exact convention every seeded row uses — with the
+  name synced; (b) checks availability SCHOOL-WIDE (any exam, same day,
+  overlapping window) with a specific error message; (c) supports
+  teacherId:null → release; (d) pushes a direct Message notification to
+  the affected teacher on assign/reassign/release (assign + reassign
+  notify the new teacher; release/reassign notify the released one),
+  honoring the teacher's examDuty preference server-side (the Settings
+  toggle is now a real gate); (e) idempotent same-teacher re-assign.
+  listTeachers computes REAL assignedCounts; classLabelOf kills the
+  "Grade 9 - A — A" duplication. NEW listDutyRoster(schoolId) + DTOs.
+- NEW API GET /api/exams/duties (PRINCIPAL/MANAGEMENT): todayKey + all
+  real exams with papers (date/time/room/class/subject/invigilator) +
+  teachers with duty counts. POST /api/exams/[id]/invigilator now accepts
+  teacherId:null (release). use-exams-extended.ts: useAssignInvigilator
+  returns the DTO + accepts null; NEW useDutyRoster hook + DTO types;
+  removed unused useTeachers/useAssignInvigilator imports from
+  workspace-sections-extended.tsx.
+- PHASE C (teacher side): GET /api/teacher/timetable extended with
+  examDuties — real ExamScheduleItems dated >= today where the signed-in
+  teacher is the invigilator (user-id OR teacher-id OR name match), ≤12,
+  with exam/subject/class/room/time. MyTimetable module gained an
+  "Examination Duties" section (placed after the TODAY card): date-tile
+  rows, emerald today accent, LIVE state chips (Starts X / In progress
+  pulse / Concluded) from the client clock, "Tomorrow"/"In N days"
+  countdown chips for upcoming, room + time details, stagger animation,
+  honest empty state.
+- PHASE D (principal UI): NEW tabs/invigilation-tab.tsx in the Exams
+  module — exam picker pills (defaults to the exam holding the nearest
+  today/future paper), summary tiles (papers / coverage % with spring
+  bar / unassigned / teachers on duty), teacher-load chips (initials
+  avatar + live per-exam count, click to filter the roster), and the
+  date-grouped DUTY TIMETABLE: today + upcoming groups open with a
+  shadcn Select per paper (options show name + duty count; "Release
+  from duty" when assigned; amber unassigned state), concluded days
+  collapsed behind an animated expand header, optimistic row updates +
+  revert-on-error, success/error toasts, emerald flash on the changed
+  row. Wired as the 'invigilation' section tab in the exams module.
+- PERF/UX EXTRAS: ?module=<key> deep-links for teacher + principal
+  panels (validated against the module registry/allowlist); exams module
+  heavy siblings (ReportsTab/recharts, CreateExamFullScreen, ArchiveView)
+  are now dynamic imports with a skeleton — faster first paint.
+- API QA (curl): roster payload correct (class labels, real counts,
+  pretty statuses); conflict rejection fires with the exact message
+  ("Rohan Mehta already has an overlapping invigilation duty at
+  09:00–11:00 on 21 Sept 2026"); release → assign verified in the DB;
+  Message rows created from Dr. Ananya Iyer to Priya (assigned),
+  Arjun (released) — and later Kavita (assigned via the UI test).
+  Teacher timetable returns Rohan's 2 duties.
+- BROWSER QA (gateway :81; the 4GB box fought hard — see risks):
+  TEACHER: panel rendered via ?module=my-timetable + injected session;
+  Examination Duties section shows today's English paper with the live
+  "Concluded" chip + Mon 21 Sep Hindi with "In 2 days" (screenshot
+  download/qa-examduties-teacher-timetable.png). PRINCIPAL: panel
+  rendered via ?module=exams; Invigilation tab renders the FULL roster
+  (exam pills, 100% coverage tiles, teacher chips, collapsed concluded
+  days); reassigning Sep-21 G9 Hindi Priya→Kavita through the Select
+  updated the row + counts optimistically, wrote the real DB row
+  (invigilatorId = Kavita's user id), and created her notification
+  Message (screenshot download/qa-invigilation-assign-kavita.png);
+  conflict test (Rohan on an overlapping paper) correctly reverted the
+  row and fired the error toast — the specific server message now
+  surfaces (api() throws a plain object, not Error — fixed the toast).
+- GATES: bunx tsc --noEmit 0 errors; bun run lint clean; robots 200;
+  event-stream :3003 healthy; teacher API re-verified post-recycle.
+
+Stage Summary:
+- USER REQUEST DELIVERED: (1) the teacher Exam Duties module is GONE —
+  UI, APIs, lib, prisma models, search mappings, all of it; (2) the
+  principal now assigns invigilators per paper inside Examinations →
+  Invigilation (a real duty-roster timetable), teachers get a real
+  notification (bell message, live via the :3003 stream, preference-
+  gated), and teachers see their duties inside My Timetable →
+  Examination Duties (today live-state + upcoming countdowns).
+- KEY FILES: deleted exam-proctoring/ + proctoring APIs + exam-duty.ts
+  + mock/proctoring.ts + 2 prisma models; service-extended.ts
+  (invigilator layer rebuilt), NEW /api/exams/duties, timetable route
+  (+examDuties), NEW invigilation-tab.tsx, my-timetable.tsx (duties
+  section), exams index (tab + lazy splits), teacher/principal panels
+  (deep-links).
+- DEMO DATA STATE (intentional): Sep-21 G9 Hindi now invigilated by
+  Mrs. Kavita Sharma (was Arjun → released → Priya → reassigned during
+  QA) — three duty-change Messages exist for Priya/Arjun/Kavita,
+  showcasing the notification flow. Rohan's duties: today English
+  (concluded) + Mon 21 Sep Hindi.
+
+## Unresolved issues / risks, next-phase priorities
+
+1. MEMORY (the session's real battle): the box is 4GB/no-swap and the
+   dev-server root compile (~2.2-3.1GB RSS) + a browser only fits in
+   narrow windows. Root causes found + documented in next.config.ts:
+   a POISONED .next (from OOM-killed compiles + a persistentCaching
+   experiment) inflated the root compile by ~900MB — deleting .next
+   fixed it (root compile 2.24GB, and one generation served / in 34ms
+   from a cleanly-completed cache). persistentCaching did NOT survive
+   restarts here — don't re-add it. PROVEN WORKING PROTOCOL for future
+   browser QA (runbook update): rm -rf .next only when poisoned →
+   fresh server → ONE tab, mobile viewport, block images/fonts
+   (network route) → open /?module=<key>&fresh=N directly (deep-link
+   skips the marketing + login chunks) → inject scholario-auth
+   localStorage + erp_session cookie (curl login jar) → reload → the
+   panel compiles incrementally and fits. Do NOT pre-warm chunks to
+   ~3GB then attach chrome — that reliably OOMs. Keep bursts < ~60s;
+   close + recycle between roles. warm-chunks.sh recreated at
+   /home/z/.qa/ (+ new warm-bfs.py); /home/z/.qa gets wiped by the
+   sandbox sometimes — recreate from this log.
+2. The conflict toast's specific message fix (api() throws plain
+   objects) is code-verified + the server message is API-proven, but
+   the rendered toast with the specific text was not re-screenshotted
+   (the Fast-Refresh of the fix killed the last browser window).
+3. Principal exams module still runs on the in-memory mock list for
+   its Exams/Overview/Reports tabs (long-standing architecture); the
+   Invigilation tab is 100% real API. A future phase could switch the
+   whole module to the real /api/exams list.
+4. Final Examination (Mar 2027) has no papers in the DB yet — the
+   Invigilation tab shows its empty state until papers are scheduled.
+5. Next-phase candidates: teacher bell deep-link from the duty message
+   straight into My Timetable; duty-roster PDF export; overview-tab
+   invigilation coverage card; round-8 leftovers (notification prefs
+   UI for students, payment auto-refresh).

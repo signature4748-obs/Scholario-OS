@@ -9,6 +9,7 @@ import { api } from './api-client'
 import {
   type ExamDTO,
   type MarkStatus,
+  type ScheduleItemDTO,
   type SeatAssignmentDTO,
   type ExamAttendanceDTO,
   type ResultOutcomeDTO,
@@ -80,15 +81,74 @@ export function useTeachers(examId: string | null) {
 
 export function useAssignInvigilator() {
   const [loading, setLoading] = useState(false)
-  const assign = useCallback(async (examId: string, scheduleItemId: string, teacherId: string): Promise<void> => {
+  const assign = useCallback(async (
+    examId: string,
+    scheduleItemId: string,
+    teacherId: string | null
+  ): Promise<ScheduleItemDTO> => {
     setLoading(true)
     try {
-      await api(`/api/exams/${examId}/invigilator`, { method: 'POST', body: JSON.stringify({ scheduleItemId, teacherId }) })
+      return await api<ScheduleItemDTO>(`/api/exams/${examId}/invigilator`, {
+        method: 'POST',
+        body: JSON.stringify({ scheduleItemId, teacherId }),
+      })
     } finally {
       setLoading(false)
     }
   }, [])
   return { assign, loading }
+}
+
+// ─── Duty roster (principal's Invigilation tab) ───────────────────────
+
+export interface DutyPaperDTO {
+  id: string
+  examId: string
+  date: string
+  startTime: string
+  endTime: string
+  room: string | null
+  className: string
+  subjectName: string
+  invigilatorId: string | null
+  invigilatorName: string | null
+}
+
+export interface DutyExamDTO {
+  id: string
+  name: string
+  type: string
+  status: string
+  startDate: string | null
+  endDate: string | null
+  papers: DutyPaperDTO[]
+}
+
+export interface DutyRosterDTO {
+  todayKey: string
+  exams: DutyExamDTO[]
+  teachers: TeacherDTO[]
+}
+
+export function useDutyRoster(enabled = true) {
+  const [roster, setRoster] = useState<DutyRosterDTO | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = useCallback(() => setReloadKey((k) => k + 1), [])
+
+  useEffect(() => {
+    if (!enabled) { setRoster(null); return }
+    let cancelled = false
+    setLoading(true)
+    api<DutyRosterDTO>('/api/exams/duties')
+      .then((d) => { if (!cancelled) { setRoster(d); setError(null) } })
+      .catch((e) => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [enabled, reloadKey])
+
+  return { roster, loading, error, reload }
 }
 
 // ─── Seating plan ─────────────────────────────────────────────────────

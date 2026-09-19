@@ -166,12 +166,11 @@ async function main() {
   }
 
   // ── Clean previous exam-ops rows (configs + marks are owned elsewhere) ─
-  const delI = await db.examIncident.deleteMany({})
   const delA = await db.examAttendance.deleteMany({})
   const delS = await db.examScheduleItem.deleteMany({})
   const delSeats = await db.examSeatAssignment.deleteMany({})
   console.log(
-    `  Cleared ${delS.count} schedule items, ${delSeats.count} seats, ${delA.count} attendance, ${delI.count} incidents`,
+    `  Cleared ${delS.count} schedule items, ${delSeats.count} seats, ${delA.count} attendance`,
   )
 
   // ── Hand-authored paper plans ──────────────────────────────────────────
@@ -330,58 +329,6 @@ async function main() {
     }
   }
   console.log(`  Created ${attCount} historical attendance records`)
-
-  // ── Historical incidents (professional records from past duties) ───────
-  const incidentSeeds: {
-    duty: (typeof createdItems)[number]
-    studentIdx: number | null
-    incidentType: string
-    at: Date
-    description: string
-  }[] = [
-    {
-      duty: historyDuties.find((d) => d.exam === 'MID_TERM' && d.subject === 'Mathematics' && d.className === 'G9')!,
-      studentIdx: null,
-      incidentType: 'PAPER_ISSUE',
-      at: duringPaper(day(2026, 8, 31), '09:00', 20),
-      description:
-        'Three question papers had blurred print in Section B. Replacements were collected from the exam office within five minutes and the affected students were given equal extra time.',
-    },
-    {
-      duty: historyDuties.find((d) => d.exam === 'MID_TERM' && d.subject === 'Mathematics' && d.className === 'G10')!,
-      studentIdx: studentsByClass.G10.length - 1,
-      incidentType: 'MEDICAL_ISSUE',
-      at: duringPaper(day(2026, 9, 1), '09:00', 100),
-      description:
-        'Student felt dizzy during the final half hour. A supervised water break was allowed; the student continued writing afterwards and completed the paper.',
-    },
-    {
-      duty: historyDuties.find((d) => d.exam === 'PA1' && d.subject === 'Mathematics' && d.className === 'G9')!,
-      studentIdx: 9,
-      incidentType: 'LATE_ARRIVAL',
-      at: duringPaper(day(2026, 9, 9), '09:00', 12),
-      description:
-        'Arrived twelve minutes after the bell. Admitted under the late-arrival policy; no extra time was granted.',
-    },
-  ]
-  for (const inc of incidentSeeds) {
-    if (!inc.duty) continue
-    await db.examIncident.create({
-      data: {
-        schoolId: school.id,
-        examId: examIdOf[inc.duty.exam],
-        scheduleItemId: inc.duty.id,
-        studentId:
-          inc.studentIdx == null ? null : studentsByClass[inc.duty.className][inc.studentIdx]?.id ?? null,
-        incidentType: inc.incidentType,
-        occurredAt: inc.at,
-        description: inc.description,
-        reportedById: ROHAN.id,
-        reportedByName: ROHAN.name,
-      },
-    })
-  }
-  console.log(`  Created ${incidentSeeds.length} historical incidents`)
 
   // ── Verify ─────────────────────────────────────────────────────────────
   const verify = await db.examScheduleItem.findMany({

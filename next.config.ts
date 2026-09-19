@@ -18,11 +18,13 @@ const nextConfig: NextConfig = {
       'motion',
       'date-fns',
     ],
-    // Sandbox has ~3.9GB RAM (4GB cgroup, no swap). 2200 lets the ~25s root
-    // compile finish without cache-eviction thrash (1400 made compiles
-    // crash-loop); steady-state serving is ~2.8GB which still fits a
-    // headless QA browser in the remaining headroom. Keepalive.mjs guards
-    // against residual OOM kills. NEVER delete .next (warm restarts are fast).
+    // Sandbox has ~3.9GB RAM (4GB cgroup, no swap). 2200 lets the ~30s root
+    // compile finish (measured 2026-09-19: post-compile server ~3.1GB RSS;
+    // with a SINGLE-tab QA browser that just fits — extra chrome renderers
+    // or extra module compiles tip it into OOM. Keepalive.mjs guards the
+    // rest. Browser QA protocol: recycle server → ONE tab → short burst →
+    // close. NEVER delete .next. persistentCaching was tested and did NOT
+    // survive restarts here (34s recompile either way) — don't re-add it.
     turbopackMemoryLimit: 2200,
   },
   images: {

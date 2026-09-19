@@ -52,8 +52,6 @@ model School {
   messages             Message[]
   events               SchoolEvent[]
   examTypes            ExamTypeConfig[]
-  examIncidents        ExamIncident[]
-  examDutyCompletions  ExamDutyCompletion[]
   gradeScales          GradeScale[]
   examRules            ExamRule[]
   admitCardConfigs     AdmitCardConfig[]
@@ -166,7 +164,6 @@ model Student {
   examMarks           ExamMark[]
   examAttendance      ExamAttendance[]
   seatAssignments     ExamSeatAssignment[]
-  examIncidents       ExamIncident[]
   resultOutcomes      ExamResultOutcome[]
   homeworkSubmissions HomeworkSubmission[]
   subjectAttendanceEntries SubjectAttendanceEntry[]
@@ -319,7 +316,6 @@ model Exam {
   auditLogs       ExamAuditLog[]
   examAttendance  ExamAttendance[]
   seatAssignments ExamSeatAssignment[]
-  incidents       ExamIncident[]
   resultOutcomes  ExamResultOutcome[]
 }
 
@@ -369,33 +365,6 @@ model ExamScheduleItem {
   createdAt       DateTime @default(now())
 
   examAttendance ExamAttendance[]
-  incidents      ExamIncident[]
-  dutyCompletion ExamDutyCompletion?
-}
-
-/// An invigilator's signed-off duty completion (the "Complete Duty" action
-/// in Exam Duties). The attendance/incident rows themselves persist in
-/// ExamAttendance/ExamIncident; this record captures the teacher's
-/// declaration that the duty is finished, with the counts at sign-off time.
-model ExamDutyCompletion {
-  id             String          @id @default(cuid())
-  schoolId       String
-  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  scheduleItemId String          @unique
-  scheduleItem   ExamScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
-  /// User.id of the invigilator who signed off
-  teacherId      String
-  /// when the paper started (scheduleItem date + startTime)
-  startedAt      DateTime
-  completedAt    DateTime        @default(now())
-  presentCount   Int             @default(0)
-  absentCount    Int             @default(0)
-  lateCount      Int             @default(0)
-  incidentCount  Int             @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  @@index([schoolId, teacherId])
 }
 
 model ExamMark {
@@ -463,33 +432,6 @@ model ExamSeatAssignment {
 
   @@unique([examId, classId, studentId])
   @@unique([examId, room, seatNumber])
-}
-
-/**
- * ExamIncident — a professional record raised by the assigned invigilator
- * during an examination duty (late arrival, unfair-means concern, medical
- * issue, paper issue, other). Always school-tenant scoped and tied to the
- * exam + schedule item (paper slot) it happened in; student is optional so
- * room-level issues (e.g. a paper problem) can be recorded too.
- */
-model ExamIncident {
-  id             String            @id @default(cuid())
-  schoolId       String
-  school         School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  examId         String
-  exam           Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
-  scheduleItemId String?
-  scheduleItem   ExamScheduleItem? @relation(fields: [scheduleItemId], references: [id], onDelete: SetNull)
-  studentId      String?
-  student        Student?          @relation(fields: [studentId], references: [id], onDelete: SetNull)
-  incidentType   String // LATE_ARRIVAL, UNFAIR_MEANS, MEDICAL_ISSUE, PAPER_ISSUE, OTHER
-  occurredAt     DateTime
-  description    String
-  reportedById   String
-  reportedByName String?
-  createdAt      DateTime          @default(now())
-
-  @@index([examId, scheduleItemId])
 }
 
 model ExamResultOutcome {
