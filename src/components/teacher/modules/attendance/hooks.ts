@@ -214,11 +214,16 @@ export function useAttendanceModule(): AttendanceModuleState {
     (id: string) => {
       if (classId === id) return
       // The old roster must never linger under a newly selected class.
+      if (dirty) {
+        toast.info('Unsaved changes discarded', {
+          description: 'The new class opened with its saved attendance.',
+        })
+      }
       setBoard(null)
       setBoardError(null)
       setClassId(id)
     },
-    [classId],
+    [classId, dirty],
   )
 
   const selectSubject = useCallback((id: string) => {
@@ -229,11 +234,16 @@ export function useAttendanceModule(): AttendanceModuleState {
     (value: string) => {
       if (!value || value === date) return
       if (value > todayKey()) return // the future is not markable (server enforces too)
+      if (dirty) {
+        toast.info('Unsaved changes discarded', {
+          description: 'The new date opened with its saved attendance.',
+        })
+      }
       setBoard(null)
       setBoardError(null)
       setDate(value)
     },
-    [date],
+    [date, dirty],
   )
 
   const setStatus = useCallback((studentId: string, status: AttendanceStatus) => {

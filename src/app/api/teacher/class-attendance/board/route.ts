@@ -70,6 +70,54 @@ export async function GET(request: Request) {
             },
           })
         : []
+
+      // Recent history: the last 10 MARKED school days for this class (the
+      // official baselines), inside a 30-calendar-day lookback window ending
+      // TODAY (not the viewed date — the week strip and insights describe
+      // the class around now). Rows are stored at midnight UTC (the baseline
+      // contract), so the UTC day key is exact.
+      const historyUntil = new Date()
+      historyUntil.setUTCHours(0, 0, 0, 0)
+      historyUntil.setUTCDate(historyUntil.getUTCDate() + 1)
+      const historySince = new Date(historyUntil.getTime() - 30 * 86_400_000)
+      const historyRaw = await db.attendance.findMany({
+        where: { classId, date: { gte: historySince, lt: historyUntil } },
+        select: { studentId: true, status: true, date: true },
+      })
+      const byDay = new Map<string, Map<string, string>>()
+      for (const r of historyRaw) {
+        const key = r.date.toISOString().slice(0, 10)
+        let dayEntries = byDay.get(key)
+        if (!dayEntries) {
+          dayEntries = new Map()
+          byDay.set(key, dayEntries)
+        }
+        dayEntries.set(r.studentId, r.status) // unique per student+date — last row wins
+      }
+      const historyDays = [...byDay.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-10)
+        .map(([dateKey, entries]) => {
+          const counts = {
+            present: 0,
+            absent: 0,
+            late: 0,
+            leave: 0,
+          }
+          for (const status of entries.values()) {
+            if (status === 'PRESENT') counts.present++
+            else if (status === 'ABSENT') counts.absent++
+            else if (status === 'LATE') counts.late++
+            else if (status === 'LEAVE') counts.leave++
+          }
+          const total = counts.present + counts.absent + counts.late + counts.leave
+          return {
+            date: dateKey,
+            counts,
+            rate: total > 0 ? counts.present / total : 0,
+            entries: Object.fromEntries(entries) as Record<string, string>,
+          }
+        })
       const mySessions = Object.fromEntries(
         sessions.map((s) => [
           s.subject.id,
@@ -91,6 +139,7 @@ export async function GET(request: Request) {
         students: students.map((s) => ({ id: s.id, rollNo: s.rollNo, name: s.user?.name ?? 'Student' })),
         baseline,
         mySessions,
+        history: { days: historyDays },
       }
     },
     { roles: ['TEACHER'] }

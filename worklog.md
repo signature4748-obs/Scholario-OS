@@ -997,3 +997,123 @@ Stage Summary:
    keepalive "recycle" subcommand (automate the warm→kill→restart burst
    prep); payment-event → dues-summary store auto-refresh (currently the
    60s window + manual refresh()).
+
+---
+Task ID: 11
+Agent: Z.ai Code (round 8 — teacher Class Attendance upgrade — 2026-09-19)
+
+Task: User request: "In the teachers role, the student attendance, UI and
+little bit working and function. I think that needs improvement." → full
+UI + functionality upgrade of the teacher Class Attendance module.
+
+Work Log:
+- **STATUS ASSESSMENT (start)**: gates green (robots 200 / stream 200 /
+  tsc 0 / lint 0 / 6.5G disk / 0 chrome zombies). API-level QA of round-7
+  surfaces: dues summary (5 defaulters · ₹105,400 · 4 overdue), student1
+  fee-reminder banner data (₹5,400 + reminder from Dr. Ananya Iyer),
+  superadmin activity feed (live sign-ins incl. this session). NOTE:
+  the student quick-access chip account is student1@demoschool.edu /
+  password123 (NOT student123 — documented in login-page/data.tsx).
+- **API — attendance history slice**: GET /api/teacher/class-attendance/board
+  extended with `history` — the last 10 MARKED school days for the class
+  inside a 30-day lookback ending TODAY (today-anchored so the week strip
+  knows about days after the viewed date). Per day: date, counts, present
+  rate, per-student entries. Verified: 10 real days (11-student full days
+  on 16/17 Sep + single-student seeded rows 4–12 Sep).
+- **UI — date navigation**: prev/next chevrons + Today button around the
+  date input (next/future disabled), unsaved-changes pulsing amber dot
+  inside the Save button.
+- **UI — week strip**: Mon–Sun chips of the viewed week (weekday letter +
+  day number); emerald dot on marked days, primary dot on today,
+  selected-day ring, future days disabled; click → select that date.
+- **UI — count cards**: thin animated progress bar under each of the 4
+  cards (share of total).
+- **UI — roster rows**: last-5-marked-days status dots (emerald/rose/
+  amber/info, tooltip per dot) + attendance-rate chip (emerald ≥90%,
+  amber ≥75%, rose below; title "n/m present across last N marked days");
+  P/A/L/L legend added to the footer.
+- **FEATURE — Insights view** (segmented Roster | Insights on the roster
+  card): headline average present rate across the window + window line;
+  10-day daily-present-rate bar chart (tone by rate, tooltip with full
+  counts); "Attention needed" top-5 absentees (avatar, absences/late/
+  leave breakdown, rate chip); "Perfect record" students (n/n ✓ chips);
+  honest empty state when no marked days.
+- **UX — dirty-discard notices**: switching class or date with unsaved
+  changes now toasts "Unsaved changes discarded".
+- **INFRA INCIDENT (fixed this round)**: a mid-round sandbox reset DELETED
+  keepalive.mjs + keepalive.log from the project root and killed the
+  watchdog (dev server died with nothing to revive it). ALSO discovered
+  the old keepalive's `pgrep -f "bun run dev"` liveness check FALSE-
+  MATCHES the event-stream mini-service (its dev script is also
+  `bun run dev`) — the revived v3 watchdog saw "dev process exists" and
+  waited forever while :3000 was dead. RECREATED keepalive.mjs (v4):
+  liveness = `execFile('pgrep', ['-f', 'next dev|next-server'])` — no
+  bash wrapper (self-match trap), no event-stream match; header documents
+  recreation from this worklog. Verified: detects dead server → spawns →
+  healthy in 3s; survived two more OOM restarts during the QA bursts.
+- **/home/z/.qa/ warm tooling is GONE** (same reset). Cache stayed intact
+  (.next 1.2GB), so warming = curl `/` once (25s first, then cached) +
+  the poll routes. If the cache is ever fully invalidated, recreate the
+  chunk warmer per Task-5 notes.
+- **BROWSER QA (gateway origin, two bursts, OOM recovered between)**:
+  teacher login → Class Attendance: week strip M14–S20 rendered, count
+  cards 11/11, roster 11 rows with dots + rate chips (Aarav 80%), marked
+  Diya Patel ABSENT → Present 10/11 + Absent 1/11 + "Unsaved changes" →
+  Save → toast "Attendance saved · Grade 9 - A · 10 present · 1 absent" +
+  "In sync with the saved record" → prev-day nav (honest 18-Sep defaults)
+  → back to today (saved state). Insights: avg 87% across 10 days, trend
+  bars, Attention (Aarav 2 absences · 80%, Ananya 1 · 50%), Perfect
+  record (8 students 2/2). Screenshots: download/qa-round8-attendance-
+  roster.png, qa-round8-attendance-insights.png, qa-round8-attendance-
+  saved.png. Zero console errors in verified windows; the one
+  notifications-feed 500 was during the OOM window (200 with session
+  after recovery).
+- **DATA STATE (intentional, for future QA)**: 2026-09-19 baseline for
+  Grade 9 - A was overwritten by QA save — Diya Patel now ABSENT
+  (10 present · 1 absent, marked by Rohan Mehta). Today's week-strip dot
+  is emerald.
+- **Gates**: `bunx tsc --noEmit` 0 errors ✓ · `bun run lint` clean ✓ ·
+  robots 200 ✓ · stream 200 ✓ · disk 7.1G free ✓.
+
+Stage Summary:
+- The teacher Class Attendance module is now one of the richest surfaces:
+  week-aware date navigation, per-student recent history + rate context,
+  live count bars, dirty-state affordances, and a real analytics view —
+  all from ONE extended API (no extra round-trips).
+- Infrastructure self-healing restored and hardened (keepalive v4 with
+  the event-stream-safe liveness check); root-file deletion by the
+  sandbox reset documented + mitigated.
+
+## Current project status (end of round 8)
+
+- Dev server :3000 healthy (keepalive v4 guarded), event-stream :3003
+  healthy, DB in sync, tsc 0 / lint 0, disk 7.1G free, no chrome zombies.
+- All four roles verified in earlier rounds; the teacher attendance
+  module fully re-verified end-to-end this round (mark → save → insights).
+
+## Current goals / verification results (round 8)
+
+- ✅ User-reported surface (teacher student-attendance) upgraded: UI
+  detail + history context + insights + navigation + guards
+- ✅ History API verified with 10 real marked days
+- ✅ Save/refresh/insights/date-nav browser-proven via the gateway
+- ✅ keepalive v4 restored after sandbox reset (event-stream-safe)
+- ✅ Gates green
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox resets are now deleting ROOT files too** (keepalive.mjs,
+   keepalive.log, /home/z/.qa/*) — if the dev server seems dead with no
+   watchdog, recreate keepalive.mjs (spec in its header + Task 11 log).
+2. **Memory ceiling unchanged**: this round OOMed twice during browser
+   bursts on loaded servers (root cause per Task 7: zombie chrome +
+   compile spikes). Protocol remains: fresh server + warmed cache +
+   short bursts + `pkill -9 -f chrome` after every close.
+3. Attendance history only counts OFFICIAL baselines (Attendance rows);
+   subject-teacher sessions are not in the dots/insights yet — a future
+   round could layer subject sessions into the insights view.
+4. Next-phase candidates (from round 7, unchanged): per-role notification
+   preferences UI; certificates-issuance activity logging; payment-event
+   → dues-summary store auto-refresh; keepalive "recycle" subcommand;
+   absence-notice-to-guardians workflow off the new attendance save
+   (Message rows + live fan-out, mirrors the fee-reminder pattern).

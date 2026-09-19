@@ -91,6 +91,84 @@ export interface AttendanceBoard {
   students: AttendanceStudent[]
   baseline: BaselineInfo
   mySessions: Record<string, SubjectSessionInfo>
+  /** last 10 marked school days (30-day lookback) — absent when server predates it */
+  history?: AttendanceHistory
+}
+
+// ─── Recent history (last 10 marked school days) ──────────────────────
+
+export interface HistoryDay {
+  date: string
+  counts: AttendanceCounts
+  /** PRESENT / total marked, 0..1 */
+  rate: number
+  entries: Record<string, string>
+}
+
+export interface AttendanceHistory {
+  days: HistoryDay[]
+}
+
+/** Per-student aggregates over the history window. */
+export interface HistoryStat {
+  present: number
+  absent: number
+  late: number
+  leave: number
+  marked: number
+  /** PRESENT / marked, 0..1 (1 when nothing marked — vacuous, never scary) */
+  rate: number
+}
+
+export function historyStatsFor(
+  studentId: string,
+  history: AttendanceHistory | undefined,
+): HistoryStat {
+  const stat: HistoryStat = { present: 0, absent: 0, late: 0, leave: 0, marked: 0, rate: 1 }
+  if (!history) return stat
+  for (const day of history.days) {
+    const status = day.entries[studentId]
+    if (!isAttendanceStatus(status)) continue
+    stat.marked++
+    if (status === 'PRESENT') stat.present++
+    else if (status === 'ABSENT') stat.absent++
+    else if (status === 'LATE') stat.late++
+    else stat.leave++
+  }
+  stat.rate = stat.marked > 0 ? stat.present / stat.marked : 1
+  return stat
+}
+
+/** The N most recent marked days' statuses for one student (oldest → newest). */
+export function recentStatusesFor(
+  studentId: string,
+  history: AttendanceHistory | undefined,
+  count = 5,
+): { date: string; status: AttendanceStatus }[] {
+  if (!history || history.days.length === 0) return []
+  return history.days
+    .slice(-count)
+    .filter((d) => isAttendanceStatus(d.entries[studentId]))
+    .map((d) => ({ date: d.date, status: d.entries[studentId] as AttendanceStatus }))
+}
+
+/** Tailwind recipe for one history dot / insight tone by status. */
+export const HISTORY_DOT: Record<AttendanceStatus, string> = {
+  PRESENT: 'bg-emerald-500',
+  ABSENT: 'bg-rose-500',
+  LATE: 'bg-amber-500',
+  LEAVE: 'bg-info',
+}
+
+/** Present-rate tone: emerald ≥ 90%, amber ≥ 75%, rose below. */
+export function rateTone(rate: number): { text: string; chip: string; bar: string } {
+  if (rate >= 0.9) {
+    return { text: 'text-emerald-600 dark:text-emerald-400', chip: 'bg-emerald-500/10 text-emerald-600', bar: 'bg-emerald-500' }
+  }
+  if (rate >= 0.75) {
+    return { text: 'text-amber-600 dark:text-amber-400', chip: 'bg-amber-500/10 text-amber-600', bar: 'bg-amber-500' }
+  }
+  return { text: 'text-rose-600 dark:text-rose-400', chip: 'bg-rose-500/10 text-rose-600', bar: 'bg-rose-500' }
 }
 
 /** One status per roster student, keyed by studentId. */
@@ -169,6 +247,29 @@ export function todayKey(): string {
 /** Parse "YYYY-MM-DD" as a LOCAL date (midnight, never UTC). */
 export function parseDayKey(key: string): Date {
   return new Date(`${key}T00:00:00`)
+}
+
+/** Shift a local day key by n days (n may be negative). */
+export function shiftDayKey(key: string, n: number): string {
+  const d = parseDayKey(key)
+  d.setDate(d.getDate() + n)
+  return toDayKey(d)
+}
+
+/** The Monday–Sunday week (7 day keys) containing the given key. */
+export function weekOf(key: string): string[] {
+  const d = parseDayKey(key)
+  const dow = (d.getDay() + 6) % 7 // Monday = 0
+  const monday = shiftDayKey(key, -dow)
+  return Array.from({ length: 7 }, (_, i) => shiftDayKey(monday, i))
+}
+
+/** "M"/"T"/"W"… one-letter weekday for the week strip. */
+export function weekdayLetter(key: string): string {
+  const d = parseDayKey(key)
+  return Number.isNaN(d.getTime())
+    ? '·'
+    : ['M', 'T', 'W', 'T', 'F', 'S', 'S'][(d.getDay() + 6) % 7]
 }
 
 /** "Thursday, 17 September 2026" — the toolbar context date. */
