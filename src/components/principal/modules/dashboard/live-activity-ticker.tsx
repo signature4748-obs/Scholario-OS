@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { IndianRupee, Mail, Megaphone, Radio } from 'lucide-react'
+import { IndianRupee, Mail, Megaphone, Radio, CalendarCheck } from 'lucide-react'
 import { Panel } from '../shared/panel'
 import { useLiveFeedStore, type LiveFeedEvent } from '@/lib/store/live-feed-store'
 import { formatINR } from '@/lib/format'
@@ -49,6 +49,11 @@ const KIND_META: Record<LiveFeedEvent['kind'], { icon: typeof IndianRupee; tone:
     icon: Mail,
     tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20',
     label: 'Message',
+  },
+  timetable: {
+    icon: CalendarCheck,
+    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20',
+    label: 'Timetable',
   },
 }
 

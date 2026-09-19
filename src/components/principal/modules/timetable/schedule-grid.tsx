@@ -7,7 +7,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Coffee, CalendarDays, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getTeacherById } from '@/lib/mock/teachers'
+import { teacherNameById } from '@/lib/store/teacher-roster-store'
 import { type DayType, type TimetableSlot } from './data'
 import { type PublishedVersion } from './timetable-store'
 import { type TimelineRow } from './time-engine'
@@ -54,7 +54,7 @@ export function ScheduleGrid({
       : ['Class 2-A', 'Class 2-B', 'Class 9-A', 'Class 10-A', 'Class 12-Sci-A']
   ).filter((c) => selectedClass === 'all' || selectedClass === c)
   const daySlots = filteredSlots.filter((s) => s.day === selectedDay)
-  const resolveTeacherName = (slot: TimetableSlot) => slot.teacherName || getTeacherById(slot.teacherId)?.name || 'Assigned Faculty'
+  const resolveTeacherName = (slot: TimetableSlot) => slot.teacherName || teacherNameById(slot.teacherId) || 'Assigned Faculty'
   const hasShortBreak = rows.some((r) => r.breakType === 'short')
   const hasLunchBreak = rows.some((r) => r.breakType === 'lunch')
 

@@ -10,11 +10,15 @@ import { create } from 'zustand'
  * subscribe without opening a second connection. The principal dashboard's
  * Live Activity ticker is the primary consumer.
  *
+ * `timetable` frames (TIMETABLE_PUBLISHED broadcasts) additionally bump
+ * `timetableVersion` — student/teacher timetable views watch that counter
+ * to live-refresh their schedule the moment the Principal publishes.
+ *
  * NOT persisted: a live feed is, by definition, only meaningful while the
  * tab is open. Reconnecting simply resumes appending.
  */
 
-export type LiveFeedKind = 'payment' | 'announcement' | 'message'
+export type LiveFeedKind = 'payment' | 'announcement' | 'message' | 'timetable'
 
 export interface LiveFeedEvent {
   id: string
@@ -35,6 +39,12 @@ interface LiveFeedState {
   events: LiveFeedEvent[]
   connected: boolean
   lastEventAt: number | null
+  /**
+   * Increments on every received timetable publish broadcast. Timetable
+   * views compare this against the version they loaded at to detect
+   * "the schedule changed while this tab was open" without polling.
+   */
+  timetableVersion: number
   setConnected: (v: boolean) => void
   push: (evt: Omit<LiveFeedEvent, 'id' | 'seenAt'> & { id?: string }) => void
   clear: () => void
@@ -46,10 +56,12 @@ export const useLiveFeedStore = create<LiveFeedState>((set) => ({
   events: [],
   connected: false,
   lastEventAt: null,
+  timetableVersion: 0,
   setConnected: (connected) => set({ connected }),
   push: (evt) =>
     set((s) => ({
       lastEventAt: Date.now(),
+      timetableVersion: evt.kind === 'timetable' ? s.timetableVersion + 1 : s.timetableVersion,
       events: [
         {
           ...evt,

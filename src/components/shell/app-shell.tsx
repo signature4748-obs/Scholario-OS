@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { io } from 'socket.io-client'
 import { toast } from 'sonner'
-import { Bell, Menu, Plus, Globe, Radio, Megaphone, Mail } from 'lucide-react'
+import { Bell, Menu, Plus, Globe, Radio, Megaphone, Mail, CalendarCheck } from 'lucide-react'
 import { useAuth } from '@/lib/store/auth-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 import { useLiveAlerts } from '@/lib/store/live-alerts-store'
@@ -50,7 +50,7 @@ const STREAM_METHOD_LABELS: Record<string, string> = {
 
 // Shape of a `school-event` frame emitted by mini-services/event-stream
 interface StreamEvent {
-  kind: 'payment' | 'announcement' | 'message'
+  kind: 'payment' | 'announcement' | 'message' | 'timetable'
   schoolId: string
   title: string
   detail: string
@@ -150,14 +150,15 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
 
           const isPayment = evt.kind === 'payment'
           const isMessage = evt.kind === 'message'
+          const isTimetable = evt.kind === 'timetable'
           // Direct messages are addressed to one user — only the addressee's
           // bell/toast shows them (others in the school skip the frame).
           if (isMessage && evt.recipientId && evt.recipientId !== streamUserIdRef.current) return
 
           const item: NotificationItem = {
             id: `stream-${evt.kind}-${evt.at}-${Math.random().toString(36).slice(2, 7)}`,
-            type: isPayment ? 'PAYMENT' : isMessage ? 'MESSAGE' : 'ANNOUNCEMENT',
-            title: isPayment ? 'Fee payment received' : evt.title,
+            type: isPayment ? 'PAYMENT' : isMessage ? 'MESSAGE' : isTimetable ? 'TIMETABLE' : 'ANNOUNCEMENT',
+            title: isPayment ? 'Fee payment received' : isTimetable ? 'Timetable updated' : evt.title,
             description: isPayment && evt.amount
               ? `${evt.detail} · ${formatINR(evt.amount)} via ${STREAM_METHOD_LABELS[(evt.method || '').toUpperCase()] ?? evt.method ?? '—'}`
               : evt.detail,
@@ -185,20 +186,22 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
               <div
                 className={cn(
                   'relative overflow-hidden w-[min(21rem,calc(100vw-2rem))] flex items-start gap-3 rounded-xl border bg-card/95 backdrop-blur p-3 pl-4 shadow-premium-lg transition-opacity',
-                  isPayment ? 'border-emerald-500/30' : isMessage ? 'border-sky-500/30' : 'border-violet-500/30',
+                  isPayment ? 'border-emerald-500/30' : isMessage ? 'border-sky-500/30' : isTimetable ? 'border-amber-500/40' : 'border-violet-500/30',
                   t ? 'opacity-100' : 'opacity-0'
                 )}
               >
-                <span className={cn('absolute left-0 top-0 bottom-0 w-1', isPayment ? 'bg-emerald-500' : isMessage ? 'bg-sky-500' : 'bg-violet-500')} />
+                <span className={cn('absolute left-0 top-0 bottom-0 w-1', isPayment ? 'bg-emerald-500' : isMessage ? 'bg-sky-500' : isTimetable ? 'bg-amber-500' : 'bg-violet-500')} />
                 <span className={cn(
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
                   isPayment
                     ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                     : isMessage
                       ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
-                      : 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
+                      : isTimetable
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                        : 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
                 )}>
-                  {isPayment ? <span className="font-bold text-xs">₹</span> : isMessage ? <Mail className="h-4 w-4" /> : <Megaphone className="h-4 w-4" />}
+                  {isPayment ? <span className="font-bold text-xs">₹</span> : isMessage ? <Mail className="h-4 w-4" /> : isTimetable ? <CalendarCheck className="h-4 w-4" /> : <Megaphone className="h-4 w-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

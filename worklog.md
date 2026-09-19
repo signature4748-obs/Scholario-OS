@@ -580,3 +580,157 @@ Stage Summary:
     go stale mid-flow. After any edit → warm first, then re-login. Also: right after
     `agent-browser open`, the DOM may be pre-hydration (buttons render with no text) —
     wait 6-8s before eval-based assertions.
+
+---
+Task ID: 8
+Agent: Z.ai Code (cron webDevReview round 5 — 2026-09-19)
+
+Task: Full-status assessment + agent-browser QA, then feature + styling
+development (mandates: more features, more styling detail).
+
+Work Log:
+- **STATUS ASSESSMENT**: all gates green at start (robots 200 / stream 200 /
+  tsc 0 / lint 0 / 6.7G disk). QA bursts verified round-4 surfaces still
+  healthy: Principal Timetable (sync chip, 78 real slots, real classes) and
+  Super Admin activity feed ("School records activity", 30 real rows).
+  No bugs found → proceeded to feature development.
+- **NEW FEATURE 1 — Timetable publish LIVE fan-out (event-stream)**:
+  - `mini-services/event-stream/index.ts`: poll source #4 — ActivityLog rows
+    (action=TIMETABLE_PUBLISHED) → `school-event` frames with NEW kind
+    `timetable` (title "Timetable updated", detail carries slot counts +
+    actor name, schoolId-scoped); watermark query extended. Service
+    auto-restarted via bun --hot; verified by log line
+    `[event-stream] timetable → 78 slots across 2 classes (replaced 78 rows) (Dr. Ananya Iyer)`.
+  - `live-feed-store.ts`: kind union + `timetableVersion` counter (bumped on
+    every timetable push) — modules detect "changed since I loaded" without
+    polling.
+  - `app-shell.tsx`: handles the timetable kind — amber-accent premium toast
+    (CalendarCheck icon chip + LIVE pill), bell entry (type TIMETABLE),
+    live-feed mirror. `notifications-dropdown.tsx`: TIMETABLE icon branch
+    (CalendarCheck, amber tones). `live-activity-ticker.tsx`: KIND_META
+    timetable entry (principal dashboard ticker).
+  - Student `timetable/index.tsx` + teacher `my-timetable.tsx`: watch
+    `timetableVersion` (baseline set at first load); on a NEW publish →
+    quiet background refetch (skeleton only renders pre-first-load, so an
+    open tab never flashes) + emerald "Updated · live" chip (pulsing Radio
+    dot, role=status aria-live, tooltip) in the toolbar.
+  - **END-TO-END PROOF (browser)**: student tab open via the GATEWAY origin →
+    curl no-op round-trip publish (78→78, zero drift) → within ~5s the toast
+    "Timetable updated [Live] 78 slots across 2 classes (replaced 78 rows) ·
+    by Dr. Ananya Iyer" + the "Updated · live" chip appeared; bell shows the
+    unread TIMETABLE entry. Screenshots:
+    download/qa-round5-student-live-refresh.png.
+- **NEW FEATURE 2 — Public notice board RSS feed**:
+  - NEW `GET /api/public/notices/rss` — RSS 2.0 (xmlns:atom), same source as
+    the public notice board (audience ALL/STUDENTS/PUBLIC, latest 15):
+    XML-escaped titles/descriptions, RFC 822 pubDates, stable GUIDs, priority
+    tags ([URGENT]/[HIGH]), atom:link self, graceful empty-feed fallback when
+    the DB is down. Verified via curl — real notices render (Unit Test 2,
+    Hydroponics Club, Mid-Term Results…).
+  - Public site notice board header: amber-hover "RSS feed" chip (Rss icon,
+    a11y label, focus ring, hover lift) linking to the feed.
+  - `layout.tsx` metadata: `alternates.types["application/rss+xml"]` —
+    RSS autodiscovery from every page's <head>.
+- **NEW FEATURE 3 — Server-backed teacher picker (Principal timetable)**:
+  - NEW `src/lib/store/teacher-roster-store.ts` — client zustand store,
+    mock-seeded for instant paint, `ensure()` fetches GET /api/teachers
+    (idempotent, in-flight guard) → REAL Teacher rows (id, employeeId,
+    department, derived initials avatar, comma-split subjects); source
+    'server'|'mock' for honest lineage.
+  - Rewired ALL 7 mock-teacher consumers in the timetable module:
+    index.tsx (hydration awaits roster+timetable in parallel → ids consistent
+    from the start; change summaries; save handler), slot-editor-dialog.tsx
+    (picker options + "live" micro-badge on the Teacher label),
+    filters-bar.tsx (faculty filter), overview-cards.tsx ("of N on roster"),
+    auto-timetable-dialog.tsx (roster-driven subject→teacher map: mock-id
+    names + server subject codes MATH/PHY/ENG… via SUBJECT_CODE_TO_NAME,
+    general-pool fallback so small rosters still generate), schedule-grid.tsx
+    + timetable-pdf.ts (imperative teacherNameById).
+  - **Verified in browser**: "Faculty roster · 4 live" teal lineage chip next
+    to the sync chip; slot editor picker lists the REAL DB faculty (Mrs.
+    Kavita Sharma DEMO-T-001 · Mathematics, Rohan Mehta GWS-T-014,
+    Ms. Priya Iyer DEMO-T-003, Mr. Arjun Nair DEMO-T-002) with the live
+    badge. Screenshot: download/qa-round5-teacher-picker-live.png +
+    qa-round5-principal-roster-chip.png.
+- **STYLING DETAILS shipped with the features**: amber timetable toast
+  accent + CalendarCheck chips; emerald "Updated · live" pills (student
+  glass + teacher toolbar variants); teal "Faculty roster · N live" lineage
+  chip; "live" micro-badge in the slot editor; amber-hover RSS chip on the
+  public site; TIMETABLE bell icon branch.
+- **QA/INFRA LESSONS (important for next rounds)**:
+  1. **Gateway-origin testing**: agent-browser must open the app via
+     `http://localhost:81` (the Caddy gateway), NOT localhost:3000 — the
+     socket.io URL `/?XTransformPort=3003` only forwards through the gateway.
+     A localhost:3000 page silently fails the socket (fetch test returned the
+     Next.js HTML instead of the engine.io handshake). Real users always come
+     through the gateway, so :81 is the honest test origin.
+  2. **Fresh-server burst discipline (refined)**: after source edits, warm
+     chunks AND pre-warm the API routes the burst will hit (curl login + the
+     module endpoints — API routes compile on demand in dev and an
+     on-demand compile with Chrome attached OOMs). Then kill the tree →
+     keepalive restart → verify LOW RSS (~400MB) → burst. A server that
+     already compiled `/` retains ~2.8-3GB and dies with the browser attached.
+  3. **Portal login flakiness**: right after `agent-browser open` on a fresh
+     compile, the first "Open Login Portal" click can be swallowed by the
+     settling page — re-query buttons and redo the click sequence (portal →
+     chip → Sign In) if chips are missing. The Student quick-access chip
+     autofills student1@demoschool.edu (a real seeded account — different
+     from aarav.sharma; both work).
+- **Gates**: `bunx tsc --noEmit` 0 errors ✓ · `bun run lint` clean ✓ ·
+  robots 200 ✓ · stream 200 ✓ · dev.log clean ✓ · disk 6.6G free ✓.
+  NOTE: tsc needs `NODE_OPTIONS=--max-old-space-size=1500` (900MB cap OOMs —
+  the codebase needs ~890MB+).
+
+Stage Summary:
+- The timetable pipeline is now LIVE end-to-end: Principal publishes →
+  open student/teacher tabs get the broadcast in ≤5s (toast + bell +
+  auto-refresh + chip) — browser-proven through the real gateway path.
+- Public notice board is subscribable (RSS 2.0 + autodiscovery).
+- The principal's timetable editor now operates on the school's REAL teacher
+  roster (7 consumers rewired to one server-backed store).
+
+## Current project status (end of round 5)
+
+- Dev server :3000 healthy (keepalive-guarded), event-stream :3003 healthy
+  with the new timetable broadcast source, all chunks warmed, DB in sync,
+  disk 6.6G free.
+- All four roles remain browser-verified; three new user-visible capabilities
+  shipped and verified end-to-end this round.
+- Zero tsc errors, zero lint errors, no dead code, no duplicate files.
+
+## Current goals / verification results (round 5)
+
+- ✅ Round-4 surfaces re-verified (principal timetable hydration, superadmin
+  activity feed with 30 live rows)
+- ✅ NEW live timetable broadcast: publish → toast + bell + auto-refresh +
+  "Updated · live" chip on open student tabs (gateway-origin browser proof)
+- ✅ NEW RSS feed: valid RSS 2.0 with real notices + autodiscovery + chip
+- ✅ NEW server-backed teacher picker: real DB faculty in the editor,
+  roster lineage chip, auto-scheduler on the real roster
+- ✅ Styling: five new chip/toast/badge surfaces in the established design
+  language
+- ✅ Gates green: tsc 0 (with 1500MB cap), lint clean, robots 200, stream 200
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox memory ceiling (unchanged, structural)**: this round reproduced
+   the OOM crash-loop twice during browser bursts on loaded servers. The
+   refined protocol (warm chunks + pre-warm APIs via curl → kill tree →
+   fresh low-RSS server → burst via :81) worked reliably. Budget ~5 min per
+   browser burst cycle.
+2. **RSS feed origin**: the feed's <link>/self URLs use localhost:3000
+   (matches the app's metadataBase — sandbox-only; set a real origin if
+   deployed).
+3. **Auto-timetable general-pool fallback**: subjects with no dedicated
+   roster teacher now fall back to any free teacher (better than empty
+   periods on a small roster). If undesired for big schools, gate it behind
+   roster size.
+4. Next-phase candidates: principal "publish" also bumps a PUBLISHED banner
+   on the principal's own dashboard ticker (currently only students/teachers
+   refresh); superadmin activity feed already shows TIMETABLE_PUBLISHED rows
+   (enriched by this round's publishes); fee-defaulter outreach workflow;
+   event-stream broadcast for fee-reminder sends; per-role notification
+   preferences.
+5. The student quick-access chip account (student1@demoschool.edu) differs
+   from the worklog's documented aarav.sharma credentials — both are real
+   seeded students; document or unify if it confuses future QA.

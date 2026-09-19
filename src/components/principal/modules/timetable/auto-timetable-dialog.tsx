@@ -25,7 +25,8 @@ import {
   defaultDurationForRow,
   parseTimeToMinutes,
 } from './time-engine'
-import { teachers } from '@/lib/mock/teachers'
+import { useTeacherRosterStore } from '@/lib/store/teacher-roster-store'
+import { teachers as mockTeachersForNames } from '@/lib/mock/teachers'
 import { subjects } from '@/lib/mock/school'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -59,6 +60,21 @@ const SUBJECT_TEACHERS: Record<string, string[]> = {
   'Music': ['T-050'],
 }
 
+/** Server Teacher.subjects stores short codes — canonical subject names. */
+const SUBJECT_CODE_TO_NAME: Record<string, string> = {
+  MATH: 'Mathematics', MATHEMATICS: 'Mathematics',
+  ENG: 'English', ENGLISH: 'English',
+  SCI: 'Science', SCIENCE: 'Science',
+  PHY: 'Physics', PHYSICS: 'Physics',
+  CHEM: 'Chemistry', CHEMISTRY: 'Chemistry',
+  BIO: 'Biology', BIOLOGY: 'Biology',
+  CS: 'Computer Science', CSC: 'Computer Science', 'COMPUTER SCIENCE': 'Computer Science',
+  HIN: 'Hindi', HINDI: 'Hindi',
+  SOC: 'Social Studies', SST: 'Social Studies', 'SOCIAL STUDIES': 'Social Studies',
+  PE: 'Physical Education', 'PHYSICAL EDUCATION': 'Physical Education',
+  EVS: 'EVS',
+}
+
 export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSlots, classes = [] }: AutoTimetableDialogProps) {
   const [scope, setScope] = useState<string>('all')
   const [schoolStart, setSchoolStart] = useState('08:30 AM')
@@ -68,12 +84,35 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
   const [breakMode, setBreakMode] = useState<'none' | 'short' | 'lunch' | 'both'>('both')
   const [generating, setGenerating] = useState(false)
 
-  const activeTeachers = teachers.filter((t) => !t.archived && t.status === 'Active')
+  // Real faculty roster (server-backed; mock fallback until it resolves).
+  const roster = useTeacherRosterStore((s) => s.teachers)
+  const activeTeachers = roster // every roster entry is assignable by construction
   const classList = classes.length > 0 ? classes : CLASSES
   const targetClasses = scope === 'all' ? classList : [scope]
 
   const handleGenerate = () => {
     setGenerating(true)
+
+    // ── Subject → assignable teachers (ROSTER-driven, not mock-id-driven) ──
+    // 1. The classic mapping's mock ids resolve to NAMES; anyone on the
+    //    roster with that name teaches the subject.
+    // 2. Server teachers carry subject codes ("MATH", "PHY", "ENG") —
+    //    canonicalised and merged in.
+    const mockNameById = new Map(mockTeachersForNames.map((t) => [t.id, t.name]))
+    const subjectToTeachers = new Map<string, typeof roster>()
+    for (const [subject, ids] of Object.entries(SUBJECT_TEACHERS)) {
+      const names = ids.map((id) => mockNameById.get(id)).filter((n): n is string => !!n)
+      const matched = roster.filter((t) => names.includes(t.name))
+      if (matched.length > 0) subjectToTeachers.set(subject, matched)
+    }
+    for (const t of roster) {
+      for (const raw of t.subjects) {
+        const canonical = SUBJECT_CODE_TO_NAME[raw.toUpperCase()] ?? raw
+        const arr = subjectToTeachers.get(canonical) ?? []
+        if (!arr.some((x) => x.id === t.id)) arr.push(t)
+        subjectToTeachers.set(canonical, arr)
+      }
+    }
 
     // Brief section 5 + 27: Calculate period duration from school start/end.
     // Brief 1.5 + 1.6: respect break durations from the canonical time engine.
@@ -170,17 +209,20 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
             // Skip if same as last subject (Brief section 17)
             if (subject === lastSubject) continue
 
-            // Get available teachers for this subject
-            const subjectTeacherIds = SUBJECT_TEACHERS[subject] || []
-            const availableTeachers = subjectTeacherIds
-              .map((id) => teachers.find((t) => t.id === id))
-              .filter((t): t is NonNullable<typeof t> => !!t && !t.archived && t.status === 'Active')
-              .filter((t) => {
-                // Brief section 15: NEVER assign same teacher to two classes at same day+period
-                const key = getTeacherKey(t.id, day, period)
-                if (!teacherOccupancy.has(t.id)) teacherOccupancy.set(t.id, new Set())
-                return !teacherOccupancy.get(t.id)!.has(`${day}-${period}`)
-              })
+            // Get available teachers for this subject — the real roster's
+            // subject map (server teachers carry subject codes like "MATH"),
+            // name-matched against the classic subject→teacher mapping when
+            // those people are on the roster. Subjects with no dedicated
+            // teacher fall back to the general pool (a small school shares
+            // faculty) rather than leaving the period empty.
+            const subjectTeachers = subjectToTeachers.get(subject) ?? []
+            const pool = subjectTeachers.length > 0 ? subjectTeachers : activeTeachers
+            const availableTeachers = pool.filter((t) => {
+              // Brief section 15: NEVER assign same teacher to two classes at same day+period
+              const key = getTeacherKey(t.id, day, period)
+              if (!teacherOccupancy.has(t.id)) teacherOccupancy.set(t.id, new Set())
+              return !teacherOccupancy.get(t.id)!.has(`${day}-${period}`)
+            })
 
             if (availableTeachers.length === 0) continue
 

@@ -15,7 +15,7 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select'
-import { teachers } from '@/lib/mock/teachers'
+import { useTeacherRosterStore } from '@/lib/store/teacher-roster-store'
 import { DAYS, type DayType } from './data'
 
 interface FiltersBarProps {
@@ -45,6 +45,8 @@ export function FiltersBar({
   classes = [],
   rooms = [],
 }: FiltersBarProps) {
+  // Real faculty roster (server-backed; mock fallback until it resolves)
+  const teachers = useTeacherRosterStore((s) => s.teachers)
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       {/* Primary filters: Class + Faculty + Room (all explicit) */}

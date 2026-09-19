@@ -20,7 +20,7 @@
  */
 import type { TimetableSlot } from './data'
 import type { TimetableRow } from './schedule-grid'
-import { getTeacherById } from '@/lib/mock/teachers'
+import { teacherNameById } from '@/lib/store/teacher-roster-store'
 import { school } from '@/lib/mock/school'
 import { DAYS } from './data'
 
@@ -156,7 +156,7 @@ interface BuildGridOpts {
 function buildGridHTML(opts: BuildGridOpts): string {
   const { daySlots, rows, dayLabel, title, contextLabel, columns, orientation } = opts
   const resolveTeacherName = (slot: TimetableSlot) =>
-    slot.teacherName || getTeacherById(slot.teacherId)?.name || '—'
+    slot.teacherName || teacherNameById(slot.teacherId) || '—'
 
   // Cell width: tuned so master grid has comfortable columns without cropping.
   const isMaster = contextLabel === 'all'
@@ -475,7 +475,7 @@ function estimateLongestCellText(
   let longest = 0
   for (const slot of daySlots) {
     if (!cols.includes(slot.className)) continue
-    const teacherName = slot.teacherName || getTeacherById(slot.teacherId)?.name || ''
+    const teacherName = slot.teacherName || teacherNameById(slot.teacherId) || ''
     const text = `${slot.subject} ${teacherName} ${slot.room}`
     if (text.length > longest) longest = text.length
   }

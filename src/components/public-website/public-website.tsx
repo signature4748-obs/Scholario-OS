@@ -23,6 +23,7 @@ import {
   X,
   Lock,
   Moon,
+  Rss,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '@/lib/store/auth-store'
@@ -696,14 +697,27 @@ function NoticeBoard({
   return (
     <section id="notices" className="max-w-7xl mx-auto px-6 py-24">
       <FadeIn className="text-center mb-14">
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/5 px-3.5 py-1.5 mb-5">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-          </span>
-          <span className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-            Live notice board
-          </span>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/5 px-3.5 py-1.5 mb-5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+              Live notice board
+            </span>
+          </div>
+          <a
+            href="/api/public/notices/rss"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Subscribe to school notices via RSS"
+            title="Subscribe in your favourite reader — RSS feed of this notice board"
+            className="group mb-5 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-muted-foreground shadow-premium transition-all hover:-translate-y-0.5 hover:border-amber-500/40 hover:text-amber-600 hover:shadow-premium-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:text-amber-400"
+          >
+            <Rss className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden />
+            RSS feed
+          </a>
         </div>
         <h2 className="font-display text-4xl md:text-5xl font-bold text-foreground mb-4">
           Latest from the school

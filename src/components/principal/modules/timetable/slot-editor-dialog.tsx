@@ -27,7 +27,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { teachers } from '@/lib/mock/teachers'
+import { useTeacherRosterStore } from '@/lib/store/teacher-roster-store'
 import { subjects } from '@/lib/mock/school'
 import { SUBJECTS_BY_LEVEL } from '@/lib/store/students-store/constants'
 import { type DayType, type TimetableConflictInfo } from './data'
@@ -87,6 +87,11 @@ export function SlotEditorDialog({
   conflictInfo,
   onSave,
 }: SlotEditorDialogProps) {
+  // Real faculty roster (server-backed; mock fallback until it resolves —
+  // the module hydrates slot ids only after the roster settles, so the
+  // current value always resolves).
+  const roster = useTeacherRosterStore((s) => s.teachers)
+  const rosterSource = useTeacherRosterStore((s) => s.source)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm p-0 gap-0">
@@ -130,21 +135,33 @@ export function SlotEditorDialog({
             />
           </Field>
 
-          {/* Teacher — searchable select with avatar */}
-          <Field label="Teacher">
+          {/* Teacher — searchable select with avatar (real school roster) */}
+          <Field
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                Teacher
+                {rosterSource === 'server' && (
+                  <span
+                    className="rounded-full border border-teal-500/30 bg-teal-500/[0.08] px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400"
+                    title="From the school's teacher records"
+                  >
+                    live
+                  </span>
+                )}
+              </span>
+            }
+          >
             <SearchableField
               pickerId="slot-teacher"
               value={form.teacherId}
               onChange={(v) => setForm((prev) => ({ ...prev, teacherId: v }))}
               placeholder="Select teacher"
-              options={teachers
-                .filter((t) => !t.archived && t.status === 'Active')
-                .map((t) => ({
-                  id: t.id,
-                  label: t.name,
-                  avatar: t.avatar,
-                  meta: `${t.employeeId} · ${t.department}`,
-                }))}
+              options={roster.map((t) => ({
+                id: t.id,
+                label: t.name,
+                avatar: t.avatar,
+                meta: `${t.employeeId} · ${t.department}`,
+              }))}
             />
           </Field>
 
@@ -176,7 +193,7 @@ export function SlotEditorDialog({
 /* ------------------------------------------------------------------ */
 /* Field — label wrapper                                              */
 /* ------------------------------------------------------------------ */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
       <label className="text-[10px] font-semibold text-foreground">{label}</label>

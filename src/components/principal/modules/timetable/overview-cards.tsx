@@ -9,10 +9,12 @@
  */
 import { Clock, Building, Users, AlertTriangle } from 'lucide-react'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
-import { teachers } from '@/lib/mock/teachers'
+import { useTeacherRosterStore } from '@/lib/store/teacher-roster-store'
 import { type TimetableSlot } from './data'
 
 export function OverviewCards({ slots, conflictCount }: { slots: TimetableSlot[]; conflictCount: number }) {
+  // Real faculty roster (server-backed; mock fallback until it resolves)
+  const teachers = useTeacherRosterStore((s) => s.teachers)
   const roomsUsed = new Set(slots.map((s) => s.room)).size
   const facultyAssigned = new Set(slots.map((s) => s.teacherId)).size
   // Classes present in the LIVE schedule (server-hydrated) — never the
@@ -40,7 +42,7 @@ export function OverviewCards({ slots, conflictCount }: { slots: TimetableSlot[]
       <SummaryCard
         label="Faculty Assigned"
         value={facultyAssigned}
-        sub={`of ${teachers.length} active`}
+        sub={`of ${teachers.length} on roster`}
         tone="emerald"
         icon={<Users className="h-4 w-4" />}
         delay={0.08}

@@ -31,7 +31,7 @@
  *     whole day.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import {
   AlertTriangle,
@@ -39,6 +39,7 @@ import {
   CalendarDays,
   Clock,
   MapPin,
+  Radio,
   RotateCw,
   School,
   Table2,
@@ -55,6 +56,7 @@ import {
   type HubStat,
 } from './shared/hub-stat-cards'
 import { signOut } from '@/lib/signout'
+import { useLiveFeedStore } from '@/lib/store/live-feed-store'
 import { ExportIcsButton } from '@/components/shared/export-ics-button'
 import { nextOccurrenceISO, type IcsEventInput } from '@/lib/ics/builder'
 
@@ -310,11 +312,18 @@ export function MyTimetableModule() {
     return () => window.clearInterval(id)
   }, [])
 
+  // Broadcast version this view last loaded at (null until the first load
+  // completes) — only publishes landing AFTER that trigger a live refresh.
+  const loadedVersionRef = useRef<number | null>(null)
+
   const load = useCallback(async () => {
     setError(null)
     setLoading(true)
     try {
       setData(await fetchTimetable())
+      // Baseline the broadcast version AT LOAD TIME — only publishes that
+      // land AFTER this view loaded trigger a live refresh.
+      loadedVersionRef.current = useLiveFeedStore.getState().timetableVersion
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -325,6 +334,34 @@ export function MyTimetableModule() {
   useEffect(() => {
     void load()
   }, [load])
+
+  /* ── LIVE timetable broadcasts (event-stream :3003) ──
+   * The AppShell's socket pushes TIMETABLE_PUBLISHED frames into the
+   * live-feed store (each bumps timetableVersion). When one lands after
+   * this view loaded, quietly reload — the skeleton only renders before
+   * the FIRST load, so an open tab never flashes; the emerald chip in the
+   * toolbar confirms the update. */
+  const timetableVersion = useLiveFeedStore((s) => s.timetableVersion)
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (loadedVersionRef.current === null) return // initial load not done yet
+    if (timetableVersion === loadedVersionRef.current) return
+    loadedVersionRef.current = timetableVersion
+    let alive = true
+    fetchTimetable()
+      .then((data) => {
+        if (!alive) return
+        setData(data)
+        setError(null)
+        setLiveUpdatedAt(Date.now())
+      })
+      .catch(() => {
+        /* keep showing the loaded schedule — the retry affordance stays */
+      })
+    return () => {
+      alive = false
+    }
+  }, [timetableVersion])
 
   // ── ALL derivations before any early return (hooks discipline) ────
   const cells = useMemo(() => data?.cells ?? [], [data])
@@ -506,14 +543,27 @@ export function MyTimetableModule() {
       <ModuleToolbar
         context={`Your weekly teaching schedule${session ? ` · Academic Session ${session}` : ''}`}
         action={
-          <ExportIcsButton
-            events={icsEvents}
-            calendarName="My Teaching Timetable"
-            calendarDescription={`Weekly teaching schedule · Academic Session ${session ?? ''}`.trim()}
-            filename="my-teaching-timetable"
-            variant="toolbar"
-            label="Export .ics"
-          />
+          <div className="flex items-center gap-2">
+            {liveUpdatedAt && (
+              <span
+                role="status"
+                aria-live="polite"
+                title="The principal published a new timetable — this view refreshed automatically"
+                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/[0.07] px-2.5 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400"
+              >
+                <Radio className="h-3 w-3 animate-pulse text-emerald-500" aria-hidden />
+                Updated · live
+              </span>
+            )}
+            <ExportIcsButton
+              events={icsEvents}
+              calendarName="My Teaching Timetable"
+              calendarDescription={`Weekly teaching schedule · Academic Session ${session ?? ''}`.trim()}
+              filename="my-teaching-timetable"
+              variant="toolbar"
+              label="Export .ics"
+            />
+          </div>
         }
       />
 

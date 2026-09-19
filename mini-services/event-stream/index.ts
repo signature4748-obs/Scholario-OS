@@ -65,7 +65,7 @@ const msToIso = (n: number | null | undefined) =>
   typeof n === 'number' && Number.isFinite(n) ? new Date(n).toISOString() : new Date().toISOString()
 
 interface StreamEvent {
-  kind: 'payment' | 'announcement' | 'admission' | 'message'
+  kind: 'payment' | 'announcement' | 'admission' | 'message' | 'timetable'
   schoolId: string
   title: string
   detail: string
@@ -163,16 +163,47 @@ async function poll() {
       console.log(`[event-stream] message → ${m.subject} (to ${m.recipientId ?? 'unknown'})`)
     }
 
-    // 4) Admissions: no Admission table exists (admissions module is client-mock)
-    // — payments + announcements + messages cover the live stream for now.
+    // 4) Timetable publications — TIMETABLE_PUBLISHED rows in ActivityLog.
+    //    These are the school-wide "master schedule changed" moments: open
+    //    student/teacher tabs live-refresh their timetable views on this
+    //    frame (the Principal publishes → the whole school sees it, live).
+    const publishes = sqlite
+      .query(
+        `SELECT a.id, a.detail, a.schoolId, a.createdAt AS ts, u.name AS actor
+         FROM ActivityLog a
+         LEFT JOIN User u ON u.id = a.userId
+         WHERE a.action = 'TIMETABLE_PUBLISHED' AND a.createdAt > ?
+         ORDER BY a.createdAt ASC LIMIT 5`
+      )
+      .all(lastMs) as Array<{ id: string; detail: string | null; schoolId: string | null; ts: number; actor: string | null }>
+
+    for (const a of publishes) {
+      if (!markAndCheck(`activity:${a.id}`)) continue
+      if (!a.schoolId) continue // platform-level rows carry no school scope
+      const evt: StreamEvent = {
+        kind: 'timetable',
+        schoolId: a.schoolId,
+        title: 'Timetable updated',
+        detail: a.actor
+          ? `${a.detail ?? 'New schedule published'} · by ${a.actor}`
+          : (a.detail ?? 'New schedule published'),
+        at: msToIso(a.ts),
+      }
+      io.emit('school-event', evt)
+      console.log(`[event-stream] timetable → ${a.detail} (${a.actor ?? 'unknown'})`)
+    }
+
+    // 5) Admissions: no Admission table exists (admissions module is client-mock)
+    // — payments + announcements + messages + timetable covers the live stream.
 
     // advance the watermark so the next poll only sees strictly newer rows
-    if (payments.length || notices.length || messages.length) {
+    if (payments.length || notices.length || messages.length || publishes.length) {
       const newest = sqlite.query(
         `SELECT MAX(x) AS m FROM (
            SELECT MAX(p.createdAt) AS x FROM Payment p WHERE p.status='SUCCESS'
            UNION ALL SELECT MAX(n.createdAt) FROM Notification n
            UNION ALL SELECT MAX(m.createdAt) FROM Message m
+           UNION ALL SELECT MAX(a.createdAt) FROM ActivityLog a WHERE a.action='TIMETABLE_PUBLISHED'
          )`
       ).get() as { m: number | null }
       if (typeof newest?.m === 'number') lastMs = newest.m

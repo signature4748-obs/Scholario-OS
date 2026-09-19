@@ -22,12 +22,13 @@
  * remains ONLY for the "recently updated" publication chip.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { GraduationCap, Building2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { GraduationCap, Building2, AlertTriangle, RefreshCw, Radio } from 'lucide-react'
 import { PageTransition, GlassCard } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
 import { type DayType } from '@/lib/timetable/config'
 import { useTimetableStore } from '@/lib/store/timetable-store'
+import { useLiveFeedStore } from '@/lib/store/live-feed-store'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { ACTIVE_SESSION_ID, normalizeSessionId, formatSessionLabel } from '@/lib/academic-session'
 import { nextOccurrenceISO, type IcsEventInput } from '@/lib/ics/builder'
@@ -84,6 +85,12 @@ export function TimetableModule() {
   const [payload, setPayload] = useState<TimetablePayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  // Timestamp of the last LIVE refresh (a publish broadcast arrived and the
+  // schedule was quietly re-fetched) — powers the emerald "live" chip.
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState<number | null>(null)
+  // Broadcast version this view last loaded at (null until the first load
+  // completes) — only publishes landing AFTER that trigger a live refresh.
+  const loadedVersionRef = useRef<number | null>(null)
 
   /* ── server truth: enrollment-scoped slots + the master sheet ── */
   useEffect(() => {
@@ -93,6 +100,9 @@ export function TimetableModule() {
         if (!alive) return
         setPayload(data)
         setError(null)
+        // Baseline the broadcast version AT LOAD TIME — only publishes that
+        // land AFTER this view loaded trigger a live refresh.
+        loadedVersionRef.current = useLiveFeedStore.getState().timetableVersion
       })
       .catch((e: unknown) => {
         if (!alive) return
@@ -104,6 +114,33 @@ export function TimetableModule() {
   }, [reloadKey])
 
   const retry = useCallback(() => setReloadKey((k) => k + 1), [])
+
+  /* ── LIVE timetable broadcasts (event-stream :3003) ──
+   * The AppShell's socket pushes TIMETABLE_PUBLISHED frames into the
+   * live-feed store, each bumping timetableVersion. When that happens
+   * after our data loaded, quietly re-fetch — the new schedule swaps in
+   * place (the skeleton only renders before the FIRST load, so an open
+   * tab never flashes) and the emerald chip confirms the update. */
+  const timetableVersion = useLiveFeedStore((s) => s.timetableVersion)
+  useEffect(() => {
+    if (loadedVersionRef.current === null) return // initial load not done yet
+    if (timetableVersion === loadedVersionRef.current) return
+    loadedVersionRef.current = timetableVersion
+    let alive = true
+    fetchTimetable()
+      .then((data) => {
+        if (!alive) return
+        setPayload(data)
+        setError(null)
+        setLiveUpdatedAt(Date.now())
+      })
+      .catch(() => {
+        /* keep showing the loaded schedule — the next retry picks it up */
+      })
+    return () => {
+      alive = false
+    }
+  }, [timetableVersion])
 
   // ── mapped onto the canonical period ladder (breaks re-appear) ──
   const mySlots = useMemo(() => serverRowsToSlots(payload?.mySlots ?? []), [payload])
@@ -216,6 +253,17 @@ export function TimetableModule() {
           </div>
 
           <div className="flex items-center gap-3">
+            {liveUpdatedAt && (
+              <span
+                role="status"
+                aria-live="polite"
+                title="The principal published a new timetable — this view refreshed automatically"
+                className="hidden items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/[0.07] px-2.5 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 sm:inline-flex"
+              >
+                <Radio className="h-3 w-3 animate-pulse text-emerald-500" aria-hidden />
+                Updated · live
+              </span>
+            )}
             <p className="hidden text-xs text-muted-foreground/80 sm:block">
               {view === 'my-class' ? 'Your personal class schedule' : 'Your school’s full master timetable'}
             </p>

@@ -40,7 +40,14 @@ export const metadata: Metadata = {
   authors: [{ name: "SCHOLARIO" }],
   applicationName: "SCHOLARIO-OS",
   category: "education",
-  alternates: { canonical: "/" },
+  alternates: {
+    canonical: "/",
+    // RSS autodiscovery — readers find the public notice board feed from
+    // the homepage <head> (type attr on the link element).
+    types: {
+      "application/rss+xml": "/api/public/notices/rss",
+    },
+  },
   openGraph: {
     type: "website",
     siteName: "SCHOLARIO-OS",

@@ -29,7 +29,7 @@ import {
   type TimetableSlot,
   type TimetableChange,
 } from './timetable-store'
-import { teachers } from '@/lib/mock/teachers'
+import { useTeacherRosterStore, type TeacherPick } from '@/lib/store/teacher-roster-store'
 import { buildInitialRows, CLASSES, ROOMS, type TimetableSlot as Slot } from './data'
 import { serverRowsToSlots, type ServerSlot } from '@/lib/timetable/server-mapping'
 import type { TimetableRow } from './schedule-grid'
@@ -67,44 +67,59 @@ export function TimetableModule() {
 
   // ── SERVER HYDRATION (one universe for every role) ──
   // On mount, replace the store seed with the server's Timetable rows —
-  // the exact truth students and teachers read. The principal then edits
-  // and publishes against the real school schedule; publishes sync back
-  // to the server (handlePublish), closing the loop end-to-end.
+  // the exact truth students and teachers read — AND resolve the REAL
+  // teacher roster (GET /api/teachers) so slot ids, pickers, filters and
+  // conflict labels all operate on teachers who exist at the school. The
+  // mock roster remains only as the offline fallback. The principal then
+  // edits and publishes against the real school schedule; publishes sync
+  // back to the server (handlePublish), closing the loop end-to-end.
   const [serverSynced, setServerSynced] = useState<null | boolean>(null) // null = loading
+  const [rosterSource, setRosterSource] = useState<'mock' | 'server'>('mock')
+  const ensureRoster = useTeacherRosterStore((s) => s.ensure)
+  const roster = useTeacherRosterStore((s) => s.teachers)
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const res = await fetch('/api/timetable', { cache: 'no-store', credentials: 'same-origin' })
-        const json = (await res.json().catch(() => null)) as { ok?: unknown; data?: ServerSlot[] } | null
-        if (!res.ok || !json || json.ok !== true) throw new Error('sync failed')
-        const rows = Array.isArray(json.data) ? json.data : []
-        if (!alive) return
-        if (rows.length > 0) {
-          // Unknown-to-roster teachers get STABLE synthetic ids (one per
-          // distinct name) — never '' — so conflict detection and faculty
-          // filtering see them as the distinct people they are.
-          const rosterByName = new Map(teachers.map((t) => [t.name, t.id]))
-          const syntheticByTeacher = new Map<string, string>()
-          const teacherIdFor = (name: string) => {
-            const roster = rosterByName.get(name)
-            if (roster) return roster
-            let syn = syntheticByTeacher.get(name)
-            if (!syn) {
-              syn = `srv-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
-              syntheticByTeacher.set(name, syn)
+        // Parallel: timetable rows + teacher roster — hydration uses the
+        // post-sync roster so teacher ids are consistent from the start.
+        await Promise.all([
+          fetch('/api/timetable', { cache: 'no-store', credentials: 'same-origin' }).then(async (res) => {
+            const json = (await res.json().catch(() => null)) as { ok?: unknown; data?: ServerSlot[] } | null
+            if (!res.ok || !json || json.ok !== true) throw new Error('sync failed')
+            return Array.isArray(json.data) ? json.data : []
+          }),
+          ensureRoster(),
+        ]).then(([rows]) => {
+          const rosterNow = useTeacherRosterStore.getState().teachers
+          if (!alive) return
+          setRosterSource(useTeacherRosterStore.getState().source)
+          if (rows.length > 0) {
+            // Teachers not on the roster get STABLE synthetic ids (one per
+            // distinct name) — never '' — so conflict detection and faculty
+            // filtering see them as the distinct people they are.
+            const rosterByName = new Map(rosterNow.map((t) => [t.name, t.id]))
+            const syntheticByTeacher = new Map<string, string>()
+            const teacherIdFor = (name: string) => {
+              const known = rosterByName.get(name)
+              if (known) return known
+              let syn = syntheticByTeacher.get(name)
+              if (!syn) {
+                syn = `srv-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+                syntheticByTeacher.set(name, syn)
+              }
+              return syn
             }
-            return syn
+            const mapped = serverRowsToSlots(rows).map((s) => ({
+              ...s,
+              teacherId: teacherIdFor(s.teacherName),
+            }))
+            hydrateFromServer(mapped)
+            setServerSynced(true)
+          } else {
+            setServerSynced(false) // school has no server rows yet — seed remains
           }
-          const mapped = serverRowsToSlots(rows).map((s) => ({
-            ...s,
-            teacherId: teacherIdFor(s.teacherName),
-          }))
-          hydrateFromServer(mapped)
-          setServerSynced(true)
-        } else {
-          setServerSynced(false) // school has no server rows yet — seed remains
-        }
+        })
       } catch {
         if (alive) setServerSynced(false) // offline/degraded — seed remains
       }
@@ -112,7 +127,7 @@ export function TimetableModule() {
     return () => {
       alive = false
     }
-  }, [hydrateFromServer])
+  }, [hydrateFromServer, ensureRoster])
 
   // ── Draft state (local — only mutated during edit mode) ──
   const [draftSlots, setDraftSlots] = useState<Slot[]>(slots)
@@ -288,10 +303,10 @@ export function TimetableModule() {
         })
       } else {
         // Check for field changes
-        const teacherObj = teachers.find((t) => t.id === draftSlot.teacherId)
+        const teacherObj = roster.find((t: TeacherPick) => t.id === draftSlot.teacherId)
         const newTeacherName = teacherObj?.name || draftSlot.teacherName
         if (original.teacherId !== draftSlot.teacherId) {
-          const oldTeacher = teachers.find((t) => t.id === original.teacherId)
+          const oldTeacher = roster.find((t: TeacherPick) => t.id === original.teacherId)
           changes.push({
             slotId: draftSlot.id, type: 'teacher_changed', summary: 'Teacher changed',
             context: `${draftSlot.className} · Period ${draftSlot.period}`,
@@ -399,7 +414,7 @@ export function TimetableModule() {
   const handleSaveSlot = () => {
     if (conflictInfo.hasConflict) return
 
-    const teacherObj = teachers.find((t) => t.id === minimalForm.teacherId)
+    const teacherObj = roster.find((t) => t.id === minimalForm.teacherId)
     const teacherName = teacherObj?.name || 'Assigned Faculty'
     // Brief 15: Canonical time from draftRows (not stale PERIODS).
     const row = draftRows.find((r) => r.number === editorContext.period)
@@ -522,6 +537,16 @@ export function TimetableModule() {
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
               </span>
               Synced with school records
+            </span>
+          )}
+          {/* Faculty roster lineage — real Teacher rows vs demo fallback */}
+          {rosterSource === 'server' && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/25 bg-teal-500/[0.07] px-2 py-0.5 text-[10px] font-semibold text-teal-600 dark:text-teal-400"
+              title="The teacher picker, faculty filter and auto-scheduler are using the school's real teacher records"
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-teal-500" aria-hidden />
+              Faculty roster · {roster.length} live
             </span>
           )}
           {serverSynced === false && (

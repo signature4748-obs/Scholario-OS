@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bell, ShieldAlert, IndianRupee, UserPlus, Clock, BookOpen, Coins,
-  Calendar, GraduationCap, Mail, Megaphone, Inbox, CheckCheck,
+  Calendar, GraduationCap, Mail, Megaphone, Inbox, CheckCheck, CalendarCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -253,6 +253,9 @@ export function NotificationsDropdown({
               if (typeUpper === 'MESSAGE') {
                 iconNode = <Mail className="h-3.5 w-3.5" />
                 iconBg = 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
+              } else if (typeUpper === 'TIMETABLE') {
+                iconNode = <CalendarCheck className="h-3.5 w-3.5" />
+                iconBg = 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
               } else if (typeUpper === 'ANNOUNCEMENT' && !titleStr.includes('payment')) {
                 iconNode = <Megaphone className="h-3.5 w-3.5" />
                 iconBg = 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300'
