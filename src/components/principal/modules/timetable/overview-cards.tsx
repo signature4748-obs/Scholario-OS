@@ -10,18 +10,21 @@
 import { Clock, Building, Users, AlertTriangle } from 'lucide-react'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { teachers } from '@/lib/mock/teachers'
-import { CLASSES, type TimetableSlot } from './data'
+import { type TimetableSlot } from './data'
 
 export function OverviewCards({ slots, conflictCount }: { slots: TimetableSlot[]; conflictCount: number }) {
   const roomsUsed = new Set(slots.map((s) => s.room)).size
   const facultyAssigned = new Set(slots.map((s) => s.teacherId)).size
+  // Classes present in the LIVE schedule (server-hydrated) — never the
+  // static seed list, so the count matches what every role actually sees.
+  const classesScheduled = new Set(slots.map((s) => s.className)).size
 
   return (
     <SummaryCardGrid columns={4}>
       <SummaryCard
         label="Active Slots"
         value={slots.length}
-        sub={`Across ${CLASSES.length} classes`}
+        sub={`Across ${classesScheduled} classes`}
         tone="violet"
         icon={<Clock className="h-4 w-4" />}
         delay={0}

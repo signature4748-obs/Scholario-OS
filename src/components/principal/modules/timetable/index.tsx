@@ -30,7 +30,8 @@ import {
   type TimetableChange,
 } from './timetable-store'
 import { teachers } from '@/lib/mock/teachers'
-import { buildInitialRows, type TimetableSlot as Slot } from './data'
+import { buildInitialRows, CLASSES, ROOMS, type TimetableSlot as Slot } from './data'
+import { serverRowsToSlots, type ServerSlot } from '@/lib/timetable/server-mapping'
 import type { TimetableRow } from './schedule-grid'
 import {
   recomputeRowTimes,
@@ -49,7 +50,6 @@ import { ConfirmDialog } from '../shared/confirm-dialog'
 import { exportTimetablePDF } from './timetable-pdf'
 import { ExportPreview } from './export-preview'
 import { Trash2, AlertTriangle } from 'lucide-react'
-import { CLASSES } from './data'
 
 export function TimetableModule() {
   // ── Store subscriptions ──
@@ -63,6 +63,56 @@ export function TimetableModule() {
   const removePendingChange = useTimetableStore((s) => s.removePendingChange)
   const cancelAllPendingChanges = useTimetableStore((s) => s.cancelAllPendingChanges)
   const publish = useTimetableStore((s) => s.publish)
+  const hydrateFromServer = useTimetableStore((s) => s.hydrateFromServer)
+
+  // ── SERVER HYDRATION (one universe for every role) ──
+  // On mount, replace the store seed with the server's Timetable rows —
+  // the exact truth students and teachers read. The principal then edits
+  // and publishes against the real school schedule; publishes sync back
+  // to the server (handlePublish), closing the loop end-to-end.
+  const [serverSynced, setServerSynced] = useState<null | boolean>(null) // null = loading
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/timetable', { cache: 'no-store', credentials: 'same-origin' })
+        const json = (await res.json().catch(() => null)) as { ok?: unknown; data?: ServerSlot[] } | null
+        if (!res.ok || !json || json.ok !== true) throw new Error('sync failed')
+        const rows = Array.isArray(json.data) ? json.data : []
+        if (!alive) return
+        if (rows.length > 0) {
+          // Unknown-to-roster teachers get STABLE synthetic ids (one per
+          // distinct name) — never '' — so conflict detection and faculty
+          // filtering see them as the distinct people they are.
+          const rosterByName = new Map(teachers.map((t) => [t.name, t.id]))
+          const syntheticByTeacher = new Map<string, string>()
+          const teacherIdFor = (name: string) => {
+            const roster = rosterByName.get(name)
+            if (roster) return roster
+            let syn = syntheticByTeacher.get(name)
+            if (!syn) {
+              syn = `srv-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+              syntheticByTeacher.set(name, syn)
+            }
+            return syn
+          }
+          const mapped = serverRowsToSlots(rows).map((s) => ({
+            ...s,
+            teacherId: teacherIdFor(s.teacherName),
+          }))
+          hydrateFromServer(mapped)
+          setServerSynced(true)
+        } else {
+          setServerSynced(false) // school has no server rows yet — seed remains
+        }
+      } catch {
+        if (alive) setServerSynced(false) // offline/degraded — seed remains
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [hydrateFromServer])
 
   // ── Draft state (local — only mutated during edit mode) ──
   const [draftSlots, setDraftSlots] = useState<Slot[]>(slots)
@@ -71,7 +121,9 @@ export function TimetableModule() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   // ── UI state ──
-  const [selectedClass, setSelectedClass] = useState<string>('Class 2-A')
+  // Class options are derived from the live slots (server-hydrated) — never
+  // the static seed list — so 'all' is the honest default after hydration.
+  const [selectedClass, setSelectedClass] = useState<string>('all')
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
   const [selectedRoom, setSelectedRoom] = useState<string>('all')
   const [selectedDay, setSelectedDay] = useState<DayType>('Monday')
@@ -128,6 +180,19 @@ export function TimetableModule() {
 
   const globalConflictCount = useMemo(() => countAllConflicts(displaySlots), [displaySlots])
   const conflictedSlotIds = useMemo(() => getConflictedSlotIds(displaySlots), [displaySlots])
+
+  // ── Dynamic class options — from the LIVE (server-hydrated) slots, never
+  //    the static seed list. Falls back to CLASSES only when the school has
+  //    no server rows (offline / empty school), so the editor still works.
+  const classOptions = useMemo(() => {
+    const present = [...new Set(slots.map((s) => s.className))].filter(Boolean)
+    return present.length > 0 ? present.sort() : CLASSES
+  }, [slots])
+
+  const roomOptions = useMemo(() => {
+    const present = [...new Set(slots.map((s) => s.room))].filter(Boolean)
+    return present.length > 0 ? present.sort() : ROOMS
+  }, [slots])
   const hasPendingPublish = pendingChanges.length > 0
 
   // ── Handlers ──
@@ -374,17 +439,53 @@ export function TimetableModule() {
     setRemoveTarget(null)
   }
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (globalConflictCount > 0) {
       toast.error('Resolve conflicts before publishing')
       return
     }
     const version = publish('Dr. Ananya Iyer')
-    if (version) {
-      toast.success('Timetable published', {
-        description: `${version.changeCount} change${version.changeCount === 1 ? '' : 's'} shared with affected users`,
+    if (!version) return
+    setPublishOpen(false)
+
+    // SERVER SYNC — the published snapshot becomes the school's Timetable
+    // rows, which students and teachers read on their next module load.
+    // Local publish already succeeded; the sync failure path keeps the
+    // change local and tells the principal honestly.
+    try {
+      const res = await fetch('/api/timetable/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          slots: useTimetableStore.getState().publishedSlots.map((s) => ({
+            day: s.day,
+            period: s.period,
+            time: s.time,
+            className: s.className,
+            subject: s.subject,
+            teacherName: s.teacherName,
+            room: s.room,
+          })),
+        }),
       })
-      setPublishOpen(false)
+      const json = (await res.json().catch(() => null)) as
+        | { ok?: unknown; error?: unknown; data?: { rowsWritten: number; classes: number } }
+        | null
+      if (!res.ok || !json || json.ok !== true) {
+        throw new Error(typeof json?.error === 'string' ? json.error : `HTTP ${res.status}`)
+      }
+      toast.success('Timetable published', {
+        description:
+          `${version.changeCount} change${version.changeCount === 1 ? '' : 's'} shared with affected users · ` +
+          `${json.data?.rowsWritten ?? 0} server slots across ${json.data?.classes ?? 0} classes`,
+      })
+    } catch (e) {
+      toast.warning('Published locally — server sync failed', {
+        description:
+          (e instanceof Error ? e.message : 'Sync failed') +
+          '. Students will see the previous schedule until you retry the publish.',
+      })
     }
   }
 
@@ -398,7 +499,7 @@ export function TimetableModule() {
   // dropdown). Removes unnecessary scope-selection UI.
   const handleExport = () => {
     const { html, title, subtitle, orientation } = exportTimetablePDF(
-      activeSlots, activeRows, selectedDay, 'all', CLASSES
+      activeSlots, activeRows, selectedDay, 'all', classOptions
     )
     setExportPreview({ html, title, subtitle, orientation })
   }
@@ -408,7 +509,40 @@ export function TimetableModule() {
       {/* Brief PART 1: NO duplicate page title — topbar already shows "Timetable".
           Content begins directly with the subtitle + controls. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-xs text-muted-foreground">School-wide master schedule</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <p className="text-xs text-muted-foreground">School-wide master schedule</p>
+          {/* Data lineage — honest signal of the one data universe */}
+          {serverSynced === true && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/[0.07] px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+              title="Loaded from the school's server records — the same data students and teachers see"
+            >
+              <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Synced with school records
+            </span>
+          )}
+          {serverSynced === false && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/[0.07] px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+              title="Server records were unreachable — showing the local snapshot. Publishes retry the server sync."
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+              Local snapshot (server unreachable)
+            </span>
+          )}
+          {serverSynced === null && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"
+              aria-live="polite"
+            >
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60" aria-hidden />
+              Syncing…
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-2">
           {/* Brief PART 2: Single Export action — master timetable only */}
@@ -507,6 +641,8 @@ export function TimetableModule() {
         setSelectedRoom={setSelectedRoom}
         selectedDay={selectedDay}
         setSelectedDay={setSelectedDay}
+        classes={classOptions}
+        rooms={roomOptions}
       />
 
       <ScheduleGrid
@@ -517,6 +653,7 @@ export function TimetableModule() {
         publications={publications}
         conflictedSlotIds={conflictedSlotIds}
         rows={draftRows}
+        classes={classOptions}
         onEditSlot={handleEditSlot}
         onDuplicateSlot={(slot) => {
           // Duplicate in draft
@@ -591,6 +728,7 @@ export function TimetableModule() {
         open={autoOpen}
         onOpenChange={setAutoOpen}
         existingSlots={draftSlots}
+        classes={classOptions}
         onGenerate={(generated, generatedRows) => {
           setDraftSlots(generated)
           setDraftRows(generatedRows)

@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Coffee, CalendarDays, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getTeacherById } from '@/lib/mock/teachers'
-import { CLASSES, type DayType, type TimetableSlot } from './data'
+import { type DayType, type TimetableSlot } from './data'
 import { type PublishedVersion } from './timetable-store'
 import { type TimelineRow } from './time-engine'
 import { TimeEditor } from './time-editor'
@@ -31,6 +31,8 @@ interface ScheduleGridProps {
   selectedDay: DayType; selectedClass: string; filteredSlots: TimetableSlot[]
   editMode: boolean; publications: PublishedVersion[]; conflictedSlotIds: Set<string>
   rows: TimetableRow[]
+  /** Live class options (server-hydrated) — order preserved from the parent. */
+  classes: string[]
   onEditSlot: (slot: TimetableSlot) => void
   onDuplicateSlot: (slot: TimetableSlot) => void
   onRemoveSlot: (slot: TimetableSlot) => void
@@ -41,10 +43,16 @@ interface ScheduleGridProps {
 }
 
 export function ScheduleGrid({
-  selectedDay, selectedClass, filteredSlots, editMode, publications, conflictedSlotIds, rows,
+  selectedDay, selectedClass, filteredSlots, editMode, publications, conflictedSlotIds, rows, classes,
   onEditSlot, onDuplicateSlot, onRemoveSlot, onAssignPeriod, onInsertRow, onDeleteRow, onEditRowTime,
 }: ScheduleGridProps) {
-  const visibleClasses = CLASSES.filter((c) => selectedClass === 'all' || selectedClass === c)
+  // Live classes from the hydrated schedule; the static CLASSES seed is
+  // only a fallback for a school with no server rows yet.
+  const visibleClasses = (
+    classes.length > 0
+      ? classes
+      : ['Class 2-A', 'Class 2-B', 'Class 9-A', 'Class 10-A', 'Class 12-Sci-A']
+  ).filter((c) => selectedClass === 'all' || selectedClass === c)
   const daySlots = filteredSlots.filter((s) => s.day === selectedDay)
   const resolveTeacherName = (slot: TimetableSlot) => slot.teacherName || getTeacherById(slot.teacherId)?.name || 'Assigned Faculty'
   const hasShortBreak = rows.some((r) => r.breakType === 'short')

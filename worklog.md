@@ -408,6 +408,131 @@ Stage Summary:
    multibyte chars could theoretically exceed 75 octets; current content
    (ASCII + a few · separators) stays far below; all parsers tolerate it.
 
+---
+Task ID: 7
+Agent: Z.ai Code (cron webDevReview round 4 — 2026-09-19)
+
+Task: Full-status assessment + agent-browser QA, fix discovered gaps, then
+feature + styling development (mandates: more features, more styling detail).
+
+Work Log:
+- **STATUS ASSESSMENT**: all gates green at start (tsc 0 / lint 0 / robots 200 /
+  stream 200 / 6.7G disk). QA burst targeted the top known architectural debt:
+  the Principal Timetable editor still operating on the client-store seed
+  universe ("Class 2-A"…, 54 slots, 5 classes) while students/teachers read the
+  DB (Grade 9 - A / Grade 10 - A, 78 rows) — confirmed in the browser: the
+  principal's publishes could never reach any student or teacher view.
+- **FEATURE — Timetable pipeline unified on ONE data universe (Principal ↔ DB)**:
+  - `src/lib/timetable/config.ts` — removed 'use client' (pure constants) so
+    client components AND server route handlers share the one period ladder.
+  - NEW `src/lib/timetable/server-mapping.ts` — the shared bidirectional
+    DB ⇄ TimetableSlot mapping (teaching-period numbers ↔ ladder periods via
+    start-time matching with positional fallbacks; "HH:MM" ↔ ladder-style range
+    strings). The student module's server-slots.ts became a re-export shim
+    (dedup: both directions use ONE algorithm).
+  - REWROTE `GET /api/timetable` to the flat ServerSlot shape (no prior
+    consumers) with class labels resolved server-side.
+  - NEW `POST /api/timetable/publish` (PRINCIPAL-only, roles-guarded twice):
+    shared mapping → resolve classes/subjects by name (create genuinely-new
+    ones) → replace-all within the school (publish = the new truth) →
+    ActivityLog audit entry (TIMETABLE_PUBLISHED). Validated: EMPTY_TIMETABLE
+    and FORBIDDEN error paths; live 78-row round-trip with ZERO drift (lost 0 /
+    gained 0) and no duplicate Class/Subject rows created.
+  - Store: NEW `hydrateFromServer(slots)` action (replaces slots +
+    publishedSlots, clears pending; no-op on empty).
+  - Principal `index.tsx`: mount-time hydration from /api/timetable (unknown
+    teachers get STABLE synthetic ids `srv-<name-slug>` — never '' — so
+    conflict detection sees distinct people: conflicts went 22 → 0, faculty
+    2 → 4); dynamic classOptions/roomOptions derived from live slots (was
+    static CLASSES/ROOMS — hydrated classes would have vanished from the grid
+    and filters); selectedClass default 'all'; publish now syncs to the server
+    with an honest failure path (toast.warning "Published locally — server
+    sync failed" + retry).
+  - FiltersBar / ScheduleGrid / AutoTimetableDialog / overview-cards: accept
+    live class/room options (static lists only as fallback); "Across N classes"
+    count now derived from the schedule; removed an unused CLASSES import.
+- **END-TO-END PROOF (browser, full pipeline)**: principal → Edit → removed
+  "Physics · Grade 10 - A · Monday Period 1" → Apply Changes → Publish →
+  toast "1 change shared with affected users · 77 server slots across 2
+  classes" → DB verified (77 rows; Grade 10-A Monday starts P2) → student API
+  verified (masterSlots reflect the removal) → original 78-row state restored
+  via the publish API (rows back to 78, Monday P1 present). The Principal now
+  publishes and the whole school actually sees it.
+- **NEW FEATURE — Super Admin Platform Activity Feed (real server records)**:
+  - NEW `GET /api/superadmin/activity` (SUPER_ADMIN-only): merges ActivityLog
+    (with user + school names), successful Payments (student/class/method),
+    and Sessions (compact device label via parseUserAgent — "Chrome · Linux ·
+    Desktop", "(API)" for curl) into one newest-first timeline (take 30).
+  - NEW `superadmin/modules/activity-feed.tsx` — Panel with refresh action,
+    staggered loading skeleton, honest error + retry, empty state, hairline
+    ledger rows (kind icon chip · actor · summary · school badge · relative
+    timestamp), max-h-96 scroll area. Wired into the Overview below the tenant
+    change log (mock control plane vs REAL records — now visually adjacent).
+    The feed already shows this round's TIMETABLE_PUBLISHED entries live.
+- **STYLING**: data-lineage chips on the principal timetable header — emerald
+  pulsing "Synced with school records" / amber "Local snapshot (server
+  unreachable)" / muted "Syncing…" (aria-live); publish toast now carries real
+  server counts; activity-feed ledger rhythm matches the tenant panels.
+- **QA process notes**: this round reproduced the OOM crash-loop twice — the
+  server died every ~30s WHILE the browser was attached (dmesg: next-server
+  anon-rss 3.13GB). Recovery: close browser → keepalive restarts → re-warm →
+  SHORT bursts. After source edits land mid-session, Fast Refresh remounts
+  the SPA and resets viewState — redo portal navigation after the HMR cycles
+  finish; Chrome caches the "site can't be reached" interstitial (fresh
+  `agent-browser open`, never reload). Evals can hit the pre-hydration DOM
+  right after `open` — wait 6-8s before asserting on button text.
+
+Stage Summary:
+- The timetable pipeline is ONE universe end-to-end: Principal edits/publishes
+  → DB rows → Student + Teacher views (browser-proven with a live edit that
+  propagated to the student-visible master timetable, then restored).
+- Super Admin gained a REAL activity feed (staff actions + payments + sign-ins).
+- Gates: tsc 0 errors ✓ · lint clean ✓ · robots 200 ✓ · stream 200 ✓ ·
+  zero console errors in QA windows · dev.log clean.
+
+## Current project status (end of round 4)
+
+- Dev server :3000 healthy (keepalive-guarded, chunks re-warmed after every
+  source batch), event-stream :3003 healthy, disk 6.6G free.
+- All four roles browser-verified; the timetable domain is now fully connected
+  across Principal → DB → Student/Teacher (was the largest known gap).
+- Zero tsc errors, zero lint errors, no dead code, no duplicate files.
+
+## Current goals / verification results (round 4)
+
+- ✅ Principal Timetable hydrated from the server (78 real slots, 2 real
+  classes, 0 conflicts, 4 faculty, sync chip)
+- ✅ NEW POST /api/timetable/publish (permission-guarded, replace semantics,
+  class/subject resolution, audit log; round-trip drift: zero)
+- ✅ Full publish pipeline proven in the browser + student API, then restored
+- ✅ NEW Super Admin activity feed (real ActivityLog/Payments/Sessions, styled
+  ledger, loading/error/empty states) — renders live data including this
+  round's publishes
+- ✅ Styling: lineage chips, server-count toasts, ledger rhythm, skeletons
+- ✅ Gates green: tsc 0, lint clean, robots 200, stream 200
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox memory ceiling (unchanged, structural)**: OOM crash-loops
+   reproduced twice this round while a browser was attached to a compiling
+   server. The protocol (close browser → recover → warm → short bursts)
+   works but costs time; keep bursts to login + ≤1 module.
+2. **Timetable editor teacher picker is roster-bound**: hydrated slots whose
+   teacher is not in the mock roster (Mrs. Kavita Sharma etc.) carry synthetic
+   ids; editing such a slot requires re-picking a roster teacher. A future
+   round could load teachers from the server (Teacher table) instead of mocks.
+3. **Public-website + login metadataBase** is `http://localhost:3000`
+   (sandbox-only; harmless here, set a real origin if ever deployed).
+4. Next-phase candidates: teacher picker server-backed (Teacher table);
+   principal timetable "publish" notification fan-out via the event-stream
+   service (:3003) so open student tabs live-refresh without reload; the
+   remaining store-seeded modules audit (any other module whose labels could
+   disagree with server truth); fee-defaulter outreach workflow; public-site
+   RSS for the notice board.
+5. ActivityLog coverage is thin by design (only workflows that already log);
+   consider adding activity logging to more principal workflows (fee
+   reminders, certificate issuance) to enrich the superadmin feed.
+
 ## Operational runbook (for cron agents)
 
 1. Read this worklog first. Check server: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/robots.txt`
@@ -443,3 +568,15 @@ Stage Summary:
     reloads — re-query elements after any Fast Refresh cycle.
 12. Server-side endpoint tests: POST /api/auth/login expects {"email","password"} (not "identifier");
     cookie jar via curl -c/-b, then GET the API under test and assert the {ok:true,data} envelope.
+13. OOM CRASH-LOOP (Task 7, reproduced twice): when a browser is attached while the server still
+    needs to compile (fresh server + first page/modules), the server dies every ~30s
+    (dmesg: next-server anon-rss ~3.1GB) and Chrome caches the "site can't be reached"
+    interstitial. Protocol: `agent-browser close` → wait for keepalive (robots:200, ~30s) →
+    `bash /home/z/.qa/warm-chunks.sh` → fresh `agent-browser open` (NEVER reload — the
+    interstitial is cached) → burst = login + ≤1 module → close. Prefer curl-based API tests
+    over browser clicks whenever the assertion does not need rendering.
+14. FAST-REFRESH REMOUNTS (Task 7): source edits landing while a browser is attached trigger
+    HMR that remounts the SPA — page.tsx viewState resets to the public website and refs/evals
+    go stale mid-flow. After any edit → warm first, then re-login. Also: right after
+    `agent-browser open`, the DOM may be pre-hydration (buttons render with no text) —
+    wait 6-8s before eval-based assertions.

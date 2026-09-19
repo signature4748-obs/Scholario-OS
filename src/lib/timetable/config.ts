@@ -1,5 +1,3 @@
-'use client'
-
 /**
  * timetable/config — THE canonical school timetable configuration.
  *
@@ -15,6 +13,11 @@
  * configuration without importing Principal UI code (live-sync requirement:
  * Principal publishes → every role reflects the change; never a second
  * timetable dataset).
+ *
+ * Pure constants + types — deliberately NO 'use client' directive so BOTH
+ * client components and server route handlers (the publish sync) import
+ * the one ladder/period model. Client components import shared modules
+ * fine; this keeps the ladder canonical across the wire boundary.
  */
 
 export interface TimetableSlot {

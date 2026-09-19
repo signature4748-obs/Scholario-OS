@@ -97,6 +97,15 @@ interface TimetableStoreState {
   publish: (publishedBy: string) => PublishedVersion | null
   hasPendingPublish: () => boolean
   resetToSeed: () => void
+  /**
+   * SERVER HYDRATION (Principal module mount): replace slots + published
+   * slots with the server's Timetable rows (the same truth students and
+   * teachers read). Pending edits are discarded — the server snapshot IS
+   * the last published state. Publications history is kept (display-only
+   * change chips). No-op on empty input (never wipes data on a failed
+   * fetch).
+   */
+  hydrateFromServer: (serverSlots: TimetableSlot[]) => void
 }
 
 export const useTimetableStore = create<TimetableStoreState>()(
@@ -174,6 +183,11 @@ export const useTimetableStore = create<TimetableStoreState>()(
       hasPendingPublish: () => get().pendingChanges.length > 0,
       resetToSeed: () =>
         set({ slots: INITIAL_SLOTS, publishedSlots: INITIAL_SLOTS, pendingChanges: [], publications: [], currentVersion: 1 }),
+
+      hydrateFromServer: (serverSlots) => {
+        if (serverSlots.length === 0) return
+        set({ slots: serverSlots, publishedSlots: serverSlots, pendingChanges: [] })
+      },
     }),
     {
       name: 'scholario-timetable-store',

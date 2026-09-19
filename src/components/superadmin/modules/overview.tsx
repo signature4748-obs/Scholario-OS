@@ -17,6 +17,7 @@ import { MODULE_CATALOG } from '@/lib/tenant/registry'
 import type { TenantId } from '@/lib/tenant/types'
 import { SummaryCard, SummaryCardGrid } from '@/components/principal/modules/shared/summary-card'
 import { Panel } from '@/components/principal/modules/shared/panel'
+import { PlatformActivityFeed } from './activity-feed'
 import {
   TenantStatusPill, TenantPlanChip, TenantInitialsTile,
   PlatformChangeValueChip, formatPlatformTimestamp,
@@ -186,6 +187,10 @@ export function PlatformOverviewModule({ onOpenSchool }: PlatformOverviewModuleP
           </ul>
         )}
       </Panel>
+      {/* REAL server activity — staff actions, payments, sign-ins (the
+          tenant change log above is the mock control plane; this is what
+          actually happened in the school database) */}
+      <PlatformActivityFeed />
     </div>
   )
 }

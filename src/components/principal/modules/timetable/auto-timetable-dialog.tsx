@@ -38,6 +38,8 @@ interface AutoTimetableDialogProps {
   onOpenChange: (o: boolean) => void
   onGenerate: (generatedSlots: TimetableSlot[], generatedRows: TimetableRow[]) => void
   existingSlots: TimetableSlot[]
+  /** Live class options (server-hydrated) — defaults to the static CLASSES list. */
+  classes?: string[]
 }
 
 /** Subject → teacher mapping (Brief section 14) */
@@ -57,7 +59,7 @@ const SUBJECT_TEACHERS: Record<string, string[]> = {
   'Music': ['T-050'],
 }
 
-export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSlots }: AutoTimetableDialogProps) {
+export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSlots, classes = [] }: AutoTimetableDialogProps) {
   const [scope, setScope] = useState<string>('all')
   const [schoolStart, setSchoolStart] = useState('08:30 AM')
   const [schoolEnd, setSchoolEnd] = useState('02:45 PM')
@@ -67,7 +69,8 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
   const [generating, setGenerating] = useState(false)
 
   const activeTeachers = teachers.filter((t) => !t.archived && t.status === 'Active')
-  const targetClasses = scope === 'all' ? CLASSES : [scope]
+  const classList = classes.length > 0 ? classes : CLASSES
+  const targetClasses = scope === 'all' ? classList : [scope]
 
   const handleGenerate = () => {
     setGenerating(true)
@@ -256,7 +259,7 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All classes</SelectItem>
-                {CLASSES.map((c) => (
+                {classList.map((c) => (
                   <SelectItem key={c} value={c}>{c}</SelectItem>
                 ))}
               </SelectContent>

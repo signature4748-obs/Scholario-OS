@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
 import { teachers } from '@/lib/mock/teachers'
 import { subjects } from '@/lib/mock/school'
 import { SUBJECTS_BY_LEVEL } from '@/lib/store/students-store/constants'
-import { type DayType, type TimetableConflictInfo, CLASSES } from './data'
+import { type DayType, type TimetableConflictInfo } from './data'
 
 /** Map timetable className → academic level for subject filtering */
 const CLASS_LEVELS: Record<string, string> = {
