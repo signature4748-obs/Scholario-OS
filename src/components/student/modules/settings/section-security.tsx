@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { LockKeyhole, LogOut, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { PasswordField } from '@/components/shared/password-field'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 import { signOut } from '@/lib/signout'
 import { formatDate } from '@/lib/format'
@@ -121,40 +122,15 @@ function ChangePasswordForm() {
       </div>
       <div className="space-y-3 max-w-md">
         <PasswordField id="pw-current" label="Current password" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />
-        <PasswordField id="pw-new" label="New password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" />
+        <PasswordField id="pw-new" label="New password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" hint />
         <PasswordField id="pw-confirm" label="Confirm new password" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" />
         {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
         <div className="flex items-center gap-2 pt-1">
           <Button size="sm" onClick={submit} disabled={submitting}>
             {submitting ? 'Updating…' : 'Change password'}
           </Button>
-          <span className="text-[11px] text-muted-foreground">Minimum 6 characters</span>
         </div>
       </div>
-    </div>
-  )
-}
-
-function PasswordField({
-  id, label, value, onChange, autoComplete,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (v: string) => void
-  autoComplete: string
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">{label}</label>
-      <input
-        id={id}
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete}
-        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/40"
-      />
     </div>
   )
 }

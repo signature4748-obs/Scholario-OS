@@ -25,6 +25,30 @@ export function TabHeader({
   )
 }
 
+// Compact label→value row used by the account/security tab (and any future
+// read-only settings surface): muted label left, semibold value right,
+// hairline separators. Matches the Finance-module InfoRow rhythm.
+export function SettingsInfoRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: React.ReactNode
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2">
+      <span className="text-xs text-muted-foreground shrink-0">{label}</span>
+      <span
+        className={`text-xs font-semibold text-foreground text-right min-w-0 break-words ${mono ? 'font-mono' : ''}`}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
 // Compact section group used inside a SettingsTab to cluster related
 // fields (Finance Settings grouping pattern): a 10px uppercase muted
 // label with a hairline rule, then the field grid. Keeps long forms

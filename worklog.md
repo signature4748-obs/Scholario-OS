@@ -117,8 +117,9 @@ Stage Summary:
 ## Current project status
 
 - Dev server :3000 stable (keepalive-guarded), event-stream :3003 running, gateway forwarding verified.
-- All chunks (319) + all API routes (160) disk-cached → module loads fast; browser sessions work in bursts.
+- All chunks + all API routes disk-cached → module loads fast; browser sessions work in bursts.
 - Keepalive auto-recovers OOM kills in ~5-60s. The user-visible worst case is a brief auto-reload.
+- Round 1 (Task ID 4) complete: Principal account-security parity + shared PasswordField across roles.
 
 ## Current goals / verification results
 
@@ -130,6 +131,9 @@ Stage Summary:
 - ✅ Responsive at 390px (no horizontal overflow)
 - ✅ Realtime socket.io handshake verified direct + via gateway
 - ✅ Keepalive watchdog + warm-up tooling in place for ongoing stability
+- ✅ NEW: Principal Settings → My Account (login & security, change password, session info)
+- ✅ NEW: shared PasswordField (eye toggle, live counter, a11y) used by all three role settings
+- ✅ Round-1 QA: student Fees/Notices/Messages verified, zero errors
 
 ## Unresolved issues / risks / next-phase priorities
 
@@ -153,6 +157,43 @@ Stage Summary:
   re-run both if the cache is ever invalidated (config change or .next loss); paced API warming takes
   ~25 min, chunk warming ~2 min.
 
+---
+Task ID: 4
+Agent: Z.ai Code (cron webDevReview round 1 — 2026-09-18/19)
+Task: QA sweep + new feature + styling detail (mandatory: features & styling polish).
+
+Work Log:
+- QA burst (student role): Fees (balance due, real fee lines), Notices (My Feed/Announcements/Calendar,
+  12 items), Messages (real teacher threads, unread counts) — all render, zero console/page errors.
+- Gap found: Teacher + Student Settings both have "Login & Security" (change-password UI backed by the
+  role-agnostic /api/auth/change-password) — **the Principal had NO account/security surface at all**.
+- NEW FEATURE (PR-SEC): `principal/modules/school-settings/security-tab.tsx` — a "My Account" tab at the
+  end of the School Settings tab strip: sign-in identity (email, account type, last sign-in from
+  User.lastLoginAt), live session context (started, device browser/OS, IP), change-password form (same
+  API + revokes other sessions server-side), and sign-out. Wired into index.tsx tab registry
+  (value="account", ShieldCheck icon). Verified in browser: tab activates, real data renders
+  (principal@greenwood.edu.in · Principal · Chrome·Linux · ::1), validation fires
+  ("Fill in all three password fields."), toast flow unchanged.
+- STYLING/UX DETAIL: new shared `src/components/shared/password-field.tsx` — show/hide eye toggle
+  (aria-label + aria-pressed, keyboard accessible), live "n/6+ chars" counter on new-password fields,
+  password-manager autocomplete hints, unified focus ring. Replaced the duplicated PasswordField in
+  student AND teacher section-security (killed triplication; removed the now-redundant static
+  "Minimum 6 characters" hint). New `SettingsInfoRow` primitive in school-settings/shared.tsx
+  (label→value rows with hairlines, matching the Finance InfoRow rhythm).
+- MEMORY NOTE (important for next rounds): source edits invalidate chunks → any browser login then
+  recompiles them WITH the browser attached → OOM restart loop (reproduced). FIX: after editing files,
+  CLOSE the browser, wait for health, run `bash /home/z/.qa/warm-chunks.sh` (~2 min, discovers new chunk
+  hashes via the runtime tables), THEN browser QA — this round's verification only succeeded after
+  re-warming. Radix tabs need full pointer-event dispatch (pointerdown→mousedown→pointerup→mouseup→click)
+  for synthetic activation; plain .click() only works on plain buttons (sidebar nav).
+- Gates: tsc --noEmit 0 errors ✓ · bun run lint clean ✓ · console/page errors zero ✓ ·
+  screenshot: /home/z/.qa/qa-principal-my-account.png.
+
+Stage Summary:
+- Principal now has full account-security parity with Teacher/Student (new tab + real session data).
+- One shared PasswordField across all three roles (dedup + eye toggle + live counter + a11y).
+- QA: student Fees/Notices/Messages verified; all green.
+
 ## Operational runbook (for cron agents)
 
 1. Read this worklog first. Check server: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/robots.txt`
@@ -164,3 +205,12 @@ Stage Summary:
    agent-browser fill/click directly on the Login Portal.
 5. After ANY code change: run `bunx tsc --noEmit` and `bun run lint`; then re-warm chunks/APIs if routes
    or imports changed structurally.
+6. AFTER EDITING SOURCE FILES, always: close browser → wait for server health → run
+   `bash /home/z/.qa/warm-chunks.sh` (re-fetches the new chunk hashes; ~2 min) → THEN browser QA.
+   Skipping this recompiles edited chunks with the browser attached → OOM restart loop.
+7. Radix UI tabs need full pointer-event dispatch to activate synthetically:
+   pointerdown → mousedown → pointerup → mouseup → click. Plain .click() works only on plain buttons.
+8. In some headless sessions document.innerText returns "" for rendered pages — use textContent
+   (or check specific elements) instead of innerText for content assertions.
+9. Chrome caches its own "site can't be reached" interstitial — if a reload shows blank text, do a
+   fresh `agent-browser open` instead of `reload`.

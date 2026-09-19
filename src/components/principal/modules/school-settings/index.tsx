@@ -21,13 +21,15 @@
 //     action (previously corrupted `general` via an `as any` cast).
 //
 // Live tabs: General Profile · Academics · Timetable · Fees Structure ·
-// Uniforms · Library · ID Cards · Admission Config. Each edit writes to the
-// tenant-scoped school-settings store immediately.
+// Uniforms · Library · ID Cards · Admission Config · My Account (PR-SEC —
+// principal-side login & security, parity with Teacher/Student settings).
+// Each school-config edit writes to the tenant-scoped school-settings store
+// immediately; My Account reads the server session identity.
 
 import { useState } from 'react'
 import {
   Settings as SettingsIcon, School, BookOpen, Clock, IndianRupee,
-  Shirt, BookMarked, FileText, IdCard,
+  Shirt, BookMarked, FileText, IdCard, ShieldCheck,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/shared/ui'
 import {
@@ -42,6 +44,7 @@ import { UniformsTab } from './uniforms-tab'
 import { LibraryTab } from './library-tab'
 import { AdmissionTab } from './admission-tab'
 import { IdCardTab } from './id-card-tab'
+import { SecurityTab } from './security-tab'
 
 export function SchoolSettingsModule() {
   const [tab, setTab] = useState('general')
@@ -64,6 +67,7 @@ export function SchoolSettingsModule() {
           <TabsTrigger value="library" className="gap-1.5 text-xs"><BookMarked className="h-3.5 w-3.5" /> Library</TabsTrigger>
           <TabsTrigger value="idcard" className="gap-1.5 text-xs"><IdCard className="h-3.5 w-3.5" /> ID Cards</TabsTrigger>
           <TabsTrigger value="admission" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" /> Admission</TabsTrigger>
+          <TabsTrigger value="account" className="gap-1.5 text-xs"><ShieldCheck className="h-3.5 w-3.5" /> My Account</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general"><GeneralTab /></TabsContent>
@@ -74,6 +78,7 @@ export function SchoolSettingsModule() {
         <TabsContent value="library"><LibraryTab /></TabsContent>
         <TabsContent value="idcard"><IdCardTab /></TabsContent>
         <TabsContent value="admission"><AdmissionTab /></TabsContent>
+        <TabsContent value="account"><SecurityTab /></TabsContent>
       </Tabs>
     </div>
   )
