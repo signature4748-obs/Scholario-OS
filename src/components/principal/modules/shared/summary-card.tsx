@@ -48,6 +48,10 @@ export interface SummaryCardProps {
   suffix?: string
   /** small helper text below the value */
   sub?: string
+  /** optional lineage/status chip rendered inline after the label (e.g. a
+   *  "live" pill when the value is server-truth). Keep it tiny — the label
+   *  row is one line tall. */
+  chip?: ReactNode
   /** optional icon rendered top-right */
   icon?: ReactNode
   /** tone drives bg/text/border colors */
@@ -64,7 +68,7 @@ export interface SummaryCardProps {
 }
 
 export function SummaryCard({
-  label, value, suffix, sub, icon, tone = 'slate', delay = 0, onClick, className, sparkline, trend,
+  label, value, suffix, sub, chip, icon, tone = 'slate', delay = 0, onClick, className, sparkline, trend,
 }: SummaryCardProps) {
   const reduce = useReducedMotion()
   const ref = useRef<HTMLDivElement>(null)
@@ -139,8 +143,11 @@ export function SummaryCard({
   const inner = (
     <>
       <div className="flex items-start justify-between gap-2 mb-1.5">
-        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-tight break-words">
-          {label}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider leading-tight break-words">
+            {label}
+          </span>
+          {chip && <span className="shrink-0 leading-none">{chip}</span>}
         </span>
         {icon && <span className={cn('shrink-0', toneStyles.text)}>{icon}</span>}
       </div>

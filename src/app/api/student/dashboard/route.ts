@@ -236,6 +236,33 @@ export async function GET(_req: NextRequest) {
         const due = rows.filter((r) => r.amount - r.paid > 0.005)
         const outstanding = Math.round(due.reduce((s, r) => s + (r.amount - r.paid), 0))
         const nearestDue = due.find((r) => r.dueDate)?.dueDate?.toISOString() ?? null
+
+        // Round-7 — the principal's latest fee-reminder message for THIS
+        // student (the Outreach workflow writes Message rows with the
+        // stable "Fee Reminder" subject prefix). Surfaces as the dashboard
+        // banner so the outreach loop closes where the student actually
+        // looks, not only in Messages/bell.
+        const reminderRow = outstanding > 0
+          ? await db.message.findFirst({
+              where: { recipientId: user.id, subject: { startsWith: 'Fee Reminder' } },
+              orderBy: { createdAt: 'desc' },
+              select: {
+                subject: true, body: true, createdAt: true,
+                sender: { select: { name: true, role: true } },
+              },
+            })
+          : null
+        const reminder = reminderRow
+          ? {
+              subject: reminderRow.subject,
+              excerpt: (reminderRow.body.split('\n').find((l) => /outstanding balance/i.test(l)) ?? '')
+                .replace(/^This is a gentle reminder from .*? that /i, '')
+                .slice(0, 140),
+              createdAt: reminderRow.createdAt.toISOString(),
+              senderName: reminderRow.sender?.name ?? 'the school office',
+            }
+          : null
+
         return {
           outstanding,
           nearestDue,
@@ -244,6 +271,7 @@ export async function GET(_req: NextRequest) {
             balance: Math.round(r.amount - r.paid),
             dueDate: r.dueDate?.toISOString() ?? null,
           })),
+          reminder,
         }
       }
 
@@ -406,7 +434,7 @@ export async function GET(_req: NextRequest) {
         timetable: val(tt, { week: {} as Record<string, TodayClass[]> }),
         attendance: val(att, emptyAttendance()),
         academics: val(ac, null as unknown as Awaited<ReturnType<typeof academicsSection>>),
-        fees: val(fees, { outstanding: 0, nearestDue: null, items: [] as FeeItem[] }),
+        fees: val(fees, { outstanding: 0, nearestDue: null, items: [] as FeeItem[], reminder: null }),
         notices: val(notices, { unreadCount: 0, importantUnread: 0, latest: [] as NoticeItem[] }),
         learning: val(learning, { continueLearning: null, dueFlashcards: 0, nearestTask: null }),
         messages: val(messages, { unreadCount: 0, recentSenders: [] as string[] }),
@@ -434,6 +462,13 @@ interface FeeItem {
   title: string
   balance: number
   dueDate: string | null
+}
+
+interface FeeReminder {
+  subject: string
+  excerpt: string
+  createdAt: string
+  senderName: string
 }
 
 interface NoticeItem {

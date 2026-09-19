@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useLiveAlerts, getNextSimulatedAlert } from '@/lib/store/live-alerts-store'
+import { useDuesSummaryStore, selectLiveDues } from '@/lib/store/dues-summary-store'
 import { toast } from 'sonner'
 import {
   alertIcons, fallbackAlertIcon, type LiveAlertWithIcon,
 } from './data'
 import { LiveAlertsToolbar } from './live-alerts-toolbar'
 import { LiveAlertsContent } from './live-alerts-content'
+import { LiveFeeAlert } from './live-fee-alert'
 import { Panel } from '../shared/panel'
 
 export interface LiveAlertsProps {
@@ -152,6 +154,11 @@ export function LiveAlerts({ onNavigate }: LiveAlertsProps) {
   const criticalCount = alerts.filter((a) => a.severity === 'critical').length
   const activeCount = alerts.length
 
+  // Round-7 — the pinned LIVE fee-dues alert (server truth, distinct from
+  // the simulated rows) and its "1 live" hint in the subtitle.
+  const liveDues = useDuesSummaryStore(selectLiveDues)
+  const showLiveFee = !!liveDues && liveDues.defaulterCount > 0
+
   return (
     <Panel
       title="Principal Attention"
@@ -184,9 +191,18 @@ export function LiveAlerts({ onNavigate }: LiveAlertsProps) {
               <span>{criticalCount} critical</span>
             </span>
           )}
+          {showLiveFee && (
+            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              <span>1 live</span>
+            </span>
+          )}
         </span>
       }
     >
+      {/* Round-7 — pinned LIVE server alert (real dues) above the
+          simulated operational rows. */}
+      <LiveFeeAlert onNavigate={onNavigate} />
       <LiveAlertsContent
         alerts={alerts}
         dismissed={dismissed}

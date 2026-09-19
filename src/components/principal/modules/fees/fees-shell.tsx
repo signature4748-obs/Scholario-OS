@@ -70,6 +70,16 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
     setTab('accounts')
   }, [focus?.ts])
 
+  // Round-7 deep-link: the dashboard "Pending Fees" KPI and the Principal
+  // Attention live fee alert quote the Outreach tab's numbers — clicking
+  // them lands here and jumps straight to the Outreach workspace.
+  useEffect(() => {
+    if (!focus || focus.type !== 'fee-outreach' || handledFocusTs.current === focus.ts) return
+    handledFocusTs.current = focus.ts
+    clearFocus()
+    setTab('outreach')
+  }, [focus?.ts])
+
   // Live verification count for the Payments tab badge — the Principal's
   // actionable queue (cash collections awaiting verification).
   const pendingVerification = data.analytics.pendingCashRequests

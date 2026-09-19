@@ -15,12 +15,19 @@ export const runtime = 'nodejs'
  *
  * Roles: PRINCIPAL / MANAGEMENT (the fee operations roles — same policy as
  * POST /api/fees).
+ *
+ * `?summary=1` returns ONLY the aggregate block (plus the class spread and
+ * the largest defaulter) — the lightweight shape the dashboard KPI, fees
+ * overview KPI and the Principal Attention live alert consume. The full
+ * per-student ledger (feeLines, guardian contact, reminder stamps) is the
+ * Outreach tab's business and is skipped in summary mode.
  */
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   return withUser(
     async (user) => {
       const schoolId = schoolScoped(user)
       const now = new Date()
+      const summaryOnly = new URL(req.url).searchParams.get('summary') === '1'
 
       // Outstanding fee lines (paid < amount is not expressible as a Prisma
       // where-clause comparing two columns — filter in JS over the school's
@@ -131,6 +138,29 @@ export async function GET(_req: NextRequest) {
       const totalOutstanding = withReminders.reduce((s, d) => s + d.outstanding, 0)
       const overdueCount = withReminders.filter((d) => d.daysOverdue !== null).length
 
+      // Class spread + largest defaulter — the summary-mode extras the KPI
+      // surfaces quote ("across N classes", "largest: <name> ₹X").
+      const classesWithDues = new Set(
+        withReminders.map((d) => d.className).filter((c): c is string => !!c),
+      ).size
+      const top = withReminders[0]
+        ? { name: withReminders[0].name, outstanding: withReminders[0].outstanding, className: withReminders[0].className }
+        : null
+
+      if (summaryOnly) {
+        return {
+          summary: {
+            totalOutstanding,
+            defaulterCount: withReminders.length,
+            overdueCount,
+            remindedThisWeek,
+            classesWithDues,
+            top,
+            asOf: now.toISOString(),
+          },
+        }
+      }
+
       return {
         defaulters: withReminders,
         summary: {
@@ -138,6 +168,7 @@ export async function GET(_req: NextRequest) {
           defaulterCount: withReminders.length,
           overdueCount,
           remindedThisWeek,
+          classesWithDues,
         },
       }
     },

@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useStudentDashboard } from './data'
 import { WelcomeHero } from './welcome-hero'
+import { FeeReminderBanner } from './fee-reminder-banner'
 import { UpNext } from './up-next'
 import { TodayClasses } from './today-classes'
 import { AttendanceCard } from './attendance-card'
@@ -70,6 +71,10 @@ export function StudentDashboard({ onNavigate }: { onNavigate: (key: string) => 
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      {/* 0 · Round-7 — the principal's fee reminder (real dues + the actual
+          message excerpt) at the very top; renders only while dues exist. */}
+      <FeeReminderBanner data={data} onNavigate={onNavigate} />
+
       {/* 1 · Who am I — compact personal context */}
       <WelcomeHero data={data} />
 

@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../learning/api'
+import { useLiveFeedStore } from '@/lib/store/live-feed-store'
 import type { DashboardClass, DashboardData } from './types'
 
 export interface DashboardState {
@@ -28,7 +29,12 @@ export function useStudentDashboard(): DashboardState {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
+  const [quietTick, setQuietTick] = useState(0)
   const mounted = useRef(true)
+  // Round-7 — quiet background refresh (no skeleton flash): triggered when
+  // a new direct-message broadcast arrives (e.g. the principal sends a fee
+  // reminder) so the banner reflects it within seconds.
+  const quietRef = useRef(false)
 
   useEffect(() => {
     mounted.current = true
@@ -37,19 +43,42 @@ export function useStudentDashboard(): DashboardState {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    const quiet = quietRef.current
+    if (!quiet) {
+      setLoading(true)
+      setError(null)
+    }
     apiFetch<DashboardData>('/api/student/dashboard')
       .then((d) => { if (!cancelled && mounted.current) setData(d) })
       .catch((e: unknown) => {
-        if (cancelled || !mounted.current) return
+        if (cancelled || !mounted.current || quiet) return
         setError(e instanceof Error ? e.message : 'Dashboard could not load.')
       })
-      .finally(() => { if (!cancelled && mounted.current) setLoading(false) })
+      .finally(() => { if (!cancelled && !quiet && mounted.current) setLoading(false) })
     return () => { cancelled = true }
-  }, [tick])
+  }, [tick, quietTick])
 
-  const reload = useCallback(() => setTick((t) => t + 1), [])
+  // Live message broadcasts → debounced quiet re-sync. The AppShell layer
+  // already filters frames to the addressee, so any 'message' event that
+  // reaches this store was addressed to THIS student.
+  const liveEvents = useLiveFeedStore((s) => s.events)
+  const seenEventRef = useRef<string | null>(null)
+  useEffect(() => {
+    const newest = liveEvents[0]
+    if (!newest || newest.id === seenEventRef.current) return
+    seenEventRef.current = newest.id
+    if (newest.kind !== 'message') return
+    const t = setTimeout(() => {
+      quietRef.current = true
+      setQuietTick((x) => x + 1)
+    }, 1200)
+    return () => clearTimeout(t)
+  }, [liveEvents])
+
+  const reload = useCallback(() => {
+    quietRef.current = false
+    setTick((t) => t + 1)
+  }, [])
   return { data, loading, error, reload }
 }
 

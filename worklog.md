@@ -871,3 +871,129 @@ Stage Summary:
    dashboard "Principal Attention" fee alert → deep-link to Outreach;
    per-role notification preferences UI; keepalive "recycle" subcommand;
    certificates-issuance activity logging (more superadmin feed richness).
+
+---
+Task ID: 10
+Agent: Z.ai Code (cron webDevReview round 7 — 2026-09-19)
+
+Task: Full-status assessment + agent-browser QA, then fix-first development
+(QA found a data-consistency bug) + two new features + styling detail
+(mandates: more features, more styling).
+
+Work Log:
+- **STATUS ASSESSMENT**: all gates green at start (robots 200 / stream 200 /
+  tsc 0 / lint 0 / 6.4G disk). Browser QA (principal) re-verified round-6
+  surfaces (Fees Overview entry points, Outreach tab, Principal Attention
+  feed). NO crashes or broken flows — but a **data-consistency bug class**
+  found: three contradictory dues stories across surfaces (Dashboard KPI
+  mock "₹1.84 Cr / 142 students"; Fees Overview ledger "₹2.05 L / 56";
+  Outreach server-truth "₹1.05 L / 5"). The bridges (KPI → Outreach) showed
+  mismatched numbers → fixed this round + 2 features from the next-phase
+  candidates list.
+- **CONSISTENCY FIX — one live dues truth for every Outreach-facing surface**:
+  - NEW `GET /api/fees/defaulters?summary=1` — lightweight aggregate mode
+    (totalOutstanding, defaulterCount, overdueCount, remindedThisWeek,
+    classesWithDues, top defaulter, asOf); full per-student ledger skipped
+    for KPI consumers.
+  - NEW `src/lib/store/dues-summary-store.ts` — ensure()/refresh() zustand
+    store, idempotent in-flight guard, 60s freshness window, honest lineage
+    (`status==='server'` only after a successful sync).
+  - Dashboard `kpi-row.tsx` "Pending Fees": server-truth value + sub
+    ("5 students · 4 past due") + LIVE chip (new `chip` prop on the shared
+    SummaryCard) + mock sparkline dropped when live (no fake trend under a
+    real number) + deep-link to the Outreach tab (focus-store type
+    'fee-outreach', handled by a new effect in fees-shell.tsx).
+  - Fees Overview KPI 4 "Students With Dues": server count + "across N
+    classes · ₹X outstanding" + LIVE chip. Ledger cards stay ledger-scoped
+    (Outstanding → accounts; subtitle now "25 ledger accounts · largest
+    balances"; "Send reminders · 5 live" count bridge on the panel action).
+  - NEW shared `live-chip.tsx` (pulsing emerald lineage pill, a11y title).
+- **NEW FEATURE — Principal Attention LIVE fee alert** (candidate #2):
+  NEW `live-fee-alert.tsx` pinned above the simulated alert rows — REAL
+  server dues ("5 students owe ₹1,05,400 · 4 past due · 5 reminded this
+  week · largest Ananya Gupta ₹25.0K"), rose/amber gradient stripe by
+  urgency, LIVE pill, "1 live" hint in the panel subtitle, one click →
+  Outreach deep-link. Browser-verified end-to-end.
+- **NEW FEATURE — Student fee-reminder banner** (candidate #1):
+  - `/api/student/dashboard` feesSection now joins the latest "Fee Reminder"
+    Message row (subject/excerpt/createdAt/senderName; queried only when
+    outstanding > 0). types.ts DashboardFees extended.
+  - NEW `fee-reminder-banner.tsx` at the top of the student dashboard:
+    "Fee reminder from Dr. Ananya Iyer" + NEW pill (<48h) + relative stamp
+    + the principal's actual excerpt + ₹ outstanding chip + dueLabel +
+    "View message" (→ Messages) + "Pay fees" (→ Fees) + session dismiss X.
+  - **Live refresh**: useStudentDashboard watches the live-feed ring — a new
+    message broadcast (AppShell already recipient-filters) triggers a
+    debounced QUIET refetch (no skeleton flash; errors stay quiet too).
+  - END-TO-END PROOF (gateway origin): student tab open → principal sends 2
+    normal messages via API → dashboard fetch count 1→2 within seconds +
+    unread count 3→5 live. Banner + CTAs browser-verified.
+- **STYLING shipped**: LIVE chips on 2 KPI cards; pinned alert (gradient
+  stripe, icon chip, hover affordance, a11y label); "1 live" subtitle;
+  amber→rose banner with watermark icon, NEW pulse pill, due chips, dual
+  CTAs; live-count bridge on the Send reminders button; ledger-scoped
+  subtitle.
+- **QA/INFRA — ROOT CAUSE of the crash loop found and documented**: the
+  ~45s dev-server restart loop during browser QA was **zombie Chrome
+  processes**: `agent-browser close` leaves ~14 chrome procs (~700MB) that,
+  with the 3GB warm dev server, push the 4GB cgroup into OOM
+  (dmesg: oom-kill task=next-server anon-rss≈3.0GB). PROTOCOL UPDATE:
+  after every `agent-browser close`, run `pkill -9 -f chrome` and verify
+  `ps aux | grep -c "[c]hrome"` → 0. Also: pre-warm the app-shell's poll
+  routes too (/api/auth/me, /api/notifications-feed, /api/app-version) —
+  not just the module endpoints — before attaching the browser.
+- **DATA STATE (intentional, for future QA)**: 2 realistic test messages
+  sent to student1@demoschool.edu ("Library book return", "Science fair
+  registration" from Dr. Ananya Iyer) — they live in the Messages demo
+  data. The 5 seeded defaulters remain under the 24h reminder anti-spam
+  lock until ~2026-09-20 04:50 UTC.
+- **Gates**: `bunx tsc --noEmit` 0 errors ✓ (1500MB cap) · `bun run lint`
+  clean ✓ · robots 200 ✓ · stream 200 ✓ · disk 6.4G free ✓. Screenshots:
+  download/qa-round7-principal-live-kpi.png, qa-round7-fees-overview-live.png,
+  qa-round7-student-banner.png, qa-round7-live-refresh-proof.png.
+
+Stage Summary:
+- The fee domain now has ONE dues truth on every surface that links into
+  Outreach (dashboard KPI, attention alert, overview KPI — all quoting the
+  server aggregation the Outreach tab shows), with honest lineage chips.
+- The outreach loop is now fully bidirectional: principal sends → student
+  sees the reminder AT the top of their dashboard (banner + live refresh).
+- Root-caused and documented the QA instability (zombie Chrome + OOM) with
+  the updated protocol.
+
+## Current project status (end of round 7)
+
+- Dev server :3000 healthy (keepalive-guarded), event-stream :3003 healthy,
+  DB in sync, disk 6.4G free, tsc 0 / lint 0, no dead code.
+- All four roles browser-verified; the fee domain is consistent
+  (live-vs-ledger explicitly labeled) and the outreach loop closes on the
+  student dashboard.
+
+## Current goals / verification results (round 7)
+
+- ✅ QA assessment: round-6 surfaces healthy; dues data-inconsistency found
+- ✅ FIX: server-truth dues on all Outreach-facing KPIs + lineage chips
+- ✅ NEW: Principal Attention live fee alert with Outreach deep-link
+- ✅ NEW: student fee-reminder banner + live message-driven refresh
+- ✅ Gates green: tsc 0, lint clean, robots 200, stream 200
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox memory ceiling — PROTOCOL UPDATE (important)**: after every
+   browser burst, `agent-browser close` + `pkill -9 -f chrome` (zombies
+   cause the 45s OOM restart loop); pre-warm app poll routes (auth/me,
+   notifications-feed, app-version) along with module APIs before
+   reattaching. Budget ~5 min per burst cycle; keep bursts ≤3 interactions.
+2. **Anti-spam lock on demo defaulters** (until ~2026-09-20 04:50 UTC):
+   new reminder sends to the 5 seeded students will honestly skip; create a
+   new Fee row (POST /api/fees) for a non-reminded student to test fresh
+   sends + the banner's live NEW-pill path end-to-end.
+3. The student Fees MODULE still renders the client mock ledger
+   (DEMO_STUDENT_ID) while the dashboard is server-truth — intentional
+   (module = ledger showcase, dashboard = live record) but a future round
+   could server-truth the module's BalanceHero the same way.
+4. Next-phase candidates: per-role notification preferences UI;
+   certificates-issuance activity logging (superadmin feed richness);
+   keepalive "recycle" subcommand (automate the warm→kill→restart burst
+   prep); payment-event → dues-summary store auto-refresh (currently the
+   60s window + manual refresh()).

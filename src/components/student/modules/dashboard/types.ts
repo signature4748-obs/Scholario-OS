@@ -62,6 +62,14 @@ export interface DashboardFees {
   outstanding: number
   nearestDue: string | null
   items: { title: string; balance: number; dueDate: string | null }[]
+  /** Round-7 — the principal's latest fee-reminder message (Outreach
+   *  workflow writes it); null when none exists or dues are settled. */
+  reminder: {
+    subject: string
+    excerpt: string
+    createdAt: string
+    senderName: string
+  } | null
 }
 
 export interface DashboardNotice {

@@ -21,16 +21,18 @@
  * the Payments page, Transactions ledger, and Student Accounts consume.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Wallet, CheckCircle2, AlertCircle, Users, ArrowRight, CheckCheck, Banknote, Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useFeeData, CURRENT_ACADEMIC_YEAR } from '@/lib/store/fee-store'
+import { useDuesSummaryStore, selectLiveDues } from '@/lib/store/dues-summary-store'
 import { formatINR, formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
+import { LiveChip } from '../shared/live-chip'
 import { Panel } from '../shared/panel'
 import { OpenChartSection } from '../shared/open-chart-section'
 import { FeeEmptyState, ModeIcon, modeAccent } from './fees-shared'
@@ -74,6 +76,15 @@ function OverdueChip({ days }: { days: number }) {
 
 export function FeesOverviewSection({ data, onNavigate }: Props) {
   const { analytics, accounts, transactions } = data
+
+  // Round-7 — the Outreach-facing KPI reads the LIVE server aggregation
+  // (same numbers the Outreach tab shows); the ledger analytics remain the
+  // story for the cards that navigate into the ledger views (accounts /
+  // transactions). Sync is idempotent — this module and the dashboard KPI
+  // share one fetch.
+  const dues = useDuesSummaryStore(selectLiveDues)
+  const ensureDues = useDuesSummaryStore((s) => s.ensure)
+  useEffect(() => { void ensureDues() }, [ensureDues])
 
   // Session label read from the ledger itself (honest — never hardcoded).
   const yearLabel = useMemo(() => {
@@ -183,8 +194,13 @@ export function FeesOverviewSection({ data, onNavigate }: Props) {
         <SummaryCard
           icon={<Users className="h-4 w-4" />}
           label="Students With Dues"
-          value={analytics.pendingCount}
-          sub={`across ${classesWithDues} classes · reminders ready`}
+          value={dues ? dues.defaulterCount : analytics.pendingCount}
+          sub={
+            dues
+              ? `across ${dues.classesWithDues} classes · ${formatINR(dues.totalOutstanding, true)} outstanding`
+              : `across ${classesWithDues} classes · reminders ready`
+          }
+          chip={dues ? <LiveChip /> : undefined}
           tone="amber"
           delay={0.15}
           onClick={() => onNavigate('outreach')}
@@ -360,7 +376,11 @@ export function FeesOverviewSection({ data, onNavigate }: Props) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel
           title="Outstanding Dues"
-          subtitle={`${topDues.length} student${topDues.length === 1 ? '' : 's'} · largest balances`}
+          subtitle={
+            dues
+              ? `${topDues.length} ledger accounts · largest balances`
+              : `${topDues.length} student${topDues.length === 1 ? '' : 's'} · largest balances`
+          }
           className="h-full"
           action={
             <div className="flex items-center gap-1.5">
@@ -372,6 +392,11 @@ export function FeesOverviewSection({ data, onNavigate }: Props) {
                 title="Defaulter outreach — send fee reminders"
               >
                 <Send className="h-3 w-3" /> Send reminders
+                {dues && (
+                  <span className="inline-flex items-center gap-1 text-emerald-600/80 dark:text-emerald-400/80">
+                    · {dues.defaulterCount} live
+                  </span>
+                )}
               </Button>
               <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={() => onNavigate('accounts')}>
                 View accounts <ArrowRight className="h-3 w-3" />
