@@ -5,7 +5,7 @@
  * COMMAND CENTRE. The Principal grasps the school's position in seconds:
  *
  *   1. Four KPI cards (Total Expected · Collected · Outstanding ·
- *      Students With Dues) — clickable, wired to Accounts/Transactions.
+ *      Students With Dues) — clickable, wired to Outreach/Accounts/Transactions.
  *   2. LEFT COLUMN (2/3): Collection Trend (OPEN chart — sits directly on
  *      the page surface, same pattern as Analytics/Dashboard/Finance) with
  *      Class-wise Collection DIRECTLY UNDERNEATH — the class rows occupy
@@ -24,7 +24,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  Wallet, CheckCircle2, AlertCircle, Users, ArrowRight, CheckCheck, Banknote,
+  Wallet, CheckCircle2, AlertCircle, Users, ArrowRight, CheckCheck, Banknote, Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useFeeData, CURRENT_ACADEMIC_YEAR } from '@/lib/store/fee-store'
@@ -184,10 +184,10 @@ export function FeesOverviewSection({ data, onNavigate }: Props) {
           icon={<Users className="h-4 w-4" />}
           label="Students With Dues"
           value={analytics.pendingCount}
-          sub={`across ${classesWithDues} classes`}
+          sub={`across ${classesWithDues} classes · reminders ready`}
           tone="amber"
           delay={0.15}
-          onClick={() => onNavigate('accounts')}
+          onClick={() => onNavigate('outreach')}
         />
       </SummaryCardGrid>
 
@@ -363,9 +363,20 @@ export function FeesOverviewSection({ data, onNavigate }: Props) {
           subtitle={`${topDues.length} student${topDues.length === 1 ? '' : 's'} · largest balances`}
           className="h-full"
           action={
-            <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={() => onNavigate('accounts')}>
-              View accounts <ArrowRight className="h-3 w-3" />
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 border-emerald-500/40 text-[11px] text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300"
+                onClick={() => onNavigate('outreach')}
+                title="Defaulter outreach — send fee reminders"
+              >
+                <Send className="h-3 w-3" /> Send reminders
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={() => onNavigate('accounts')}>
+                View accounts <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
           }
           bodyClassName="p-0"
         >

@@ -38,6 +38,7 @@ import { school } from '@/lib/mock/school'
 import { useFeatureGate } from '@/lib/tenant/store'
 import type { FeeTab } from './fees-shared'
 import { FeesOverviewSection } from './fees-overview'
+import { FeesDefaultersSection } from './fees-defaulters'
 import { FeesStudentAccountsSection } from './fees-student-accounts'
 import { FeesStructuresSection } from './fees-structures'
 import { PaymentsSection } from './payments/payments-section'
@@ -84,7 +85,7 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
   const showSettings = gate.isSubFeatureEnabled('receipt_templates')
 
   // Primary navigation ORDER everywhere the tab bar renders:
-  // Overview → Payments → Transactions → Student Accounts → Fee Structures → Settings
+  // Overview → Payments → Transactions → Student Accounts → Outreach → Fee Structures → Settings
   // (Transactions / Fee Structures / Settings are gated per tenant — the
   // filtered list drives BOTH the tab bar and the keyboard shortcuts.)
   const tabs: SegmentedTab[] = useMemo(() => {
@@ -94,6 +95,7 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
     ]
     if (showTransactions) list.push({ value: 'transactions', label: 'Transactions' })
     list.push({ value: 'accounts', label: 'Student Accounts' })
+    list.push({ value: 'outreach', label: 'Outreach' })
     if (showStructures) list.push({ value: 'structures', label: 'Fee Structures' })
     if (showSettings) list.push({ value: 'settings', label: 'Settings' })
     return list
@@ -110,13 +112,14 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
     if (!tabValues.includes(tab)) setTab('overview')
   }, [tabValues, tab])
 
-  // Keyboard shortcuts: 1-6 switch tabs (kept for power users, not displayed).
+  // Keyboard shortcuts: number keys switch tabs (kept for power users, not
+  // displayed). Range covers every slot in the FILTERED list (bounds-checked).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key >= '1' && e.key <= '6') {
+      if (e.key >= '1' && e.key <= '9') {
         const idx = Number(e.key) - 1
         // Guard: the index must resolve inside the FILTERED list.
         if (idx >= 0 && idx < tabValues.length) {
@@ -169,6 +172,7 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
             {tab === 'accounts' && <FeesStudentAccountsSection data={data} onCollect={(id) => openCollect(id)} focusStudent={feeFocusStudent} />}
             {tab === 'structures' && <FeesStructuresSection data={data} onNavigate={onNavigate} />}
             {tab === 'payments' && <PaymentsSection data={data} onCollect={() => openCollect()} onOpenTransactions={() => setTab('transactions')} />}
+            {tab === 'outreach' && <FeesDefaultersSection />}
             {tab === 'transactions' && <FeesTransactionsSection data={data} />}
             {tab === 'settings' && <FeesSettingsSection />}
           </motion.div>

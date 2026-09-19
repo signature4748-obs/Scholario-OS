@@ -734,3 +734,140 @@ Stage Summary:
 5. The student quick-access chip account (student1@demoschool.edu) differs
    from the worklog's documented aarav.sharma credentials — both are real
    seeded students; document or unify if it confuses future QA.
+
+---
+Task ID: 9
+Agent: Z.ai Code (cron webDevReview round 6 — 2026-09-19)
+
+Task: Full-status assessment + agent-browser QA, then feature + styling
+development (mandates: more features, more styling detail).
+
+Work Log:
+- **STATUS ASSESSMENT**: all gates green at start (robots 200 / stream 200 /
+  tsc 0 / lint 0 / 6.6G disk). Pre-warmed APIs via curl, recycled to a fresh
+  server, browser-burst verified round-5 surfaces: Principal Timetable
+  (sync chip ✓, "Faculty roster · 4 live" ✓, 78 slots / 2 classes /
+  0 conflicts ✓, full grid with real teachers/rooms); Super Admin activity
+  feed (live rows incl. this session's sign-ins) + student timetable via
+  API. NO BUGS FOUND → proceeded to the top next-phase candidate.
+- **NEW FEATURE — Fee-Defaulter Outreach Workflow (Principal → Students,
+  live + audited)**:
+  - NEW `GET /api/fees/defaulters` (PRINCIPAL/MANAGEMENT): server-truth
+    aggregation over Fee rows where paid < amount, grouped per student —
+    outstanding total, per-line breakdown, earliest due date, honest
+    daysOverdue, guardian name/phone, lastRemindedAt (matched by the
+    stable "Fee Reminder" subject prefix). Verified: 5 real defaulters,
+    ₹105,400 outstanding, 4 overdue by 354 days.
+  - NEW `POST /api/fees/defaulters/remind`: for each selected student with
+    dues — anti-spam guard (recipients of a reminder in the last 24h are
+    SKIPPED, reported honestly), a personalized Message row (subject
+    "Fee Reminder — ₹X outstanding", body with line-by-line breakdown +
+    due dates + payment guidance + real signature), one FEE_REMINDER_SENT
+    ActivityLog audit row. Verified: single send, retry-skip, empty-body
+    validation ("Select at least one student"), message content in DB.
+  - NEW `fees-defaulters.tsx` — "Outreach" tab in Fee Management (always
+    present, after Student Accounts; keyboard shortcuts extended 1-6 → 1-9):
+    4 KPI SummaryCards (Total Outstanding rose / Students With Dues amber /
+    Past Due Date rose / Reminded This Week sky), status filter chips
+    (All/Past due/Due soon) + class filter + student search, ledger table
+    with initials avatars, guardian contact, ₹ outstanding, due chips
+    (rose "Nd overdue" / amber "in Nd" / date), "reminded Xm ago" column,
+    expandable per-student fee lines (AnimatePresence), select-all +
+    per-row checkboxes with emerald row tint, animated selection bar
+    ("N selected · ₹X outstanding total"), and a preview dialog rendering
+    the EXACT message text with real school/principal names (fetched from
+    /api/auth/me — same values the endpoint uses) + recipient roll-up +
+    anti-spam note; all states honest (staggered loading skeleton, error +
+    retry, celebratory all-settled empty, filtered-empty).
+  - **Live fan-out reuses the existing message broadcast**: a socket test
+    client received EXACTLY 1 frame per sent message → open student tabs
+    get the toast + bell entry within seconds (event-stream source #3).
+  - **Super Admin feed enriched automatically**: 4 "Fee reminder sent"
+    rows (kind staff) now visible in /api/superadmin/activity.
+- **STYLING/CONNECTIVITY — Overview entry points to Outreach**
+  (`fees-overview.tsx`): "Students With Dues" KPI card now navigates to
+  the Outreach tab (sub: "across N classes · reminders ready"); the
+  "Outstanding Dues" panel gained an emerald "Send reminders" action
+  (Send icon, emerald border/hover tones) beside "View accounts".
+  Browser-verified: both navigate to the Outreach tab with live data.
+- **END-TO-END PROOF (browser, gateway origin)**: principal → Outreach
+  tab → KPIs + 5 real rows → expanded Pari Iyer's fee lines (Tuition Fee
+  Q1, due 30 Sep 2025) → selected Aadhya + Pari → selection bar "2
+  selected · ₹50,000 outstanding total" → preview dialog ("Dear Aadhya
+  Patel (Grade 10 - A)" + "…and 1 more: Pari Iyer") → Send 2 Reminders →
+  dialog closed + data refreshed (both rows "Xm ago", never=0) → DB
+  verified (2 messages + activity row "2 fee reminders · ₹50,000") →
+  socket client confirmed 1 frame per message.
+- **INFRA EVENTS (resolved)**:
+  1. event-stream :3003 had died; my restart attempt failed (port still
+     held by the live process — the pgrep pattern "event-stream" doesn't
+     match `bun --hot index.ts`; use `lsof -i :3003`). Clean-restarted
+     with a fresh log; direct + gateway 200.
+  2. event-stream log showed 3× duplicate broadcast lines per message —
+     fd artifact of two processes writing one truncated log (my failed
+     restart), NOT duplicate emissions: a live socket client received
+     exactly 1 frame per message. Fixed by the clean restart.
+  3. Browser stuck at the mounted-gate skeleton after a Fast-Refresh
+     cycle: Chrome had cached a broken RSC response. FIX: fresh
+     `agent-browser open` with a CACHE-BUSTING query (`http://localhost:81/?fresh=1`)
+     — full render immediately. Add to the runbook.
+  4. Dev server recycled (kill tree → keepalive) before each browser
+     burst per protocol; chunks re-warmed after every source batch
+     (319→321 chunks).
+- **DATA STATE (intentional, for future QA)**: all 5 demo defaulters have
+  now been reminded — 5 "Fee Reminder" Message rows + 4 FEE_REMINDER_SENT
+  ActivityLog rows exist. The 24h anti-spam window locks further sends to
+  these students until ~2026-09-20 04:50 UTC (sends then report "skipped
+  (reminded in the last 24h)" — honest). New sends work for any student
+  with dues outside the window.
+- **Gates**: `bunx tsc --noEmit` 0 errors ✓ (1500MB cap) · `bun run lint`
+  clean ✓ · robots 200 ✓ · stream 200 ✓ · dev.log clean ✓ · zero console
+  errors in QA windows ✓. Screenshots: download/qa-round6-outreach-tab.png,
+  qa-round6-outreach-all-reminded.png, qa-round6-outreach-entry.png,
+  qa-round6-overview-buttons.png.
+
+Stage Summary:
+- The fee pipeline is now TWO-WAY end-to-end: Principal sees real
+  defaulters → sends personalized reminders → students get live toasts +
+  Messages inbox entries → Super Admin sees the audit trail. All
+  browser-proven through the gateway path.
+- Styling mandate: 4-tone KPI strip, due chips, expandable ledger rows,
+  animated selection bar, message preview dialog, emerald overview entry
+  points — all in the established fees design language.
+- Gates green; no dead code; one new API pair + one new component + two
+  surgical overview edits.
+
+## Current project status (end of round 6)
+
+- Dev server :3000 healthy (keepalive-guarded, 321 chunks warmed),
+  event-stream :3003 healthy (clean log, direct + gateway 200), DB in
+  sync, disk 6.6G free, tsc 0 / lint 0.
+- All four roles browser-verified across rounds; the fee domain now has
+  a complete outreach loop (the #1 candidate from rounds 3–5).
+
+## Current goals / verification results (round 6)
+
+- ✅ QA assessment: round-5 surfaces healthy, no bugs found
+- ✅ NEW fee-defaulter outreach: GET/POST APIs + Outreach tab + live
+  fan-out + audit trail, all verified end-to-end in the browser
+- ✅ NEW Overview entry points (KPI card + Outstanding Dues panel action)
+- ✅ Anti-spam guard + validation + honest skip reporting verified
+- ✅ Super Admin activity feed enriched with real FEE_REMINDER rows
+- ✅ Gates: tsc 0, lint clean, robots 200, stream 200
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox memory ceiling (unchanged, structural)**: browser bursts on
+   fresh servers remain the safe protocol; budget ~5 min per burst cycle.
+   NEW runbook item: if the browser sticks at the mounted-gate skeleton
+   after HMR cycles, open with a cache-busting query (`/?fresh=1`).
+2. **event-stream pgrep**: the service process matches `bun --hot
+   index.ts`, NOT "event-stream" — use `lsof -i :3003` to find/kill it.
+3. **24h reminder anti-spam lock on demo data** (until ~2026-09-20
+   04:50 UTC): future QA sends to the 5 seeded defaulters report honest
+   skips; create a new Fee row (POST /api/fees) to test fresh sends.
+4. Next-phase candidates: student-side Fees banner surfacing the latest
+   reminder (currently the loop closes via Messages/bell); principal
+   dashboard "Principal Attention" fee alert → deep-link to Outreach;
+   per-role notification preferences UI; keepalive "recycle" subcommand;
+   certificates-issuance activity logging (more superadmin feed richness).

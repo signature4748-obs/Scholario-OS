@@ -41,6 +41,7 @@ export type FeeTab =
   | 'accounts'
   | 'structures'
   | 'payments'
+  | 'outreach'
   | 'transactions'
   | 'settings'
 
