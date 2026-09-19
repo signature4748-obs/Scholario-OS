@@ -22,7 +22,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Smartphone, MessageSquare, Mail, Send, Clock, FileText, X, Check,
-  Calendar, AlertCircle, ChevronDown, Users, Loader2, RadioTower,
+  Calendar, AlertCircle, ChevronDown, Users, Loader2, RadioTower, Globe,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -376,6 +376,14 @@ export function ComposeSection() {
                 </optgroup>
               )}
             </select>
+            {/* Public reach hint — whole-school broadcasts also appear on the
+                public website's live notice board (see /api/schools/public). */}
+            {(audience === 'Whole School' || audience === 'All Students') && (
+              <p className="mt-1.5 flex items-start gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/[0.06] px-2 py-1.5 text-[10px] leading-snug text-emerald-700 dark:text-emerald-300">
+                <Globe className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                Whole-school notices are also published to the school website&apos;s public notice board.
+              </p>
+            )}
           </div>
 
           {/* Channels */}

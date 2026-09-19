@@ -176,6 +176,8 @@ export function PublicWebsite({ onOpenPortal, onOpenPlatform }: {
 
         <Facilities />
 
+        <NoticeBoard notices={schoolData?.announcements ?? []} onOpenPortal={onOpenPortal} />
+
         <Admissions
           schoolName={schoolName}
           admForm={admForm}
@@ -222,6 +224,7 @@ function Header({
     { label: 'About', href: '#about' },
     { label: 'Academics', href: '#journey' },
     { label: 'Facilities', href: '#facilities' },
+    { label: 'Notices', href: '#notices' },
     { label: 'Admissions', href: '#admissions' },
     { label: 'Contact', href: '#footer' },
   ]
@@ -605,6 +608,201 @@ function Facilities() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Notice board — live school announcements                           */
+/* ------------------------------------------------------------------ */
+
+const NOTICE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+interface PublicNotice {
+  id: string
+  title: string
+  message: string
+  createdAt: string
+  priority: string
+}
+
+const PRIORITY_TONES: Record<string, { label: string; chip: string; bar: string; dot: string }> = {
+  URGENT: {
+    label: 'Urgent',
+    chip: 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    bar: 'bg-rose-500',
+    dot: 'bg-rose-500',
+  },
+  HIGH: {
+    label: 'Important',
+    chip: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    bar: 'bg-amber-500',
+    dot: 'bg-amber-500',
+  },
+  NORMAL: {
+    label: 'Notice',
+    chip: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    bar: 'bg-emerald-500',
+    dot: 'bg-emerald-500',
+  },
+}
+
+function noticeTone(priority: string) {
+  return PRIORITY_TONES[priority] ?? PRIORITY_TONES.NORMAL
+}
+
+function noticeDateParts(iso: string): { day: string; month: string } {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return { day: '—', month: '' }
+  return { day: String(d.getDate()).padStart(2, '0'), month: NOTICE_MONTHS[d.getMonth()] }
+}
+
+function noticeRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const diffSec = Math.floor((Date.now() - then) / 1000)
+  if (diffSec < 60) return 'just now'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin} min ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr} hr${diffHr > 1 ? 's' : ''} ago`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 7) return `${diffDay} day${diffDay > 1 ? 's' : ''} ago`
+  return new Date(then).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function NoticeDateTile({ iso, tone }: { iso: string; tone: string }) {
+  const { day, month } = noticeDateParts(iso)
+  return (
+    <div
+      aria-hidden
+      className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl border border-border/60 bg-gradient-to-b ${tone} to-transparent`}
+    >
+      <span className="text-lg font-bold leading-none text-foreground">{day}</span>
+      <span className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{month}</span>
+    </div>
+  )
+}
+
+function NoticeBoard({
+  notices,
+  onOpenPortal,
+}: {
+  notices: PublicNotice[]
+  onOpenPortal: () => void
+}) {
+  // No published school-wide notices yet → the section stays out of the page
+  // entirely (an empty notice board reads as neglect on a real school site).
+  if (!notices || notices.length === 0) return null
+
+  const [featured, ...rest] = notices.slice(0, 5)
+  const featuredTone = noticeTone(featured.priority)
+
+  return (
+    <section id="notices" className="max-w-7xl mx-auto px-6 py-24">
+      <FadeIn className="text-center mb-14">
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/5 px-3.5 py-1.5 mb-5">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
+          <span className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+            Live notice board
+          </span>
+        </div>
+        <h2 className="font-display text-4xl md:text-5xl font-bold text-foreground mb-4">
+          Latest from the school
+        </h2>
+        <p className="text-lg text-muted-foreground">
+          Official announcements, published straight from the principal&apos;s office.
+        </p>
+      </FadeIn>
+
+      <div className="grid lg:grid-cols-5 gap-6 items-start">
+        {/* Featured notice — the newest broadcast gets the big canvas */}
+        <FadeIn className="lg:col-span-3">
+          <article
+            aria-label={`Featured notice: ${featured.title}`}
+            className="group relative h-full overflow-hidden rounded-3xl border border-border/60 bg-card p-8 shadow-premium transition-all hover:-translate-y-1.5 hover:shadow-premium-lg"
+          >
+            <span aria-hidden className={`absolute left-0 top-0 bottom-0 w-1.5 ${featuredTone.bar}`} />
+            <div className="flex flex-wrap items-start gap-5">
+              <NoticeDateTile iso={featured.createdAt} tone="from-emerald-500/10" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${featuredTone.chip}`}>
+                    <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${featuredTone.dot}`} />
+                    {featuredTone.label}
+                  </span>
+                  <time
+                    dateTime={featured.createdAt}
+                    className="text-xs font-medium text-muted-foreground"
+                  >
+                    {noticeRelativeTime(featured.createdAt)}
+                  </time>
+                </div>
+                <h3 className="mt-3 font-display text-2xl font-bold leading-snug text-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  {featured.title}
+                </h3>
+                <p className="mt-3 leading-relaxed text-muted-foreground line-clamp-5">
+                  {featured.message}
+                </p>
+                <p className="mt-5 flex items-center gap-2 text-xs font-medium text-muted-foreground/80">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  Issued by the school office · verified broadcast
+                </p>
+              </div>
+            </div>
+          </article>
+        </FadeIn>
+
+        {/* Earlier notices — compact stack */}
+        <div className="lg:col-span-2 flex flex-col gap-4">
+          {rest.map((n, i) => {
+            const tone = noticeTone(n.priority)
+            return (
+              <FadeIn key={n.id} delay={0.08 * (i + 1)}>
+                <article
+                  aria-label={`Notice: ${n.title}`}
+                  className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-5 shadow-premium transition-all hover:-translate-y-1 hover:shadow-premium-lg"
+                >
+                  <span aria-hidden className={`absolute left-0 top-0 bottom-0 w-1 ${tone.bar}`} />
+                  <div className="flex items-start gap-4 pl-2">
+                    <NoticeDateTile iso={n.createdAt} tone="from-emerald-500/10" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold ${tone.chip}`}>
+                          <span aria-hidden className={`h-1 w-1 rounded-full ${tone.dot}`} />
+                          {tone.label}
+                        </span>
+                        <time dateTime={n.createdAt} className="text-[11px] text-muted-foreground">
+                          {noticeRelativeTime(n.createdAt)}
+                        </time>
+                      </div>
+                      <h4 className="mt-2 truncate text-sm font-bold text-foreground">{n.title}</h4>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                        {n.message}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              </FadeIn>
+            )
+          })}
+        </div>
+      </div>
+
+      <FadeIn delay={0.15} className="mt-10">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl border border-border/60 bg-card/60 backdrop-blur px-6 py-5">
+          <p className="text-sm text-muted-foreground text-center sm:text-left">
+            Students, parents and staff see every notice first inside the portal —{' '}
+            <span className="font-semibold text-foreground">with live delivery to their dashboard.</span>
+          </p>
+          <GhostCta onClick={onOpenPortal} className="shrink-0 !py-2.5">
+            Open the portal <ArrowRight className="w-4 h-4" aria-hidden />
+          </GhostCta>
+        </div>
+      </FadeIn>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  Admissions form                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -646,7 +844,7 @@ function Admissions({
       </FadeIn>
 
       <FadeIn delay={0.1}>
-        <div className="relative bg-card/70 backdrop-blur-md rounded-[2rem] p-8 md:p-12 shadow-premium-lg border border-emerald-500/15">
+        <div className="relative overflow-hidden bg-card/70 backdrop-blur-md rounded-[2rem] p-8 md:p-12 shadow-premium-lg border border-emerald-500/15">
           {/* subtle gradient halo */}
           <div aria-hidden className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 

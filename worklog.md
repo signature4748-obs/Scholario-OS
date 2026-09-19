@@ -194,11 +194,106 @@ Stage Summary:
 - One shared PasswordField across all three roles (dedup + eye toggle + live counter + a11y).
 - QA: student Fees/Notices/Messages verified; all green.
 
+---
+Task ID: 5
+Agent: Z.ai Code (cron webDevReview round 2 — 2026-09-19)
+
+Task: Full-status assessment + agent-browser QA of all remaining modules, fix bugs, then
+feature + styling development (mandates: more features, more styling detail).
+
+Work Log:
+- **INFRA INCIDENT (fixed)**: root-page compile hung forever ("○ Compiling / ..." with CPU frozen
+  ~0:31, every fresh server, deterministic). Root cause: poisoned Turbopack cache in .next/dev
+  after a pre-session crash-loop (keepalive logged restarts 00:20→00:39 before this round began).
+  Fix: paused keepalive (SIGSTOP) → killed dev → `mv .next/dev .next/dev.poisoned-*` → keepalive
+  resumed → clean compile succeeded in 47s → warm-chunks.sh (319 chunks) → full recovery.
+  Quarantine deleted after verification. LESSON: if a fresh server hangs on "Compiling /" for
+  >2min with frozen CPU, quarantine .next/dev and let it rebuild (clean compile ≈ 47s).
+- **QA — MODULE COVERAGE NOW 100%** across all four roles (browser-verified render + real data):
+  - Principal +5: Admissions, Calendar, Transport, Inventory, Downloads.
+  - Teacher +7: Student Directory, Application Reviews, Student Behavior, Performance Analytics,
+    Exam Duties, My Salary & Payments, My Attendance.
+  - Student +6: My Profile, Class Leadership, Attendance, Certificates, Transport, Applications.
+  - Super Admin: verified in prior rounds (Overview, Schools, Platform Controls).
+- **OOM burst protocol (empirical)**: server retains ~2.8GB RSS after serving pages; kernel OOM
+  kills next-server at ~3.0GB anon RSS (dmesg confirmed). Warmed chunks serve from DISK in ~4ms
+  (no recompile) — so bursts survive on a FRESH server (~6-7 module loads) but die on a
+  loaded one. Protocol: close browser → kill dev tree (bun run dev + next dev + next-server,
+  keepalive auto-restarts) → verify robots:200 + low RSS → browser burst ≤6 modules → close.
+  Login form gotcha: React controlled inputs need set-value → dispatch → set-value → dispatch
+  (setting both before dispatching clears the password on re-render).
+- **BUG FIXED (pre-existing)**: public-website Admissions card decorative halo
+  (`absolute -top-12 -right-12`) had no overflow-hidden → 23px horizontal scroll at 390px
+  (scrollWidth 413). Added `overflow-hidden` to the card wrapper → 391 (remaining 1px is a
+  subpixel rounding artifact; zero elements exceed 390).
+- **NEW FEATURE — Public Notice Board** (`public-website.tsx`): the /api/schools/public payload
+  already carried `announcements` (latest 5, audience ALL/STUDENTS/PUBLIC) but the public site
+  never rendered them. New section between Facilities and Admissions: live-pill header
+  ("Live notice board", pulsing emerald dot), featured newest notice (calendar-tile date badge,
+  priority chip URGENT/HIGH/NORMAL with rose/amber/emerald tones, accent bar, verified-broadcast
+  footer line) + compact stack for the rest, portal CTA strip, FadeIn stagger, hover lift,
+  dark-mode dual-tone, a11y (article/aria-label/time dateTime). Section hidden entirely when
+  no notices. Header nav gained "Notices" → #notices. Renders with 3 real DB announcements.
+- **NEW FEATURE — Composer public-reach hint** (`comm-compose.tsx`): when the principal selects
+  a public-mapped audience (All Students → STUDENTS), an emerald Globe hint explains the notice
+  will also appear on the public website notice board. Verified in browser: hidden for All
+  Parents, appears for All Students (58 recipients).
+- **Infra**: event-stream :3003 had died mid-round; restarted (direct 200 + gateway forward
+  200). Disk cleaned (6.8GB free).
+- Gates: `bunx tsc --noEmit` 0 errors ✓ · `bun run lint` clean ✓ · screenshots:
+  /home/z/.qa/qa-public-noticeboard{,-2}.png, qa-noticeboard-mobile.png,
+  qa-composer-public-hint.png, qa-teacher-behavior.png.
+- Console errors: zero in stable windows; only transient "Failed to fetch" during the
+  documented OOM-restart windows (self-healing).
+
+Stage Summary:
+- 100% module coverage across all 4 roles in the browser; poisoned-cache incident resolved.
+- New user-visible capability: principal broadcasts now reach the PUBLIC website (notice board),
+  with the connection made explicit inside the composer.
+- Pre-existing 390px overflow bug fixed; gates green.
+
+## Current project status (end of round 2)
+
+- Dev server :3000 healthy (keepalive-guarded), event-stream :3003 healthy (direct + gateway),
+  all chunks warmed (319), DB in sync, disk 6.8GB free.
+- EVERY module of EVERY role has now been browser-verified at least once across rounds 1–2.
+- Zero tsc errors, zero lint errors, no dead code introduced; two focused new features.
+
+## Current goals / verification results (round 2)
+
+- ✅ Poisoned Turbopack cache diagnosed + recovered (clean-cache compile path proven)
+- ✅ 100% role/module QA coverage (18 newly verified modules this round)
+- ✅ Public Notice Board shipped (real data, responsive, dark-mode, a11y)
+- ✅ Composer public-reach hint shipped + browser-verified
+- ✅ 390px overflow bug fixed (413 → 391, no overflowing elements)
+- ✅ event-stream service restarted + gateway forward verified
+- ✅ Gates: tsc 0 errors, lint clean
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox memory ceiling (unchanged, structural)**: bursts of ≤6 module loads on a fresh
+   server are safe; longer sessions or bursts on a loaded server OOM (self-heals in ~5-60s).
+   Next candidate if desired: keepalive "recycle" subcommand to standardize the
+   kill→health→warm cycle (manual protocol documented above works).
+2. **turbopack cache poisoning can recur** after crash-loops: if "Compiling /" hangs >2min with
+   frozen CPU on a fresh server, quarantine .next/dev and rebuild (proven 47s path). Do NOT
+   delete .next wholesale — only .next/dev, and never while the server runs.
+3. Next-phase feature candidates: dark-mode visual sweep was audited statically (clean — the
+   remaining hardcoded colors are intentional paper-document surfaces); deeper candidates:
+   timetable ICS export, per-role notification preferences UI, superadmin activity/audit feed,
+   public site SEO/OG metadata pass, principal fee-defaulter outreach workflow.
+4. The 1px scrollWidth artifact at 390px (391 vs 390) is subpixel rounding — no element
+   actually overflows; safe to ignore.
+
 ## Operational runbook (for cron agents)
 
 1. Read this worklog first. Check server: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/robots.txt`
    (expect 200; if not, keepalive needs ≤60s — check `tail keepalive.log`).
 2. Browser QA in SHORT bursts; close the browser between batches (`agent-browser close`).
+   PROVEN PROTOCOL (Task 5): bursts survive ~6 module loads on a FRESH server only. Before each
+   burst: close browser → `for p in $(pgrep -f "bun run dev"; pgrep -f "next dev -p 3000";
+   pgrep -f "next-server"); do kill -9 $p; done` → wait ~25s (keepalive restarts) → robots:200
+   → burst → close. A loaded server (~2.8GB RSS) + browser will OOM within 1-2 module loads.
 3. If a module click leaves a blank page: the server restarted mid-load — reload the page after the
    server is healthy again.
 4. Login helper: /tmp/qa-lib.sh may be gone; recreate from this worklog's credentials section or use
