@@ -17,7 +17,7 @@
 import { motion } from 'framer-motion'
 import {
   CalendarCheck, BookMarked, FileText, Megaphone,
-  TrendingUp, Sparkles, ArrowRight, Users,
+  TrendingUp, Sparkles, ArrowRight, Users, School,
 } from 'lucide-react'
 import { GlassCard, StatusBadge } from '@/components/shared/ui'
 import { relativeTime } from './hooks/use-teacher-dashboard'
@@ -32,6 +32,13 @@ const quickActions = [
   { label: 'Student Directory', icon: 'Users', color: 'from-violet-500 to-purple-600', key: 'students' },
 ] as const
 
+const classHubAction = {
+  label: 'My Class',
+  icon: 'School',
+  color: 'from-teal-500 to-emerald-600',
+  key: 'class-hub',
+} as const
+
 const actionIconMap: Record<string, React.ReactNode> = {
   CalendarCheck: <CalendarCheck className="h-4 w-4" />,
   BookMarked: <BookMarked className="h-4 w-4" />,
@@ -39,20 +46,25 @@ const actionIconMap: Record<string, React.ReactNode> = {
   Megaphone: <Megaphone className="h-4 w-4" />,
   TrendingUp: <TrendingUp className="h-4 w-4" />,
   Users: <Users className="h-4 w-4" />,
+  School: <School className="h-4 w-4" />,
 }
 
 interface QuickActionsProps {
   onNavigate: (key: string) => void
+  /** true when the teacher is an appointed class teacher — surfaces the
+   *  My Class (Class Teacher Hub) shortcut */
+  isClassTeacher?: boolean
 }
 
-export function QuickActions({ onNavigate }: QuickActionsProps) {
+export function QuickActions({ onNavigate, isClassTeacher = false }: QuickActionsProps) {
+  const actions = isClassTeacher ? [classHubAction, ...quickActions] : [...quickActions]
   return (
     <GlassCard className="p-3 sm:p-4 lg:p-5">
       <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-amber-500" /> Quick Actions
       </h3>
       <div className="grid grid-cols-2 gap-2.5">
-        {quickActions.map((a, i) => (
+        {actions.map((a, i) => (
           <motion.button
             key={a.label}
             initial={{ opacity: 0, scale: 0.9 }}

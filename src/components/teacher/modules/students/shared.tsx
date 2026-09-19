@@ -95,6 +95,47 @@ export function averageToneClass(avgPct: number | null): string {
   return 'text-foreground'
 }
 
+// ─── fee status presentation (class-teacher data only) ──────────────────
+
+export type FeeStatusKey = 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
+
+/** Chip classes for one fee status — the single palette used everywhere. */
+export const FEE_STATUS_META: Record<FeeStatusKey, { label: string; chip: string; value: string }> = {
+  PAID: {
+    label: 'Fees clear',
+    chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    value: 'text-emerald-600 dark:text-emerald-400',
+  },
+  PARTIAL: {
+    label: 'Partially paid',
+    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    value: 'text-amber-600 dark:text-amber-400',
+  },
+  UNPAID: {
+    label: 'Unpaid',
+    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    value: 'text-amber-600 dark:text-amber-400',
+  },
+  OVERDUE: {
+    label: 'Overdue',
+    chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    value: 'text-rose-600 dark:text-rose-400',
+  },
+  NONE: {
+    label: 'No fees',
+    chip: 'bg-muted text-muted-foreground',
+    value: 'text-muted-foreground',
+  },
+}
+
+/** The one-line fee label for a student chip (amount only when owed). */
+export function feeShortLabel(status: FeeStatusKey, outstanding: number): string {
+  if (status === 'PAID') return 'Fees clear'
+  if (status === 'NONE') return 'No fees'
+  if (status === 'OVERDUE') return `Overdue`
+  return `₹${outstanding.toLocaleString('en-IN')} due`
+}
+
 // ─── small presentational primitives ─────────────────────────────────
 
 export function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

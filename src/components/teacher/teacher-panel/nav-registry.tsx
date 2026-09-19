@@ -1,20 +1,28 @@
+'use client'
+
 import {
   LayoutDashboard, CalendarCheck, BookMarked,
   FileText, Users, BarChart3, Megaphone,
   Shield, Wallet, ClipboardList, Settings,
-  CalendarDays, MessagesSquare,
+  CalendarDays, MessagesSquare, School,
 } from 'lucide-react'
 import type { NavGroup } from '@/components/shell/app-shell'
-import type { TeacherRecord, PositionAssignment } from '@/lib/store/teachers-store'
+import type { PositionAssignment } from '@/lib/store/teachers-store'
 
 export interface NavRegistryArgs {
   isRelieved: boolean
-  activePermissions: string[]
+  /**
+   * REAL server-derived appointment (GET /api/teacher/role): the classes
+   * this teacher is class teacher of. The Class Teacher Hub group exists
+   * ONLY for appointed class teachers — position permissions never grant
+   * it, and a teacher with no appointment sees the plain teacher panel.
+   */
+  classTeacherOf: { id: string; label: string }[]
   /** live server-derived unread messages — drives the Communication Hub badge */
   hubUnread?: number
 }
 
-export function buildTeacherNavGroups({ isRelieved, activePermissions, hubUnread = 0 }: NavRegistryArgs): NavGroup[] {
+export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 0 }: NavRegistryArgs): NavGroup[] {
   if (isRelieved) {
     return [
       {
@@ -56,11 +64,14 @@ export function buildTeacherNavGroups({ isRelieved, activePermissions, hubUnread
     },
   ]
 
-  // Add Class Teacher Special Module Group if permitted
-  if (activePermissions.includes('view_full_class_profile') || activePermissions.includes('enter_class_attendance')) {
+  // Class Teacher Hub — ONLY for teachers actually appointed class teacher
+  // of a class (the server-derived classTeacherOf list). Not appointed ⇒
+  // the group (and every module in it) does not exist for this teacher.
+  if (classTeacherOf.length > 0) {
     navGroups.push({
       label: 'Class Teacher Hub',
       items: [
+        { key: 'class-hub', label: 'My Class', icon: <School className="h-4.5 w-4.5" /> },
         { key: 'behavior', label: 'Student Behavior', icon: <Shield className="h-4.5 w-4.5" /> },
       ],
     })
@@ -94,7 +105,7 @@ export function buildTeacherNavGroups({ isRelieved, activePermissions, hubUnread
   return navGroups
 }
 
-export function getPendingAssignments(teacher: TeacherRecord | undefined, isRelieved: boolean): PositionAssignment[] {
+export function getPendingAssignments(teacher: { positions: PositionAssignment[] } | undefined, isRelieved: boolean): PositionAssignment[] {
   if (!teacher || isRelieved) return []
   return teacher.positions.filter((p) => p.status === 'Pending Acceptance' || p.status === 'Pending Removal')
 }

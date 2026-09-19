@@ -1390,3 +1390,181 @@ Stage Summary:
    straight into My Timetable; duty-roster PDF export; overview-tab
    invigilation coverage card; round-8 leftovers (notification prefs
    UI for students, payment auto-refresh).
+
+---
+
+Task ID: 12
+Agent: Z.ai Code (class-teacher role differentiation — 2026-09-20)
+Task: "Rohan Mehta is class teacher of 9A but the student directory shows the
+same for class teacher and normal teacher (no payment records). The Class
+Teacher Hub module must appear ONLY for teachers actually appointed class
+teacher; a normal teacher sees the plain panel; an appointed class teacher
+gets something extra to manage their class and see overall results
+submission. Make it and connect everything."
+
+Work Log:
+- RECON: real DB truth — Class.classTeacherId stores the USER id:
+  Grade 9 - A → Rohan Mehta (11 students), Grade 10 - A → Arjun Nair
+  (8). Kavita (teacher1@demoschool.edu/password123) + Priya teach
+  subjects only (22 periods each) — the perfect normal-teacher test.
+  The old nav gated the hub on POSITION PERMISSIONS (mock store) —
+  appointment never mattered. Principal Classes module is mock-store
+  (no real write path to Class.classTeacherId existed).
+- BACKEND (4 new surfaces, all server-scoped, never trusting client ids):
+  · GET /api/teacher/role (NEW) — the signed-in teacher's REAL
+    appointment context { isClassTeacher, classTeacherOf[{id,label,
+    room,studentCount}] }. This is the single server truth that gates
+    the panel.
+  · GET /api/teacher/students (EXTENDED) — fee records for CLASS-TEACHER
+    classes ONLY: per student fees{status PAID/PARTIAL/UNPAID/OVERDUE/
+    NONE, totalBilled/Paid/outstanding, lastPaymentAt, items[≤8],
+    payments[≤5]} + per-class feeSummary{collected/outstanding/fullyPaid/
+    pending/overdue}. Subject-only classes get fees:null + no
+    feeSummary — a subject teacher can never see a family's money.
+  · GET /api/teacher/class-hub (NEW) — the class-teacher control room:
+    attendanceToday snapshot, fee totals + defaulters list (overdue
+    first, guardian phone), RESULTS SUBMISSION matrix for the 3 most
+    recent exams (per CSA subject: entered/class-size, DRAFT vs
+    SUBMITTED, avg%), behavior counts (open concerns/monitoring/
+    positives 30d).
+  · GET /api/classes/class-teachers + PATCH /api/classes/[id]/
+    class-teacher (NEW, PRINCIPAL/MANAGEMENT) — the official appointment
+    record: real classes × appointed teacher + appointable pool; PATCH
+    { teacherUserId | null } validates school scope, is idempotent, and
+    pushes a Message notification to the appointed (and released)
+    teacher — mirrors the Task-11 invigilator pattern.
+- PANEL GATING: nav-registry.tsx — the Class Teacher Hub group is now
+  appointment-based (classTeacherOf.length > 0; permission gating
+  removed) and carries the NEW 'class-hub' "My Class" item + existing
+  'behavior'. teacher-panel.tsx fetches /api/teacher/role once
+  (use-teacher-role.ts, hidden-until-confirmed); 'class-hub' added to
+  the deep-link allowlist + ModuleRouter (lazy chunk).
+- STUDENT DIRECTORY DIFFERENTIATION (teacher/modules/students/): class
+  pills now tell the two views apart — "Class Teacher" chip (CT class)
+  vs "Teaches <subject> +N" chip (subject class); QuickStats gains a 5th
+  "Fee Collection" tile (collected %, ₹ outstanding · N overdue) for CT
+  classes only; student cards gain a third "Fees" metric cell (Fees
+  clear / ₹N due / Overdue); profile sheet gains a "Fee Payments"
+  section (status chip, Billed/Paid/Outstanding tiles, fee lines with
+  per-line status, recent payments) — rendered only when the server sent
+  fee data; CSV export adds Fee Status + Outstanding columns for CT
+  classes; grid header states the boundary ("fee records belong to the
+  class teacher").
+- NEW CLASS HUB MODULE (teacher/modules/class-hub/, 7 files): emerald
+  gradient hero (Class Teacher · Grade 9 - A · 11 students · Room 101 ·
+  quick actions Mark Attendance/Enter Marks/Directory/Behavior),
+  Attendance Today card (marked ✓ counts / pending → CTA), Class
+  Wellbeing card (concerns/monitoring/positives), Fee Collection card
+  (spring bar, paid/pending/overdue, defaulters list with phones,
+  thin-scroll), Results Submission card (exam pills — defaults to the
+  ONGOING exam, per-subject entered-N/N bars + Submitted/Draft/Pending
+  chips + avg%, "Open Marks Entry") — the whole-class view the user
+  asked for. Honest empty states everywhere; multi-class pills if a
+  teacher runs more than one class.
+- PRINCIPAL SIDE: classes/index.tsx now renders
+  ClassTeacherAppointments (details/class-teacher-appointments.tsx) —
+  a 100% real-DB island (Invigilation-tab pattern) at the top of the
+  Classes module: each real class + current teacher + shadcn Select to
+  appoint/release, optimistic rows with revert-on-error, emerald flash,
+  toasts, and copy that explains what the appointment unlocks.
+- CONNECTED EVERYTHING: teacher Dashboard — QuickActions prepends a
+  "My Class" shortcut for class teachers; the PendingActions hub card
+  is now CT-gated (BUG FIX: it promoted the hub to EVERY teacher —
+  found live in Kavita's browser snapshot) and now opens the real
+  class-hub module.
+- API QA (curl, all green): Rohan role → classTeacherOf=[Grade 9 - A];
+  students → 9A carries fees (Aarav PARTIAL ₹5,400, Diya PAID) +
+  feeSummary {₹2.66L billed / ₹2.36L collected / ₹30.4K outstanding},
+  10A (subject class) all null; class-hub → attendance 10P/1A marked,
+  defaulters Ananya ₹25K overdue + Aarav ₹5.4K, behavior 1/0/7, results
+  PA1 Math 7/11 submitted avg 72%; Kavita → role [] + class-hub
+  classes:[] + ZERO fee data anywhere; principal PATCH cycle → Priya
+  appointed → Arjun restored → idempotent re-appoint, 4 Message
+  notifications created (appointment + release both directions),
+  roster back to Rohan 9-A / Arjun 10-A.
+- BROWSER QA (gateway :81, mobile 390×844, images/fonts blocked,
+  deep-links + injected session — the 4GB box fought hard, see risks):
+  ROHAN: sidebar shows "CLASS TEACHER HUB" group with My Class +
+  Student Behavior (a11y snapshot); Class Hub rendered end-to-end
+  (hero, attendance 10/11, wellbeing 1/0/7, fee collection 89% +
+  defaulters, results pills UT2-default + 8 subject rows) — VLM-verified
+  screenshot; Student Directory shows "Grade 9 - A · 11 · Class
+  Teacher" vs "Grade 10 - A · 8 · Teaches Computer Applications +1"
+  pills, ₹30.4K fee tile, per-student "₹5,400 due"/"Fees clear" cells
+  (DOM evidence captured mid-render). KAVITA: panel renders with NO
+  Class Teacher Hub group (sidebar = OVERVIEW/ACADEMICS/IN-CHARGE/
+  COMMUNICATION/INSIGHTS/ACCOUNT only) — this snapshot exposed the
+  PendingActions leak (fixed + gates re-run green). Screenshots:
+  download/qa12-classhub-rohan.png, qa12-students-rohan.png,
+  qa12-kavita-panel.png.
+- GATES: bunx tsc --noEmit 0 errors; bun run lint clean; robots 200;
+  event-stream :3003 200; no chrome zombies; server stable post-QA.
+
+Stage Summary:
+- USER REQUEST DELIVERED: (1) the Class Teacher Hub is APPOINTMENT-
+  gated — only teachers the principal actually appointed see the group,
+  its modules, its dashboard affordances (Kavita sees none of it);
+  (2) the Student Directory is now genuinely two views — the class
+  teacher of a class sees payment records (fee lines, payments,
+  outstanding, class collection stats), a subject teacher sees the
+  roster + academics only, with the boundary stated in the UI; (3) the
+  appointed class teacher gets "something extra": the My Class hub —
+  attendance today, fee collection + defaulters follow-up list, the
+  OVERALL RESULTS SUBMISSION matrix across every subject, and class
+  wellbeing; (4) everything is connected: the principal appoints from
+  the Classes module (official record) → the teacher's sidebar + hub +
+  fee views change → the teacher is notified; the appointment IS the
+  permission.
+- KEY FILES: api/teacher/{role,class-hub}/route.ts + api/teacher/
+  students/route.ts (fees) + api/classes/{class-teachers,[id]/
+  class-teacher}/route.ts (NEW); teacher-panel/{nav-registry,
+  use-teacher-role,teacher-panel,module-router} (gating);
+  modules/students/{types,shared,quick-stats,students-grid,
+  student-profile-sheet,index} (fee differentiation); modules/class-hub/
+  (NEW, 7 files); principal classes {index + details/
+  class-teacher-appointments} (NEW); dashboard {quick-actions,
+  pending-actions, index} (CT-gated affordances).
+- DEMO STATE: 9-A → Rohan (class teacher showcase), 10-A → Arjun —
+  restored after the PATCH test cycle; 4 appointment/release Messages
+  exist for Priya/Arjun showcasing the notification flow.
+  Credentials: rohan.mehta@greenwood.edu.in/teacher123 (CT);
+  teacher1@demoschool.edu/password123 (Kavita, normal teacher);
+  teacher2@demoschool.edu/password123 (Arjun, CT of 10-A).
+
+## Unresolved issues / risks, next-phase priorities
+
+1. MEMORY (the defining constraint of this round): the dev server
+   OOM-crash-looped repeatedly during browser QA. MECHANICS (now
+   understood): (a) an open tab's turbopack HMR client re-requests the
+   page after every server restart → root recompile (~2.2-3.1GB) +
+   chrome → OOM → keepalive restart → loop; (b) each OOM kill poisons
+   .next (root RSS grows 2.2 → 2.6 → 2.9 → 3.1GB across generations);
+   (c) .next cache does NOT meaningfully survive restarts (root
+   recompiled 18-20s after a cache-keeping restart). WHAT WORKED:
+   kill dev tree BY PID → verify zero next processes → rm -rf .next →
+   headless curl warm-up (root ~45s + ALL APIs the panel will call) →
+   attach ONE mobile tab with images/fonts blocked → deep-link →
+   capture the a11y snapshot to a FILE EVERY POLL (the render window is
+   ~30-60s before the death) → close the tab the instant evidence
+   lands. Screenshots can catch a spinner — the DOM snapshot is the
+   source of truth.
+2. PRINCIPAL APPOINTMENT CARD — API-verified end-to-end (roster,
+   PATCH cycle, idempotency, notifications, optimistic-revert logic
+   mirrors the proven Invigilation tab) but NOT browser-rendered: the
+   principal panel chunk has never compiled on this box without OOM.
+   First browser QA next round should start with the principal
+   ?module=classes deep-link on a fresh .next.
+3. The teacher panel shell still shows Rohan's MOCK record (T-014
+   banners/payroll) for any teacher login — pre-existing demo
+   architecture; only the module content follows the real session. A
+   future round could make the banners session-aware too.
+4. The class-hub results matrix uses the 3 most recent exams with an
+   ExamClass link; Unit Test 2 shows honest 0/11 "Pending" rows for 7
+   of 8 subjects (only Math has marks, in PA1) — entering a few more
+   subject marks via Marks Entry would make the matrix demo-rich.
+5. Next-phase candidates: unit-test the fee-status derivation (shared
+   with class-hub); "message the defaulters' guardians" action from the
+   hub (pre-filled Communication Hub); class-wise PDF export of the
+   results submission matrix; round-8 leftovers (notification prefs UI
+   for students, payment auto-refresh); UP-BOARD demo tenant for the
+   lesson planner (Task 10 leftover).

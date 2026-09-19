@@ -17,11 +17,12 @@
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { CalendarCheck, GraduationCap, Users, UsersRound } from 'lucide-react'
+import { CalendarCheck, GraduationCap, Users, UsersRound, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatINR } from '@/lib/format'
 import type { DirectoryClass, DirectoryStudent } from './types'
 
-type SummaryTone = 'slate' | 'emerald' | 'violet' | 'sky'
+type SummaryTone = 'slate' | 'emerald' | 'violet' | 'sky' | 'amber'
 
 const TONES: Record<SummaryTone, { text: string; bg: string; border: string }> = {
   slate: {
@@ -43,6 +44,11 @@ const TONES: Record<SummaryTone, { text: string; bg: string; border: string }> =
     text: 'text-sky-600 dark:text-sky-400',
     bg: 'bg-sky-500/5',
     border: 'border-border hover:border-sky-500/40',
+  },
+  amber: {
+    text: 'text-amber-600 dark:text-amber-400',
+    bg: 'bg-amber-500/5',
+    border: 'border-border hover:border-amber-500/40',
   },
 }
 
@@ -78,6 +84,14 @@ export function QuickStats({
   const boys = students.filter((s) => s.gender?.toUpperCase() === 'MALE').length
   const unrecordedGender = students.length - girls - boys
   const classTeacherCount = classes.filter((c) => c.isClassTeacher).length
+
+  // Fee collection — CLASS TEACHER classes only (the server never sends a
+  // feeSummary for a class this teacher merely teaches a subject in).
+  const feeSummary = activeClass?.isClassTeacher ? activeClass.feeSummary : null
+  const collectedPct =
+    feeSummary && feeSummary.totalBilled > 0
+      ? Math.round((feeSummary.totalCollected / feeSummary.totalBilled) * 100)
+      : null
 
   const tiles: SummaryTile[] = [
     {
@@ -121,10 +135,30 @@ export function QuickStats({
       icon: GraduationCap,
       tone: 'sky',
     },
+    ...(feeSummary
+      ? [
+          {
+            key: 'fees',
+            label: 'Fee Collection',
+            value: collectedPct != null ? `${collectedPct}%` : '—',
+            context:
+              feeSummary.totalBilled > 0
+                ? `${formatINR(feeSummary.outstanding, true)} outstanding · ${feeSummary.overdue} overdue`
+                : 'No fee records yet',
+            icon: Wallet,
+            tone: 'amber',
+          } satisfies SummaryTile,
+        ]
+      : []),
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div
+      className={cn(
+        'grid grid-cols-2 gap-3',
+        tiles.length > 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
+      )}
+    >
       {tiles.map((tile, i) => {
         const tone = TONES[tile.tone]
         const Icon = tile.icon

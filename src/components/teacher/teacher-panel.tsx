@@ -4,8 +4,9 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { AppShell } from '@/components/shell/app-shell'
 import { ModuleLoading } from '@/components/shared/module-loading'
-import { useTeachersStore, getTeacherActivePermissions } from '@/lib/store/teachers-store'
+import { useTeachersStore } from '@/lib/store/teachers-store'
 import { useTeacherHubStore } from '@/lib/store/teacher-hub-store'
+import { useTeacherRole } from './teacher-panel/use-teacher-role'
 import {
   buildTeacherNavGroups,
   getPendingAssignments,
@@ -32,11 +33,12 @@ const MySalaryModule = dynamic(
 const TEACHER_MODULE_KEYS = [
   'dashboard', 'payroll', 'my-attendance', 'my-timetable', 'attendance',
   'lesson-planner', 'marks', 'students', 'app-reviews', 'behavior',
-  'analytics', 'settings', 'communication', 'profile', 'fee-management',
+  'class-hub', 'analytics', 'settings', 'communication', 'profile',
+  'fee-management',
 ] as const
 
 export function TeacherPanel() {
-  const { teachers, positionsList, confirmPayrollRevision } = useTeachersStore()
+  const { teachers, confirmPayrollRevision } = useTeachersStore()
   // Live server-derived Teacher Hub counts (published by the Communication Hub
   // module after each load) — drives the sidebar badge. One store, one truth.
   const hubUnread = useTeacherHubStore((s) => s.parentUnread)
@@ -55,12 +57,14 @@ export function TeacherPanel() {
       : fallback
   })
 
-  const activePermissions = currentTeacher && !isRelieved ? getTeacherActivePermissions(currentTeacher, positionsList) : []
+  // REAL appointment context (server truth) — gates the Class Teacher Hub.
+  const role = useTeacherRole()
+  const classTeacherOf = role?.classTeacherOf ?? []
 
   // Check pending position assignments for approval workflow
   const pendingAssignments = getPendingAssignments(currentTeacher, isRelieved)
 
-  const navGroups = buildTeacherNavGroups({ isRelieved, activePermissions, hubUnread })
+  const navGroups = buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread })
 
   const {
     dialogs,

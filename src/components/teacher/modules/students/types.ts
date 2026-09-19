@@ -61,6 +61,46 @@ export interface DirectoryStudent {
   attendance: DirectoryAttendanceSummary
   /** null when the class has no exam with entered marks */
   latestExam: DirectoryLatestExam | null
+  /**
+   * Fee & payment records — present ONLY when the signed-in teacher is
+   * the class teacher of this student's class (server decision). A
+   * subject teacher never receives fee data: the field is null and the
+   * fee surfaces simply do not render.
+   */
+  fees: DirectoryStudentFees | null
+}
+
+/** One fee line of a student (real Fee row, amounts in ₹). */
+export interface DirectoryFeeItem {
+  id: string
+  title: string
+  amount: number
+  paid: number
+  outstanding: number
+  status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE'
+  dueDate: string | null
+  method: string | null
+}
+
+/** One recorded payment against any of the student's fees. */
+export interface DirectoryPaymentRecord {
+  id: string
+  feeTitle: string
+  amount: number
+  method: string | null
+  status: string
+  createdAt: string
+}
+
+/** The class teacher's fee picture for one student. */
+export interface DirectoryStudentFees {
+  status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
+  totalBilled: number
+  totalPaid: number
+  outstanding: number
+  lastPaymentAt: string | null
+  items: DirectoryFeeItem[]
+  payments: DirectoryPaymentRecord[]
 }
 
 /** One authorized class in the class list (no roster). */
@@ -73,6 +113,19 @@ export interface DirectoryClass {
    *  class-teacher-only class) */
   subjects: string[]
   studentCount: number
+  /** class-teacher classes only — the class's fee collection summary */
+  feeSummary: DirectoryClassFeeSummary | null
+}
+
+/** Fee collection summary for a class the teacher is class teacher of. */
+export interface DirectoryClassFeeSummary {
+  totalBilled: number
+  totalCollected: number
+  outstanding: number
+  studentsWithFees: number
+  fullyPaid: number
+  pending: number
+  overdue: number
 }
 
 /** The full directory payload — one fetch, every authorized class. */

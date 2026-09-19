@@ -29,6 +29,8 @@ import type {
 
 interface PendingActionsProps {
   onNavigate: (key: string) => void
+  /** true only for appointed class teachers (drives the hub card) */
+  isClassTeacher?: boolean
 }
 
 interface FollowUpRow extends FollowUpItem {
@@ -49,7 +51,7 @@ function dueLabel(due: string): { text: string; tone: 'overdue' | 'today' | 'lat
   return { text: `Due in ${days}d`, tone: 'later' }
 }
 
-export function PendingActions({ onNavigate }: PendingActionsProps) {
+export function PendingActions({ onNavigate, isClassTeacher = false }: PendingActionsProps) {
   const [state, setState] = useState<
     | { phase: 'loading' }
     | { phase: 'error' }
@@ -199,27 +201,28 @@ export function PendingActions({ onNavigate }: PendingActionsProps) {
       </GlassCard>
 
       <div className="space-y-4">
-        <TeacherHubCard onNavigate={onNavigate} />
+        {isClassTeacher && <TeacherHubCard onNavigate={onNavigate} />}
       </div>
     </div>
   )
 }
 
-/** Quiet secondary card — the teacher's Class Teacher Hub entry point,
- *  driven by the same live payloads already fetched above (no extra call). */
+/** Quiet secondary card — the appointed class teacher's entry point into
+ *  their Class Teacher Hub (My Class). Rendered ONLY for teachers with a
+ *  real appointment — a subject teacher never sees hub affordances. */
 function TeacherHubCard({ onNavigate }: { onNavigate: (key: string) => void }) {
   return (
     <GlassCard className="p-3 sm:p-4 lg:p-5">
       <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
         <Shield className="h-4 w-4 text-emerald-500" /> Class Teacher Hub
       </h3>
-      <p className="text-xs text-muted-foreground mb-3">Parents & behaviour records</p>
+      <p className="text-xs text-muted-foreground mb-3">Your class, end to end — attendance, fees, results & behaviour</p>
       <button
-        onClick={() => onNavigate('communication')}
+        onClick={() => onNavigate('class-hub')}
         className="w-full rounded-xl border border-border bg-card/40 p-3 text-left hover:bg-accent/40 transition-colors"
       >
         <p className="text-[11px] text-muted-foreground">
-          Open Communication Hub & Student Behavior
+          Open My Class overview
         </p>
       </button>
     </GlassCard>

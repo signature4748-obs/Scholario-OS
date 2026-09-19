@@ -12,6 +12,7 @@ import { getTeacherById } from '@/lib/mock/teachers'
 import { classStreamBadge } from './class-display'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { SearchFilterBar, type FilterConfig } from '../shared/search-filter-bar'
+import { ClassTeacherAppointments } from './details/class-teacher-appointments'
 
 export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: ClassRecord) => void; onAddClass: () => void }) {
   const [search, setSearch] = useState('')
@@ -40,6 +41,11 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
 
   return (
     <div className="space-y-4">
+      {/* Official class-teacher appointments — the REAL record that gates
+          each teacher's Class Teacher Hub (100% server data, like the
+          Exams module's Invigilation tab). */}
+      <ClassTeacherAppointments />
+
       <SummaryCardGrid columns={4}>
         <SummaryCard label="Total Classes" value={stats.totalClasses} sub={`${stats.totalSections} sections`} tone="amber" icon={<Layers className="h-4 w-4" />} delay={0} />
         <SummaryCard label="Total Students" value={stats.totalEnrolled} tone="emerald" icon={<Users className="h-4 w-4" />} delay={0.04} />

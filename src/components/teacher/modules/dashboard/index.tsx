@@ -97,12 +97,12 @@ export function TeacherDashboard({ onNavigate }: DashboardProps) {
 
       {/* 5 · Shortcuts + real school notices */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <QuickActions onNavigate={onNavigate} />
+        <QuickActions onNavigate={onNavigate} isClassTeacher={(data.classTeacherOf?.length ?? 0) > 0} />
         <NoticeBoard notices={data.notices} onNavigate={onNavigate} />
       </div>
 
       {/* 6 · Real pending queue (fetches the Teacher Hub aggregates itself) */}
-      <PendingActions onNavigate={onNavigate} />
+      <PendingActions onNavigate={onNavigate} isClassTeacher={(data.classTeacherOf?.length ?? 0) > 0} />
     </div>
   )
 }

@@ -29,6 +29,7 @@ import {
   Phone,
   User,
   Users,
+  Wallet,
 } from 'lucide-react'
 import { StatusBadge, GradientAvatar } from '@/components/shared/ui'
 import {
@@ -39,8 +40,9 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet'
 import { formatDate } from '@/lib/format'
+import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { InfoRow, SectionLabel, attendanceToneClass, statusOf } from './shared'
+import { FEE_STATUS_META, InfoRow, SectionLabel, attendanceToneClass, statusOf } from './shared'
 import type { DirectoryStudent } from './types'
 
 const THIN_SCROLLBAR =
@@ -263,7 +265,81 @@ export function StudentProfileSheet({
                 )}
               </section>
 
-              {/* ── 4. Parent / Guardian ────────────────────────────── */}
+              {/* ── 4. Fee Payments (class teacher only — the server
+                     only sends fee records for the teacher's own class) ── */}
+              {student.fees && student.fees.status !== 'NONE' && (
+                <section className="space-y-2">
+                  <SectionLabel icon={<Wallet className="h-3 w-3" />}>Fee Payments</SectionLabel>
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/40 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold">{student.fees.items.length} fee line{student.fees.items.length === 1 ? '' : 's'} on record</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {student.fees.lastPaymentAt
+                          ? `Last payment ${formatDate(student.fees.lastPaymentAt.slice(0, 10))}`
+                          : 'No payments recorded yet'}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold',
+                        FEE_STATUS_META[student.fees.status].chip,
+                      )}
+                    >
+                      {FEE_STATUS_META[student.fees.status].label}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <CountTile label="Billed" value={formatINR(student.fees.totalBilled, true)} />
+                    <CountTile label="Paid" value={formatINR(student.fees.totalPaid, true)} className="text-emerald-600 dark:text-emerald-400" />
+                    <CountTile
+                      label="Outstanding"
+                      value={formatINR(student.fees.outstanding, true)}
+                      className={student.fees.outstanding > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}
+                    />
+                  </div>
+                  <div className="space-y-1.5 rounded-xl border border-border bg-card/40 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Fee lines
+                    </p>
+                    {student.fees.items.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {formatINR(item.paid, true)} / {formatINR(item.amount, true)}
+                        </span>
+                        <span
+                          className={cn(
+                            'w-[74px] shrink-0 rounded-full px-2 py-0.5 text-right text-[10px] font-semibold',
+                            FEE_STATUS_META[item.status].chip,
+                          )}
+                        >
+                          {FEE_STATUS_META[item.status].label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {student.fees.payments.length > 0 && (
+                    <div className="space-y-1.5 rounded-xl border border-border bg-card/40 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Recent payments
+                      </p>
+                      {student.fees.payments.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="min-w-0 flex-1 truncate font-medium">{p.feeTitle}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {formatDate(p.createdAt.slice(0, 10))} · {(p.method ?? '—').replace('_', ' ').toLowerCase()}
+                          </span>
+                          <span className="shrink-0 tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+                            {formatINR(p.amount, true)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* ── 5. Parent / Guardian ────────────────────────────── */}
               <section className="space-y-2">
                 <SectionLabel icon={<Users className="h-3 w-3" />}>Parent / Guardian</SectionLabel>
                 <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3 text-xs">

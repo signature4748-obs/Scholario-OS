@@ -33,6 +33,7 @@ import { toCsv } from '@/lib/csv'
 import { downloadCSVFile } from '@/lib/download-file'
 import { cn } from '@/lib/utils'
 import { HubEmptyState, HubModuleSkeleton } from '../shared/hub-stat-cards'
+import { FEE_STATUS_META } from './shared'
 import { useStudentDirectory } from './hooks'
 import { QuickStats } from './quick-stats'
 import { StudentsGrid } from './students-grid'
@@ -45,8 +46,16 @@ export function StudentsModule() {
 
   const handleExport = () => {
     if (!activeClass || students.length === 0) return
+    // Fee columns exist only for the class teacher's own class — the same
+    // data boundary the roster carries (subject teachers export identity +
+    // academics only).
+    const isCt = activeClass.isClassTeacher
+    const header = [
+      'Roll No', 'Admission No', 'Name', 'Class', 'Gender', 'Guardian', 'Guardian Phone', 'Attendance %', 'Latest Exam Avg %',
+      ...(isCt ? ['Fee Status', 'Outstanding (INR)'] : []),
+    ]
     const csv = toCsv(
-      ['Roll No', 'Admission No', 'Name', 'Class', 'Gender', 'Guardian', 'Guardian Phone', 'Attendance %', 'Latest Exam Avg %'],
+      header,
       students.map((s) => [
         s.rollNo ?? '',
         s.admissionNo ?? '',
@@ -57,6 +66,9 @@ export function StudentsModule() {
         s.guardianPhone ?? '',
         s.attendance.pct != null ? `${s.attendance.pct}%` : 'No records',
         s.latestExam != null ? `${s.latestExam.averagePct}%` : 'No marks',
+        ...(isCt
+          ? [s.fees ? FEE_STATUS_META[s.fees.status].label : '', s.fees ? String(s.fees.outstanding) : '']
+          : []),
       ]),
     )
     const safeLabel = activeClass.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
@@ -131,11 +143,16 @@ export function StudentsModule() {
         }
       />
 
-      {/* Class selector — the real authorized classes; class-teacher
-          classes carry an explicit marker (never shown otherwise). */}
+      {/* Class selector — the real authorized classes. The two views are
+          explicit: an emerald “Class Teacher” chip for the appointed
+          class, a muted “Teaches …” chip for subject-only classes. */}
       <div className="flex flex-wrap gap-2" role="group" aria-label="Select a class">
         {data.classes.map((c) => {
           const isActive = classId === c.id
+          const subjectChip =
+            c.subjects.length > 0
+              ? `Teaches ${c.subjects[0]}${c.subjects.length > 1 ? ` +${c.subjects.length - 1}` : ''}`
+              : null
           return (
             <button
               key={c.id}
@@ -157,7 +174,7 @@ export function StudentsModule() {
               >
                 {c.studentCount}
               </span>
-              {c.isClassTeacher && (
+              {c.isClassTeacher ? (
                 <span
                   className={cn(
                     'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
@@ -166,6 +183,18 @@ export function StudentsModule() {
                 >
                   Class Teacher
                 </span>
+              ) : (
+                subjectChip && (
+                  <span
+                    className={cn(
+                      'max-w-[150px] truncate rounded-full px-1.5 py-0.5 text-[9px] font-semibold',
+                      isActive ? 'bg-primary-foreground/20' : 'bg-muted',
+                    )}
+                    title={c.subjects.join(', ')}
+                  >
+                    {subjectChip}
+                  </span>
+                )
               )}
             </button>
           )
@@ -175,10 +204,12 @@ export function StudentsModule() {
       {/* Summary cards — real counts and honest em-dashes only */}
       <QuickStats students={students} activeClass={activeClass} classes={data.classes} />
 
-      {/* Roster: search + documented filters + student cards */}
+      {/* Roster: search + documented filters + student cards (fee data
+          included only when this class is the teacher's own) */}
       <StudentsGrid
         students={students}
         classLabel={activeClass?.label ?? 'Class'}
+        isClassTeacher={!!activeClass?.isClassTeacher}
         onSelect={setSelected}
       />
 

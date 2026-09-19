@@ -18,15 +18,17 @@
 
 import { useMemo, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Search, User, Users } from 'lucide-react'
+import { Search, User, Users, Wallet } from 'lucide-react'
 import { GlassCard, GradientAvatar, StatusBadge } from '@/components/shared/ui'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { HubEmptyState } from '../shared/hub-stat-cards'
 import {
   DIRECTORY_FILTERS,
+  FEE_STATUS_META,
   attendanceToneClass,
   averageToneClass,
+  feeShortLabel,
   matchesFilter,
   matchesSearch,
   statusOf,
@@ -40,10 +42,14 @@ const THIN_SCROLLBAR =
 export function StudentsGrid({
   students,
   classLabel,
+  isClassTeacher = false,
   onSelect,
 }: {
   students: DirectoryStudent[]
   classLabel: string
+  /** true when the selected class is one this teacher is class teacher of
+   *  — the only case where the roster carries fee records. */
+  isClassTeacher?: boolean
   onSelect: (s: DirectoryStudent) => void
 }) {
   const [search, setSearch] = useState('')
@@ -74,7 +80,13 @@ export function StudentsGrid({
           <h3 className="text-sm font-semibold">
             {classLabel} · {students.length} student{students.length === 1 ? '' : 's'}
           </h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Sorted by roll number</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {isClassTeacher ? (
+              <>Class-teacher view — fee & payment records included</>
+            ) : (
+              <>Sorted by roll number · fee records belong to the class teacher</>
+            )}
+          </p>
         </div>
         <div className="relative w-full shrink-0 sm:w-56">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -155,6 +167,7 @@ export function StudentsGrid({
               const status = statusOf(s)
               const att = s.attendance.pct
               const avg = s.latestExam?.averagePct ?? null
+              const fees = s.fees
               return (
                 <motion.button
                   key={s.id}
@@ -188,8 +201,9 @@ export function StudentsGrid({
                     )}
                   </div>
 
-                  {/* teacher-facing metrics */}
-                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3">
+                  {/* teacher-facing metrics (fee cell only for the class
+                      teacher — subject teachers never receive the data) */}
+                  <div className={cn('mt-3 grid gap-2 border-t border-border pt-3', fees ? 'grid-cols-3' : 'grid-cols-2')}>
                     <div className="rounded-lg bg-muted/40 p-2">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         Attendance
@@ -212,6 +226,24 @@ export function StudentsGrid({
                         {s.latestExam ? s.latestExam.examName : 'No marks yet'}
                       </p>
                     </div>
+                    {fees && (
+                      <div className="rounded-lg bg-muted/40 p-2">
+                        <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          <Wallet className="h-2.5 w-2.5" aria-hidden="true" /> Fees
+                        </p>
+                        <p
+                          className={cn(
+                            'font-display text-base font-bold tabular-nums',
+                            FEE_STATUS_META[fees.status].value,
+                          )}
+                        >
+                          {feeShortLabel(fees.status, fees.outstanding)}
+                        </p>
+                        <p className="truncate text-[10px] text-muted-foreground">
+                          {fees.items.length > 0 ? `${fees.items.length} fee line${fees.items.length === 1 ? '' : 's'}` : 'No fees on record'}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* footer */}

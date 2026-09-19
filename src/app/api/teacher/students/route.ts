@@ -21,7 +21,12 @@ export const runtime = 'nodejs'
  *   · academic performance — the latest exam that has entered marks for
  *     the student's class, per-subject marks + percentage average. Both
  *     DRAFT and SUBMITTED rows count ("marks exist" = marksObtained set);
- *     nothing is fabricated — no exam ⇒ latestExam is null.
+ *     nothing is fabricated — no exam ⇒ latestExam is null;
+ *   · FEE RECORDS — visible ONLY for the classes this teacher is class
+ *     teacher of (the user-facing rule: a subject teacher never sees a
+ *     family's money; the class teacher owns their class's fee picture).
+ *     Students of subject-only classes carry fees: null and those classes
+ *     carry no feeSummary — the client cannot ask for them.
  */
 export async function GET() {
   return withUser(
@@ -199,6 +204,144 @@ export async function GET() {
       }
 
       const studentsByClass: Record<string, unknown[]> = {}
+
+      // ── Fee records — CLASS TEACHER classes only ─────────────────────
+      // Real Fee + Payment rows for the students of the classes this
+      // teacher is class teacher of. Subject-only classes get nothing:
+      // `fees` stays null on their students and `feeSummary` is absent.
+      const ctStudentIds = students
+        .filter((s) => s.classId && classTeacherIds.has(s.classId))
+        .map((s) => s.id)
+      const feeRows = ctStudentIds.length
+        ? await db.fee.findMany({
+            where: { studentId: { in: ctStudentIds } },
+            include: { payments: { orderBy: { createdAt: 'desc' } } },
+            orderBy: [{ dueDate: 'asc' }],
+          })
+        : []
+
+      const today = new Date()
+      const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
+
+      interface FeeItemDto {
+        id: string
+        title: string
+        amount: number
+        paid: number
+        outstanding: number
+        status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE'
+        dueDate: string | null
+        method: string | null
+      }
+      interface StudentFeesDto {
+        status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
+        totalBilled: number
+        totalPaid: number
+        outstanding: number
+        lastPaymentAt: string | null
+        items: FeeItemDto[]
+        payments: { id: string; feeTitle: string; amount: number; method: string | null; status: string; createdAt: string }[]
+      }
+
+      const feesByStudent = new Map<string, StudentFeesDto>()
+      for (const s of students) {
+        if (!s.classId || !classTeacherIds.has(s.classId)) continue
+        const rows = feeRows.filter((f) => f.studentId === s.id)
+        if (rows.length === 0) {
+          feesByStudent.set(s.id, {
+            status: 'NONE',
+            totalBilled: 0,
+            totalPaid: 0,
+            outstanding: 0,
+            lastPaymentAt: null,
+            items: [],
+            payments: [],
+          })
+          continue
+        }
+        const items: FeeItemDto[] = rows.map((f) => {
+          const outstanding = Math.max(0, f.amount - f.paid)
+          const status: FeeItemDto['status'] =
+            outstanding <= 0
+              ? 'PAID'
+              : f.dueDate && f.dueDate < endOfToday
+                ? 'OVERDUE'
+                : f.paid > 0
+                  ? 'PARTIAL'
+                  : 'UNPAID'
+          return {
+            id: f.id,
+            title: f.title,
+            amount: f.amount,
+            paid: f.paid,
+            outstanding,
+            status,
+            dueDate: f.dueDate ? f.dueDate.toISOString().slice(0, 10) : null,
+            method: f.method,
+          }
+        })
+        const payments = rows
+          .flatMap((f) =>
+            f.payments.map((p) => ({
+              id: p.id,
+              feeTitle: f.title,
+              amount: p.amount,
+              method: p.method,
+              status: p.status,
+              createdAt: p.createdAt.toISOString(),
+            })),
+          )
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        const outstanding = items.reduce((sum, i) => sum + i.outstanding, 0)
+        const status: StudentFeesDto['status'] =
+          outstanding <= 0
+            ? 'PAID'
+            : items.some((i) => i.status === 'OVERDUE')
+              ? 'OVERDUE'
+              : items.some((i) => i.paid > 0)
+                ? 'PARTIAL'
+                : 'UNPAID'
+        feesByStudent.set(s.id, {
+          status,
+          totalBilled: rows.reduce((sum, f) => sum + f.amount, 0),
+          totalPaid: rows.reduce((sum, f) => sum + Math.min(f.amount, f.paid), 0),
+          outstanding,
+          lastPaymentAt: payments[0]?.createdAt ?? null,
+          items: items.slice(0, 8),
+          payments: payments.slice(0, 5),
+        })
+      }
+
+      // per-class fee summaries (class-teacher classes only)
+      const feeSummaryByClass = new Map<
+        string,
+        {
+          totalBilled: number
+          totalCollected: number
+          outstanding: number
+          studentsWithFees: number
+          fullyPaid: number
+          pending: number
+          overdue: number
+        }
+      >()
+      for (const classId of classTeacherIds) {
+        const classStudentFees = students
+          .filter((s) => s.classId === classId)
+          .map((s) => feesByStudent.get(s.id))
+          .filter((f): f is StudentFeesDto => !!f)
+        if (classStudentFees.length === 0) continue
+        feeSummaryByClass.set(classId, {
+          totalBilled: classStudentFees.reduce((sum, f) => sum + f.totalBilled, 0),
+          totalCollected: classStudentFees.reduce((sum, f) => sum + f.totalPaid, 0),
+          outstanding: classStudentFees.reduce((sum, f) => sum + f.outstanding, 0),
+          studentsWithFees: classStudentFees.filter((f) => f.status !== 'NONE').length,
+          fullyPaid: classStudentFees.filter((f) => f.status === 'PAID').length,
+          pending: classStudentFees.filter((f) => f.status === 'PARTIAL' || f.status === 'UNPAID').length,
+          overdue: classStudentFees.filter((f) => f.status === 'OVERDUE').length,
+        })
+      }
+
       for (const s of students) {
         if (!s.classId) continue
         const att = attByStudent.get(s.id)
@@ -237,6 +380,7 @@ export async function GET() {
                   ),
                 }
               : null,
+          fees: feesByStudent.get(s.id) ?? null,
         })
         studentsByClass[s.classId] = list
       }
@@ -248,6 +392,7 @@ export async function GET() {
           isClassTeacher: classTeacherIds.has(c.id),
           subjects: [...(subjectByClass.get(c.id) ?? [])].sort(),
           studentCount: (studentsByClass[c.id] ?? []).length,
+          feeSummary: feeSummaryByClass.get(c.id) ?? null,
         })),
         studentsByClass,
       }
