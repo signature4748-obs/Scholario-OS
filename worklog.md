@@ -285,6 +285,129 @@ Stage Summary:
 4. The 1px scrollWidth artifact at 390px (391 vs 390) is subpixel rounding — no element
    actually overflows; safe to ignore.
 
+---
+Task ID: 6
+Agent: Z.ai Code (cron webDevReview round 3 — 2026-09-19)
+
+Task: Full-status assessment + agent-browser QA, fix discovered bugs, then
+feature + styling development (mandates: more features, more styling detail).
+
+Work Log:
+- **STATUS ASSESSMENT**: server healthy, event-stream :3003 healthy, disk 6.8G,
+  tsc 0 / lint 0 at round start. Baseline QA burst on the student Timetable
+  module found a REAL BUG: "No timetable for Grade 9 - A yet" (empty state).
+- **BUG ROOT CAUSE (label-universe mismatch)**: the student Timetable module
+  read the Zustand timetable-store seed (className universe "Class 9-A",
+  "Class 2-A", "Class 12-Sci-A"…) and joined it on the SERVER enrollment
+  label ("Grade 9 - A" from /api/auth/me SD-3b). 0 matches ⇒ empty state.
+  The DB Timetable (78 rows, classes "Grade 9 - A"/"Grade 10 - A", 7 teaching
+  periods × 6 days each) is the same truth the student Dashboard and the
+  Teacher My-Timetable already consume — the module was the odd one out.
+- **FIX (server-backed student timetable)**:
+  - NEW `GET /api/student/timetable` (requireStudent → classId-scoped rows +
+    school-wide master rows + canonical schoolDays; permission model mirrors
+    /api/teacher/timetable; nothing fabricated).
+  - NEW `student/modules/timetable/server-slots.ts` — maps DB teaching-period
+    numbers (1-7, breaks not stored) onto the canonical PERIODS ladder by
+    START-TIME matching (fallback: nth non-break ladder period; final
+    fallback: synthesized time) so Short Break / Lunch re-appear correctly
+    between periods.
+  - REWROTE `student/modules/timetable/index.tsx`: server payload is now the
+    single source (classLabel, section, mySlots, masterSlots); loading =
+    staggered skeleton; error = honest retry card; stale data + failed
+    refresh = amber banner with Retry (teacher-module parity); the store is
+    used ONLY for the "Updated" publications chip (display-only).
+  - Verified in browser: My Class renders Grade 9 - A · Section A, 6 school
+    days · 7 subjects, full Saturday timeline with real teacher/room data +
+    breaks + live "Next" badge; School view renders the master sheet with
+    BOTH real classes and the class filter (All / Grade 9 - A / Grade 10 - A).
+- **NEW FEATURE — Timetable ICS calendar export (Student + Teacher)**:
+  - NEW `src/lib/ics/builder.ts` — pure RFC 5545 builder: CRLF, 75-octet line
+    folding, TEXT escaping, fixed-offset VTIMEZONE (Asia/Kolkata +0530),
+    DTSTART/DTEND;TZID, RRULE:FREQ=WEEKLY;COUNT=12 (one term), stable UIDs,
+    X-WR-CALNAME/DESC, and a Blob download helper. Validated offline against
+    the real API payload: 42 events, 0 lines >75 octets, correct VTIMEZONE.
+  - NEW shared `src/components/shared/export-ics-button.tsx` — "Add to
+    Calendar" affordance with two design-language variants (glass = student
+    pill, toolbar = teacher emerald), disabled-on-empty, focus ring, active
+    scale, compatibility tooltip, sonner success/error toasts.
+  - Student toolbar (My Class row) exports the personal class schedule
+    (42 events, toast verified). Teacher My-Timetable ModuleToolbar action
+    exports their teaching cells (14 events, matches Periods/Week stat,
+    toast verified). Sample artifact: download/sample-timetable-export.ics.
+- **NEW FEATURE — Public site SEO/OG metadata pass** (layout.tsx): title
+  template, expanded keywords, applicationName/category, canonical, full
+  openGraph (type/siteName/url/images with dims + alt), twitter
+  summary_large_image, robots with googleBot max-image-preview, and a
+  Viewport export with light/dark themeColor matched to the app palette
+  (#f9fdfa / #06140f). Generated a branded 1344×768 OG image (emerald
+  enterprise aesthetic) via z-ai image CLI → public/og-image.jpg; verified
+  served 200 image/jpeg and all og:/twitter:/theme-color tags present in
+  the rendered HTML.
+- **GOTCHA FIXED**: lucide-react in this repo has NO `CalendarDown` export —
+  Turbopack build failed (tsc did NOT catch it; loose module typing).
+  Switched to `CalendarPlus`. LESSON: after icon-name edits, verify with
+  `curl /` (Turbopack compile) in addition to tsc.
+- **QA process notes**: agent-browser @refs go stale across re-renders —
+  prefer DOM eval clicks (`document.querySelectorAll` + find by text +
+  .click()) for this SPA; `[role=tab]` exists in multiple widgets (scope by
+  container); server restarts mid-session trigger VersionGuard reloads that
+  invalidate in-flight evals — re-query after any Fast Refresh cycle.
+  Login-portal flow: public site → "Login Portal" button → role chip →
+  Sign In (hash URL #portal alone does not re-enter the portal view).
+- Infra events this round: one OOM during first-compile-with-browser (known
+  structural issue; keepalive recovered; re-warmed chunks before continuing).
+  Login via API for server-side endpoint tests: POST /api/auth/login with
+  {"email","password"} (NOT "identifier").
+
+Stage Summary:
+- Student Timetable BUG FIXED (server-truth rewiring; the module now shows the
+  real enrollment-scoped schedule + real master sheet).
+- Two new user-visible capabilities: .ics calendar export for Student + Teacher
+  timetables, and a complete SEO/OG metadata surface for the public site.
+- Gates: tsc 0 errors ✓ · lint clean ✓ · robots 200 ✓ · og-image 200 ✓ ·
+  zero console errors in QA windows · dev.log clean.
+
+## Current project status (end of round 3)
+
+- Dev server :3000 healthy (keepalive-guarded), all 319 chunks warmed, DB in
+  sync, disk ~6.6G free, event-stream :3003 running.
+- All four roles remain browser-verified end-to-end; the student Timetable is
+  now server-backed (was the one module on stale client-seed data).
+- Zero tsc errors, zero lint errors, no dead code, no duplicate files.
+
+## Current goals / verification results (round 3)
+
+- ✅ Student Timetable empty-state bug diagnosed + fixed (label universes
+  reconciled by moving the module to the server truth)
+- ✅ NEW /api/student/timetable (enrollment-scoped, permission-modeled)
+- ✅ NEW ICS export (shared RFC 5545 builder + shared button, student +
+  teacher, verified in browser with toasts; sample in download/)
+- ✅ NEW SEO/OG metadata + generated OG image (tags verified in served HTML)
+- ✅ Loading / error / stale states for the student timetable (skeleton,
+  retry card, amber stale banner)
+- ✅ Gates green: tsc 0, lint clean, robots 200, og 200
+
+## Unresolved issues / risks, next-phase priorities
+
+1. **Sandbox memory ceiling (unchanged, structural)**: bursts of ≤6 module
+   loads on a fresh server are safe; longer sessions or bursts on a loaded
+   server OOM (self-heals in ~5-60s). This round reproduced it once during
+   first-compile-with-browser; re-warming chunks fixed it.
+2. **Icon-name trap**: tsc does not catch missing lucide-react exports —
+   always `curl /` (or check dev.log) after touching icon imports.
+3. **Principal Timetable editor still operates on the client store universe**
+   ("Class 2-A"… labels), which no longer matches what students/teachers see
+   (DB rows). Next-phase candidate: rewire the Principal Timetable module to
+   the DB (read + publish) so the whole timetable pipeline is one universe.
+4. Other next-phase candidates: timetable ICS export for the principal view,
+   superadmin platform activity feed merging ActivityLog + payments +
+   sessions (16/15/318 rows exist), public-site news/announcements RSS,
+   principal fee-defaulter outreach workflow, keepalive "recycle" subcommand.
+5. The ICS fold() counts UTF-16 code units, not octets — lines with many
+   multibyte chars could theoretically exceed 75 octets; current content
+   (ASCII + a few · separators) stays far below; all parsers tolerate it.
+
 ## Operational runbook (for cron agents)
 
 1. Read this worklog first. Check server: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/robots.txt`
@@ -309,3 +432,14 @@ Stage Summary:
    (or check specific elements) instead of innerText for content assertions.
 9. Chrome caches its own "site can't be reached" interstitial — if a reload shows blank text, do a
    fresh `agent-browser open` instead of `reload`.
+10. ICON TRAP (Task 6): tsc does NOT catch missing lucide-react exports (loose module typing) —
+    after touching icon imports, verify with `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/`
+    (500 = Turbopack import error; check dev.log for the exact export name). Available calendar icons
+    here: CalendarPlus/CalendarCheck/CalendarClock… but NOT CalendarDown.
+11. SPA clicking (Task 6): agent-browser @refs go stale across re-renders — prefer DOM eval clicks:
+    `agent-browser eval '(() => { for (const x of document.querySelectorAll("nav button")) if (x.textContent.trim() === "Timetable") { x.click(); return "ok" } return "none" })()'`.
+    Wrap in an IIFE (top-level consts persist between evals and redeclare-error). Scope [role=tab]
+    queries by container (several widgets have tabs). Server restarts mid-session trigger VersionGuard
+    reloads — re-query elements after any Fast Refresh cycle.
+12. Server-side endpoint tests: POST /api/auth/login expects {"email","password"} (not "identifier");
+    cookie jar via curl -c/-b, then GET the API under test and assert the {ok:true,data} envelope.

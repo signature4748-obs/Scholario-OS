@@ -55,6 +55,8 @@ import {
   type HubStat,
 } from './shared/hub-stat-cards'
 import { signOut } from '@/lib/signout'
+import { ExportIcsButton } from '@/components/shared/export-ics-button'
+import { nextOccurrenceISO, type IcsEventInput } from '@/lib/ics/builder'
 
 // ── payload contracts ─────────────────────────────────────────────────
 
@@ -362,6 +364,29 @@ export function MyTimetableModule() {
     [cells, today],
   )
 
+  // ── calendar export events (the teacher's OWN cells, weekly) ──────
+  const icsEvents = useMemo<IcsEventInput[]>(() => {
+    const out: IcsEventInput[] = []
+    for (const c of cells) {
+      const startMin = minutesOf(c.startTime)
+      const endMin = minutesOf(c.endTime)
+      if (startMin === null || endMin === null) continue
+      const weekday = WEEKDAY_NAMES.indexOf(c.day)
+      if (weekday < 0) continue
+      out.push({
+        uid: `scholario-teacher-${c.day}-${c.period}-${c.classLabel.replace(/[^a-z0-9]+/gi, '')}@scholario`,
+        title: `${c.subjectName} · ${c.classLabel}`,
+        description: `Teaching period P${c.period}${c.room ? ` · ${c.room}` : ''}`,
+        location: c.room ?? undefined,
+        startMin,
+        endMin,
+        weekday,
+        firstDate: nextOccurrenceISO(weekday),
+      })
+    }
+    return out
+  }, [cells])
+
   // Live "Now"/"Next" — from the real client clock and the school ladder.
   const live = useMemo<LiveSlot | null>(() => {
     if (!isTeachingDay) return null
@@ -480,6 +505,16 @@ export function MyTimetableModule() {
     <PageTransition className="space-y-4 sm:space-y-5">
       <ModuleToolbar
         context={`Your weekly teaching schedule${session ? ` · Academic Session ${session}` : ''}`}
+        action={
+          <ExportIcsButton
+            events={icsEvents}
+            calendarName="My Teaching Timetable"
+            calendarDescription={`Weekly teaching schedule · Academic Session ${session ?? ''}`.trim()}
+            filename="my-teaching-timetable"
+            variant="toolbar"
+            label="Export .ics"
+          />
+        }
       />
 
       <HubStatCards stats={summaryStats} />

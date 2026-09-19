@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Sora } from "next/font/google";
 import { MotionConfig } from "framer-motion";
 import "./globals.css";
@@ -23,13 +23,64 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "SCHOLARIO-OS — Enterprise School ERP",
-  description: "The operating system for modern schools. Admissions, academics, finance, transport & analytics in one premium platform.",
-  keywords: ["SCHOLARIO-OS", "School ERP", "Education Management", "School Administration"],
+  metadataBase: new URL("http://localhost:3000"),
+  title: {
+    default: "SCHOLARIO-OS — Enterprise School ERP",
+    template: "%s · SCHOLARIO-OS",
+  },
+  description:
+    "The operating system for modern schools. Admissions, academics, finance, transport & analytics in one premium platform.",
+  keywords: [
+    "SCHOLARIO-OS",
+    "School ERP",
+    "Education Management",
+    "School Administration",
+    "School Management System",
+  ],
   authors: [{ name: "SCHOLARIO" }],
+  applicationName: "SCHOLARIO-OS",
+  category: "education",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "SCHOLARIO-OS",
+    title: "SCHOLARIO-OS — Enterprise School ERP",
+    description:
+      "The operating system for modern schools. Admissions, academics, finance, transport & analytics in one premium platform.",
+    url: "/",
+    images: [
+      {
+        url: "/og-image.jpg",
+        width: 1344,
+        height: 768,
+        alt: "SCHOLARIO-OS — the operating system for modern schools",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SCHOLARIO-OS — Enterprise School ERP",
+    description:
+      "The operating system for modern schools. Admissions, academics, finance, transport & analytics in one platform.",
+    images: ["/og-image.jpg"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
   icons: {
     icon: "/logo.svg",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f9fdfa" },
+    { media: "(prefers-color-scheme: dark)", color: "#06140f" },
+  ],
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
