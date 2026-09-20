@@ -8,24 +8,24 @@
  * teacher is currently the class teacher of — no appointment means the
  * module honestly says so (§42).
  *
+ * Composition (My-Timetable design language — one visual system):
+ *   ModuleToolbar (scope line + Collect Fee) → class pills →
+ *   CLASS FINANCIAL OVERVIEW (5 compact HubStatCards, class-level) →
+ *   MONTH ACTIVITY (lightweight ‹ month › nav + month-scoped figures —
+ *   a DIFFERENT purpose from the class overview, never a repeat) →
+ *   compact filter toolbar → payment records SectionCard
+ *   (table ≥ lg, stacked transaction cards below).
+ *
  * Everything derives from ONE fetch of GET /api/teacher/fee-collection:
- *   · summary tiles (billed / collected / awaiting verification /
- *     outstanding / overdue) — real ledger + canonical txn numbers;
- *   · the month sheet (‹ September 2026 ›) — verified + pending totals;
- *   · the collection table with filters (student search, status,
- *     method, source) — canonical transactions only, responsive:
- *     full table ≥ md, stacked transaction cards on mobile (§33);
  *   · Collect Fee (STAGE 1 — honest "awaiting verification" result);
  *   · per-student ledger sheet + the shared receipt viewer.
  */
 
 import { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import { GradientAvatar } from '@/components/shared/ui'
+import { GradientAvatar, PageTransition } from '@/components/shared/ui'
 import { formatINR } from '@/lib/format'
 import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
 import { methodLabel, sourceLabel, sourceStory, txnDate, txnStatusMeta } from '@/components/shared/fee-collection/txn-meta'
@@ -33,9 +33,18 @@ import { useFeeCollection } from './hooks'
 import type { FeeTxn } from './types'
 import { CollectFeeDialog } from './collect-dialog'
 import { StudentLedgerSheet } from './student-ledger'
+import { ModuleToolbar } from '../../teacher-panel/module-toolbar'
+import {
+  HubEmptyState,
+  HubModuleSkeleton,
+  HubSectionError,
+  HubStatCards,
+  type HubStat,
+} from '../shared/hub-stat-cards'
+import { SectionCard } from '../shared/section-card'
 import {
   AlertTriangle, ArrowLeftRight, BadgeCheck, Banknote, CalendarDays, ChevronLeft,
-  ChevronRight, Clock3, Receipt, Search, TrendingUp, Wallet, X,
+  ChevronRight, Clock3, Receipt, Search, Wallet,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -48,7 +57,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 ]
 
 export function FeeCollectionModule() {
-  const { data, loading, error, month, changeMonth, collect } = useFeeCollection()
+  const { data, loading, error, reload, month, changeMonth, collect } = useFeeCollection()
   const [classIdx, setClassIdx] = useState(0)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [methodFilter, setMethodFilter] = useState<string>('ALL')
@@ -86,62 +95,93 @@ export function FeeCollectionModule() {
     statusFilter !== 'all' || methodFilter !== 'ALL' || sourceFilter !== 'ALL' || search.trim() !== ''
 
   // ── Unavailable / loading / error states (§42) ─────────────────────
+
   if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
-        </div>
-        <Skeleton className="h-72 rounded-2xl" />
-      </div>
-    )
+    return <HubModuleSkeleton />
   }
   if (error) {
-    return (
-      <div className="rounded-2xl border bg-card p-8 text-center">
-        <AlertTriangle className="mx-auto h-6 w-6 text-amber-500" />
-        <p className="mt-2 text-sm font-medium">Could not load the fee workspace</p>
-        <p className="mt-1 text-xs text-muted-foreground">{error}</p>
-      </div>
-    )
+    return <HubSectionError message={error} onRetry={reload} />
   }
   if (!data || data.classes.length === 0) {
     return (
-      <div className="rounded-2xl border bg-card p-8 text-center">
-        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-muted">
-          <Wallet className="h-6 w-6 text-muted-foreground" />
-        </div>
-        <p className="mt-3 text-sm font-semibold">Fees &amp; Payments is unavailable</p>
-        <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-          You are not currently assigned as a Class Teacher, so there is no class fee collection
-          for you to manage. Fee records become available the moment the Principal appoints you
-          to a class.
-        </p>
-      </div>
+      <HubEmptyState
+        icon={Wallet}
+        title="Fees & Payments is unavailable"
+        hint="You are not currently assigned as a Class Teacher, so there is no class fee collection for you to manage. Fee records become available the moment the Principal appoints you to a class."
+      />
     )
   }
 
   const s = klass!.summary
   const collectedPct = s.totalBilled > 0 ? Math.round((s.collected / s.totalBilled) * 100) : 0
 
-  return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold tracking-tight">Fees &amp; Payments</h2>
-          <p className="text-xs text-muted-foreground">
-            Collect payments for your class — every rupee is verified by the Principal before it
-            becomes a final receipt.
-          </p>
-        </div>
-        <Button size="sm" className="h-8 gap-1.5" onClick={() => { setCollectStudent(undefined); setCollectOpen(true) }}>
-          <Wallet className="h-3.5 w-3.5" /> Collect Fee
-        </Button>
-      </div>
+  /** CLASS-LEVEL financial overview (all-time). The month bar below has a
+   *  different purpose (this month's activity) — figures must never repeat
+   *  the same semantic without that context. */
+  const stats: HubStat[] = [
+    {
+      key: 'billed',
+      label: 'Total billed',
+      value: formatINR(s.totalBilled, true),
+      icon: Banknote,
+      tone: 'slate',
+      context: `${klass!.label} · ${klass!.studentCount} students`,
+    },
+    {
+      key: 'collected',
+      label: 'Verified collected',
+      value: formatINR(s.collected, true),
+      icon: BadgeCheck,
+      tone: 'emerald',
+      context: `${collectedPct}% of billed`,
+    },
+    {
+      key: 'awaiting',
+      label: 'Awaiting verification',
+      value: formatINR(s.awaitingVerificationAmount, true),
+      icon: Clock3,
+      tone: s.awaitingVerificationCount > 0 ? 'amber' : 'slate',
+      context:
+        s.awaitingVerificationCount > 0
+          ? `${s.awaitingVerificationCount} collection${s.awaitingVerificationCount === 1 ? '' : 's'} pending`
+          : 'All collections verified',
+    },
+    {
+      key: 'outstanding',
+      label: 'Outstanding',
+      value: formatINR(s.outstanding, true),
+      icon: ArrowLeftRight,
+      tone: 'slate',
+      context: `${s.fullyPaid} fully paid`,
+    },
+    {
+      key: 'overdue',
+      label: 'Overdue',
+      value: String(s.overdueStudents),
+      icon: AlertTriangle,
+      tone: s.overdueStudents > 0 ? 'rose' : 'slate',
+      context: s.overdueStudents > 0 ? 'students past due date' : 'no overdue students',
+    },
+  ]
 
-      {/* Class pills */}
+  return (
+    <PageTransition className="space-y-4">
+      {/* quiet toolbar: scope line + Collect Fee (shell header carries the
+          module name — never repeated here) */}
+      <ModuleToolbar
+        context="Collect payments for your class — every rupee is verified by the Principal before it becomes a final receipt."
+        action={
+          <Button
+            size="sm"
+            className="h-9 gap-1.5"
+            onClick={() => { setCollectStudent(undefined); setCollectOpen(true) }}
+          >
+            <Wallet className="h-3.5 w-3.5" /> Collect Fee
+          </Button>
+        }
+      />
+
+      {/* Class pills (multi-class teachers only) */}
       {data.classes.length > 1 && (
         <div className="flex flex-wrap gap-2">
           {data.classes.map((c, i) => (
@@ -161,92 +201,86 @@ export function FeeCollectionModule() {
         </div>
       )}
 
-      {/* Summary tiles */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-        <Tile icon={<Banknote className="h-4 w-4" />} label="Total billed" value={formatINR(s.totalBilled, true)} sub={`${klass!.label} · ${klass!.studentCount} students`} />
-        <Tile icon={<BadgeCheck className="h-4 w-4" />} label="Collected" value={formatINR(s.collected, true)} sub={`${collectedPct}% of billed · verified`} tone="emerald" />
-        <Tile
-          icon={<Clock3 className="h-4 w-4" />}
-          label="Awaiting verification"
-          value={formatINR(s.awaitingVerificationAmount, true)}
-          sub={s.awaitingVerificationCount > 0 ? `${s.awaitingVerificationCount} collection${s.awaitingVerificationCount === 1 ? '' : 's'} pending` : 'All collections verified'}
-          tone={s.awaitingVerificationCount > 0 ? 'amber' : 'slate'}
-        />
-        <Tile icon={<ArrowLeftRight className="h-4 w-4" />} label="Outstanding" value={formatINR(s.outstanding, true)} sub={`${s.fullyPaid} fully paid`} tone="slate" />
-        <Tile
-          icon={<AlertTriangle className="h-4 w-4" />}
-          label="Overdue"
-          value={String(s.overdueStudents)}
-          sub={s.overdueStudents > 0 ? 'students past due date' : 'no overdue students'}
-          tone={s.overdueStudents > 0 ? 'rose' : 'slate'}
-        />
-      </div>
+      {/* CLASS FINANCIAL OVERVIEW — compact metric grid, one system with
+          My Timetable. Mobile 2-col (5th metric spans both), tablet 3,
+          desktop 5-across. */}
+      <HubStatCards
+        stats={stats}
+        className="grid-cols-2 md:grid-cols-3 xl:grid-cols-5 [&>*:nth-child(5)]:col-span-2 md:[&>*:nth-child(5)]:col-span-1"
+      />
 
-      {/* Month sheet */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-3.5">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => changeMonth(-1)} aria-label="Previous month">
+      {/* MONTH ACTIVITY — a lightweight period navigation control, NOT a
+          card. Month-scoped figures only (the class overview above is
+          all-time — different purpose, no duplication). */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-2.5">
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeMonth(-1)} aria-label="Previous month">
             <ChevronLeft className="h-3.5 w-3.5" />
           </Button>
-          <div className="min-w-[9.5rem] text-center">
-            <p className="flex items-center justify-center gap-1.5 text-sm font-semibold">
-              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-              {klass!.month.label}
-            </p>
-          </div>
-          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => changeMonth(1)} aria-label="Next month">
+          <p className="flex min-w-[9.5rem] items-center justify-center gap-1.5 text-sm font-semibold">
+            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+            {klass!.month.label}
+          </p>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeMonth(1)} aria-label="Next month">
             <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-          <span className="text-muted-foreground">
-            Verified <strong className="ml-1 font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{formatINR(klass!.month.verifiedAmount, true)}</strong>
-            <span className="ml-1 text-muted-foreground/70">({klass!.month.verifiedCount})</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            This month
           </span>
           <span className="text-muted-foreground">
-            Awaiting verification <strong className="ml-1 font-semibold tabular-nums text-amber-700 dark:text-amber-400">{formatINR(klass!.month.pendingAmount, true)}</strong>
-            <span className="ml-1 text-muted-foreground/70">({klass!.month.pendingCount})</span>
+            Verified{' '}
+            <strong className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+              {formatINR(klass!.month.verifiedAmount, true)}
+            </strong>{' '}
+            <span className="text-muted-foreground/70">
+              {klass!.month.verifiedCount} payment{klass!.month.verifiedCount === 1 ? '' : 's'}
+            </span>
           </span>
-          <span className="hidden items-center gap-1 text-muted-foreground/80 sm:flex">
-            <TrendingUp className="h-3 w-3" /> figures derive from actual payment records
+          <span className="text-muted-foreground">
+            Awaiting{' '}
+            <strong className="font-semibold tabular-nums text-amber-700 dark:text-amber-400">
+              {formatINR(klass!.month.pendingAmount, true)}
+            </strong>{' '}
+            <span className="text-muted-foreground/70">
+              {klass!.month.pendingCount} payment{klass!.month.pendingCount === 1 ? '' : 's'}
+            </span>
           </span>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-2.5">
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-          <div className="relative flex-1 sm:max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-8 pl-8 text-sm"
-              placeholder="Search student, fee, receipt…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center gap-2 sm:ml-auto">
-            <Select value={methodFilter} onValueChange={setMethodFilter}>
-              <SelectTrigger className="h-8 w-[7.5rem] text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All methods</SelectItem>
-                {['CASH', 'UPI', 'CARD', 'NET_BANKING', 'BANK_TRANSFER'].map((m) => (
-                  <SelectItem key={m} value={m}>{methodLabel(m)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="h-8 w-[9rem] text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All sources</SelectItem>
-                {['CLASS_TEACHER', 'SCHOOL_OFFICE', 'PRINCIPAL'].map((src) => (
-                  <SelectItem key={src} value={src}>{sourceLabel(src)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Compact filter toolbar — one wrapping row, no nested containers */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 sm:max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-9 pl-8 text-sm"
+            placeholder="Search student, fee, receipt…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search payments"
+          />
         </div>
-        <div className="flex items-center gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
+        <Select value={methodFilter} onValueChange={setMethodFilter}>
+          <SelectTrigger className="h-9 w-[8rem] text-xs" aria-label="Payment method"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All methods</SelectItem>
+            {['CASH', 'UPI', 'CARD', 'NET_BANKING', 'BANK_TRANSFER'].map((m) => (
+              <SelectItem key={m} value={m}>{methodLabel(m)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger className="h-9 w-[9rem] text-xs" aria-label="Payment source"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All sources</SelectItem>
+            {['CLASS_TEACHER', 'SCHOOL_OFFICE', 'PRINCIPAL'].map((src) => (
+              <SelectItem key={src} value={src}>{sourceLabel(src)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto sm:flex-1 sm:pb-0">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.key}
@@ -259,11 +293,6 @@ export function FeeCollectionModule() {
               )}
             >
               {f.label}
-              {f.key === 'pending' && s.awaitingVerificationCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
-                  {s.awaitingVerificationCount}
-                </span>
-              )}
             </button>
           ))}
           <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground">
@@ -272,12 +301,19 @@ export function FeeCollectionModule() {
         </div>
       </div>
 
-      {/* Collection table — desktop */}
-      <div className="hidden overflow-hidden rounded-2xl border bg-card md:block">
+      {/* Payment records — table ≥ lg (matches the shell sidebar
+          breakpoint, same philosophy as My Timetable's grid), stacked
+          transaction cards below. */}
+      <SectionCard
+        icon={Receipt}
+        title="Payment records"
+        meta={hasActiveFilter ? `${filtered.length} of ${klass!.transactions.length} shown` : `${klass!.transactions.length} total`}
+        className="hidden lg:block"
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-muted/50 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-2.5 font-semibold">Student</th>
                 <th className="px-4 py-2.5 font-semibold">Fee</th>
                 <th className="px-4 py-2.5 text-right font-semibold">Amount</th>
@@ -288,7 +324,7 @@ export function FeeCollectionModule() {
                 <th className="px-4 py-2.5 text-right font-semibold">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-border/50">
               {filtered.map((t) => (
                 <TxnRow
                   key={t.id}
@@ -307,10 +343,10 @@ export function FeeCollectionModule() {
             </tbody>
           </table>
         </div>
-      </div>
+      </SectionCard>
 
-      {/* Collection cards — mobile (§33: stacked transaction rows) */}
-      <div className="space-y-2.5 md:hidden">
+      {/* Transaction cards — mobile + tablet portrait (§33) */}
+      <div className="space-y-2.5 lg:hidden">
         {filtered.map((t) => (
           <MobileTxnCard
             key={t.id}
@@ -320,7 +356,7 @@ export function FeeCollectionModule() {
           />
         ))}
         {filtered.length === 0 && (
-          <div className="rounded-2xl border bg-card p-6 text-center text-xs text-muted-foreground">
+          <div className="rounded-xl border border-border bg-card px-4 py-8 text-center text-xs text-muted-foreground">
             {hasActiveFilter ? 'No payments match these filters.' : 'No payments recorded for this class yet.'}
           </div>
         )}
@@ -349,44 +385,17 @@ export function FeeCollectionModule() {
 
       {/* Shared receipt viewer */}
       <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} />
-    </motion.div>
+    </PageTransition>
   )
 }
 
 // ── Pieces ────────────────────────────────────────────────────────────
 
-function Tile({
-  icon, label, value, sub, tone = 'slate',
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sub: string
-  tone?: 'slate' | 'emerald' | 'amber' | 'rose'
-}) {
-  const tones = {
-    slate: 'bg-muted text-muted-foreground',
-    emerald: 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400',
-    amber: 'bg-amber-600/10 text-amber-700 dark:text-amber-400',
-    rose: 'bg-rose-600/10 text-rose-700 dark:text-rose-400',
-  }
-  return (
-    <div className="min-w-0 rounded-2xl border bg-card p-3.5">
-      <div className="flex items-center gap-2">
-        <span className={cn('grid h-7 w-7 place-items-center rounded-lg', tones[tone])}>{icon}</span>
-        <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-      </div>
-      <p className="mt-2 truncate text-lg font-semibold tabular-nums leading-none">{value}</p>
-      <p className="mt-1.5 truncate text-[11px] text-muted-foreground" title={sub}>{sub}</p>
-    </div>
-  )
-}
-
 function TxnRow({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => void; onReceipt: () => void }) {
   const meta = txnStatusMeta(txn.status)
   return (
     <tr className="group transition-colors hover:bg-muted/40">
-      <td className="px-4 py-3">
+      <td className="px-4 py-2.5">
         <button className="flex items-center gap-2.5 text-left" onClick={onLedger}>
           <GradientAvatar name={txn.studentName ?? 'Student'} size="sm" />
           <span className="min-w-0">
@@ -397,15 +406,15 @@ function TxnRow({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => voi
           </span>
         </button>
       </td>
-      <td className="max-w-[9rem] truncate px-4 py-3 text-xs text-muted-foreground">{txn.feeHeadName ?? '—'}</td>
-      <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums">{formatINR(txn.amount, true)}</td>
-      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{txnDate(txn.collectedAt ?? txn.createdAt)}</td>
-      <td className="whitespace-nowrap px-4 py-3 text-xs">{methodLabel(txn.method)}</td>
-      <td className="max-w-[10rem] px-4 py-3">
+      <td className="max-w-[9rem] truncate px-4 py-2.5 text-xs text-muted-foreground" title={txn.feeHeadName ?? undefined}>{txn.feeHeadName ?? '—'}</td>
+      <td className="px-4 py-2.5 text-right text-sm font-semibold tabular-nums">{formatINR(txn.amount, true)}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{txnDate(txn.collectedAt ?? txn.createdAt)}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 text-xs">{methodLabel(txn.method)}</td>
+      <td className="max-w-[10rem] px-4 py-2.5">
         <span className="block truncate text-xs font-medium">{sourceLabel(txn.source)}</span>
         <span className="block truncate text-[11px] text-muted-foreground">{sourceStory(txn)}</span>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-2.5">
         <span className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium', meta.chip)}>
           <span className={cn('h-1 w-1 rounded-full', meta.dot)} />
           {meta.short}
@@ -419,7 +428,7 @@ function TxnRow({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => voi
           </span>
         )}
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-right">
+      <td className="whitespace-nowrap px-4 py-2.5 text-right">
         <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] gap-1" onClick={onReceipt}>
           <Receipt className="h-3 w-3" />
           {txn.status === 'SUCCESS' ? 'Receipt' : 'View'}
@@ -432,7 +441,7 @@ function TxnRow({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => voi
 function MobileTxnCard({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => void; onReceipt: () => void }) {
   const meta = txnStatusMeta(txn.status)
   return (
-    <div className="rounded-2xl border bg-card p-3.5">
+    <div className="rounded-xl border border-border bg-card p-3">
       <div className="flex items-start justify-between gap-2">
         <button className="flex min-w-0 items-center gap-2.5 text-left" onClick={onLedger}>
           <GradientAvatar name={txn.studentName ?? 'Student'} size="sm" />

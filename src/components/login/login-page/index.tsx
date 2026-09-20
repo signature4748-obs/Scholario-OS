@@ -18,7 +18,7 @@ import { credentials, type CredentialCard } from './data'
 /* ------------------------------------------------------------------ */
 
 export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void }) {
-  const { startAuth, login } = useAuth()
+  const { startAuth, endAuth, login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
@@ -34,59 +34,72 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
     setError('')
   }
 
-  const handleLogin = async (role?: Role) => {
-    // Role resolution priority: explicit override → selected card → the
-    // DB-authenticated user's actual role → principal (demo fallback).
-    // Typing student credentials without picking a card must NEVER land in
-    // the principal workspace (role-safety fix).
-    let dbRole: Role | null = null
-    if (!role && !selectedRole && email) {
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        })
-        if (res.ok) {
-          const data = (await res.json()) as { data?: { role?: string } }
-          const raw = data.data?.role?.toLowerCase()
-          if (raw === 'principal' || raw === 'teacher' || raw === 'student' || raw === 'superadmin') {
-            dbRole = raw
-          }
-        }
-      } catch {
-        // fall through to the demo default
-      }
-    }
-    const r = role ?? selectedRole ?? dbRole ?? 'principal'
-    if (!email || !password) {
+  const handleLogin = async (roleOverride?: Role) => {
+    // 1) Validate BEFORE any network work — a doomed request must never
+    //    fire before the user sees the empty-fields error.
+    if (!email.trim() || !password) {
       setError('Please enter your email and password.')
       return
     }
+    // Duplicate-submission guard: the button is disabled while submitting,
+    // but a second entry point (Enter key on mobile keyboards) must not
+    // fire a parallel request.
+    if (submitting) return
+
     setSubmitting(true)
     setError('')
     startAuth()
     setPhase('loading')
-    // Attempt real server-side authentication so privileged API endpoints
-    // (e.g. /api/schools for Super Admin) work end-to-end. The client-side
-    // role profile is always applied afterwards to keep the demo deterministic.
+
     try {
-      await fetch('/api/auth/login', {
+      // 2) ONE server round trip. The server is the single source of
+      //    truth for the role — the resolved role decides which panel
+      //    mounts, so it can never come from a client-side guess.
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       })
-    } catch {
-      // Network/JSON errors are non-fatal — we still fall through to the
-      // client-side demo login so the showcase always works.
+      const payload = (await res.json().catch(() => null)) as {
+        ok?: boolean
+        error?: string
+        data?: { id?: string; email?: string; name?: string; role?: string }
+      } | null
+
+      if (!res.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Unable to complete sign in. Please try again.')
+      }
+
+      const serverRole = payload.data?.role?.toLowerCase()
+      const role: Role =
+        serverRole === 'principal' || serverRole === 'teacher' || serverRole === 'student' || serverRole === 'superadmin'
+          ? serverRole
+          : roleOverride ?? selectedRole ?? 'principal'
+
+      // 3) Navigate ONLY after the session cookie exists. `login()` flips
+      //    isAuthenticated → Home swaps the login screen for the role's
+      //    panel. Real identity (name/email) is synced into the store so
+      //    the shell shows the authenticated user, not a stale mock.
+      login(role, {
+        ...(payload.data?.name ? { name: payload.data.name } : {}),
+        ...(payload.data?.email ? { email: payload.data.email } : {}),
+      })
+    } catch (e) {
+      // 4) Failure returns to the form WITH a visible, actionable error —
+      //    never a silent bounce back to the same screen.
+      endAuth()
+      setPhase('form')
+      setSubmitting(false)
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Network error — please check your connection and try again.'
+      )
     }
-    setTimeout(() => {
-      login(r)
-    }, 1100)
   }
 
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-white font-sans">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-white font-sans">
       <AnimatePresence mode="wait">
         {phase === 'form' ? (
           <motion.main
@@ -96,7 +109,10 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
             exit={{ opacity: 0, transition: { duration: 0.3 } }}
             className="flex flex-col md:flex-row w-full h-full"
           >
-            {/* LEFT PANE: brand + welcome */}
+            {/* LEFT PANE: brand + welcome — DESKTOP ONLY. On mobile it
+                consumed ~36% of the viewport and pushed the Sign In button
+                below the fold, which read as "login does nothing". The
+                RightPane carries its own compact mobile logo. */}
             <LeftPane onBackToWebsite={onBackToWebsite} />
 
             {/* RIGHT PANE: form */}
@@ -114,7 +130,9 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
             />
           </motion.main>
         ) : (
-          <LoadingPhase selectedRole={selectedRole} />
+          <div className="flex h-full w-full items-center justify-center">
+            <LoadingPhase selectedRole={selectedRole} />
+          </div>
         )}
       </AnimatePresence>
 
@@ -132,7 +150,7 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
 function LeftPane({ onBackToWebsite }: { onBackToWebsite?: () => void }) {
   return (
     <section
-      className="left-pane relative w-full md:w-[45%] p-8 md:p-12 flex flex-col items-center justify-center text-center text-white overflow-hidden"
+      className="left-pane relative hidden md:flex md:w-[45%] p-8 md:p-12 flex-col items-center justify-center text-center text-white overflow-hidden"
       style={{
         background:
           'linear-gradient(180deg, #064e3b 0%, #0d9488 50%, #065f46 100%)',
@@ -282,7 +300,7 @@ function RightPane({
   onForgotPassword,
 }: RightPaneProps) {
   return (
-    <section className="w-full md:w-[55%] p-8 md:p-12 lg:p-16 flex flex-col justify-center bg-white relative z-20 overflow-y-auto">
+    <section className="relative z-20 flex w-full flex-1 flex-col justify-center overflow-y-auto bg-white p-6 sm:p-8 md:w-[55%] md:p-12 lg:p-16">
       <div className="w-full max-w-md mx-auto">
         {/* Mobile-only logo */}
         <div className="md:hidden flex flex-col items-center mb-8">
@@ -357,6 +375,18 @@ function RightPane({
           </div>
         </motion.div>
 
+        {/* Error message — rendered ABOVE the fields so it is always
+            visible without scrolling, on every viewport. */}
+        {error && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700"
+          >
+            {error}
+          </div>
+        )}
+
         {/* Form */}
         <form
           className="space-y-6"
@@ -383,6 +413,8 @@ function RightPane({
                 name="identifier"
                 type="text"
                 required
+                autoComplete="username"
+                inputMode="email"
                 value={email}
                 onChange={(e) => onEmailChange(e.target.value)}
                 placeholder="Enter your email or ID"
@@ -414,6 +446,7 @@ function RightPane({
                 name="password"
                 type="password"
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => onPasswordChange(e.target.value)}
                 placeholder="Enter your password"
@@ -426,13 +459,6 @@ function RightPane({
               </span>
             </div>
           </motion.div>
-
-          {/* Error message */}
-          {error && (
-            <div className="px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-              {error}
-            </div>
-          )}
 
           {/* Forgot password */}
           <motion.div

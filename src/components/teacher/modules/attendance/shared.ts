@@ -198,6 +198,8 @@ export interface StatusRecipe {
   inactive: string
   /** quiet row tint while this status is selected */
   row: string
+  /** left border accent for the hairline roster rows */
+  accent: string
 }
 
 export const STATUS_CONFIG: Record<AttendanceStatus, StatusRecipe> = {
@@ -207,6 +209,7 @@ export const STATUS_CONFIG: Record<AttendanceStatus, StatusRecipe> = {
     active: 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/30',
     inactive: 'text-emerald-600 hover:bg-emerald-500/10 border-emerald-500/30',
     row: 'border-emerald-500/20 bg-emerald-500/5',
+    accent: 'border-l-emerald-500',
   },
   ABSENT: {
     label: 'Absent',
@@ -214,6 +217,7 @@ export const STATUS_CONFIG: Record<AttendanceStatus, StatusRecipe> = {
     active: 'bg-rose-500 text-white border-rose-500 shadow-sm shadow-rose-500/30',
     inactive: 'text-rose-600 hover:bg-rose-500/10 border-rose-500/30',
     row: 'border-rose-500/20 bg-rose-500/5',
+    accent: 'border-l-rose-500',
   },
   LATE: {
     label: 'Late',
@@ -221,6 +225,7 @@ export const STATUS_CONFIG: Record<AttendanceStatus, StatusRecipe> = {
     active: 'bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/30',
     inactive: 'text-amber-600 hover:bg-amber-500/10 border-amber-500/30',
     row: 'border-amber-500/20 bg-amber-500/5',
+    accent: 'border-l-amber-500',
   },
   LEAVE: {
     label: 'Leave',
@@ -228,6 +233,7 @@ export const STATUS_CONFIG: Record<AttendanceStatus, StatusRecipe> = {
     active: 'bg-info text-white border-info shadow-sm',
     inactive: 'text-info hover:bg-info/10 border-info/30',
     row: 'border-info/20 bg-info/5',
+    accent: 'border-l-info',
   },
 }
 

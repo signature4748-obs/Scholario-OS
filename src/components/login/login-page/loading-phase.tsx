@@ -44,6 +44,8 @@ export function LoadingPhase({ selectedRole }: LoadingPhaseProps) {
           {selectedRole === 'principal' && 'Loading administrative dashboard…'}
           {selectedRole === 'teacher' && 'Loading your classroom…'}
           {selectedRole === 'student' && 'Loading your learning space…'}
+          {selectedRole === 'superadmin' && 'Loading platform console…'}
+          {!selectedRole && 'Signing you in…'}
         </p>
       </motion.div>
       <div className="mt-6 flex items-center gap-2">

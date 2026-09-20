@@ -29,46 +29,65 @@ export interface HubStat {
   context?: string
   icon: LucideIcon
   tone?: HubStatTone
+  /** optional denominator shown beside the value ("11 / 14") */
+  total?: number
+  /** optional 0–1 fraction rendered as a hairline progress bar */
+  progress?: number
 }
 
-const TONES: Record<HubStatTone, { text: string; bg: string; border: string }> = {
+const TONES: Record<HubStatTone, { text: string; bg: string; border: string; bar: string }> = {
   emerald: {
     text: 'text-emerald-600 dark:text-emerald-400',
     bg: 'bg-emerald-500/5',
     border: 'border-border hover:border-emerald-500/40',
+    bar: 'bg-emerald-500',
   },
   amber: {
     text: 'text-amber-600 dark:text-amber-400',
     bg: 'bg-amber-500/5',
     border: 'border-border hover:border-amber-500/40',
+    bar: 'bg-amber-500',
   },
   rose: {
     text: 'text-rose-600 dark:text-rose-400',
     bg: 'bg-rose-500/5',
     border: 'border-border hover:border-rose-500/40',
+    bar: 'bg-rose-500',
   },
   sky: {
     text: 'text-sky-600 dark:text-sky-400',
     bg: 'bg-sky-500/5',
     border: 'border-border hover:border-sky-500/40',
+    bar: 'bg-sky-500',
   },
   violet: {
     text: 'text-violet-600 dark:text-violet-400',
     bg: 'bg-violet-500/5',
     border: 'border-border hover:border-violet-500/40',
+    bar: 'bg-violet-500',
   },
   slate: {
     text: 'text-slate-600 dark:text-slate-400',
     bg: 'bg-muted/40',
     border: 'border-border hover:border-muted-foreground/30',
+    bar: 'bg-muted-foreground/40',
   },
 }
 
-export function HubStatCards({ stats, loading }: { stats: HubStat[]; loading?: boolean }) {
+export function HubStatCards({
+  stats,
+  loading,
+  className,
+}: {
+  stats: HubStat[]
+  loading?: boolean
+  /** optional grid override (e.g. "grid-cols-2 md:grid-cols-3 xl:grid-cols-5") */
+  className?: string
+}) {
   const reduce = useReducedMotion()
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className={cn('grid grid-cols-2 sm:grid-cols-4 gap-3', className)}>
       {stats.map((stat, i) => {
         const tone = TONES[stat.tone ?? 'slate']
         const Icon = stat.icon
@@ -95,8 +114,41 @@ export function HubStatCards({ stats, loading }: { stats: HubStat[]; loading?: b
                 tone.text,
               )}
             >
-              {stat.value ?? '—'}
+              {stat.total != null ? (
+                /* live counters (attendance) pop subtly when the value changes */
+                <motion.span
+                  key={`${stat.key}-${String(stat.value)}`}
+                  initial={reduce ? false : { scale: 1.2 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+                  className="inline-block"
+                >
+                  {stat.value ?? '—'}
+                </motion.span>
+              ) : (
+                <>{stat.value ?? '—'}</>
+              )}
+              {stat.total != null && (
+                <span className="text-base font-normal text-muted-foreground"> / {stat.total}</span>
+              )}
             </p>
+            {stat.progress != null && (
+              <div
+                className="mt-2 h-1 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(stat.progress * 100)}
+                aria-label={`${stat.label} share`}
+              >
+                <motion.div
+                  initial={false}
+                  animate={{ width: `${Math.min(Math.max(stat.progress, 0), 1) * 100}%` }}
+                  transition={{ type: 'spring', stiffness: 200, damping: 26 }}
+                  className={cn('h-full rounded-full', tone.bar)}
+                />
+              </div>
+            )}
             {stat.context && (
               <p className="text-[10px] text-muted-foreground mt-1 truncate">{stat.context}</p>
             )}

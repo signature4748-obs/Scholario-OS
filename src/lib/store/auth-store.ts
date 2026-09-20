@@ -22,7 +22,7 @@ interface AuthState {
   hydrated: boolean
   setHydrated: () => void
   startAuth: () => void
-  login: (role: Role) => void
+  login: (role: Role, overrides?: Partial<SessionUser>) => void
   endAuth: () => void
   logout: () => void
   switchTo: (role: Role) => void
@@ -72,9 +72,12 @@ export const useAuth = create<AuthState>()(
       setHydrated: () => set({ hydrated: true }),
       startAuth: () => set({ isAuthenticating: true }),
       endAuth: () => set({ isAuthenticating: false }),
-      login: (role) =>
+      // `overrides` lets the login flow sync the SERVER-authenticated
+      // identity (name/email) into the store so the shell never shows a
+      // stale mock profile next to a real session.
+      login: (role, overrides) =>
         set({
-          user: roleProfiles[role],
+          user: { ...roleProfiles[role], ...overrides, role },
           isAuthenticated: true,
           isAuthenticating: false,
         }),

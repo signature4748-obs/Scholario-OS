@@ -10,13 +10,15 @@
  *     she changes only exceptions and explicitly submits her OWN subject
  *     session (a separate record — viewing never writes anything).
  *
- * Composition: quiet ModuleToolbar (class + subject + date nav + Save)
- * → week strip (marked days, today, quick jumps) → 4 count cards with
- * progress bars → roster/insights card (segmented):
- *   · Roster  — per-student status buttons, 5-day history dots, rate chip,
- *     search, bulk "mark all present".
+ * Composition (My-Timetable design language):
+ *   ModuleToolbar (class + subject + date nav + Save) → week strip
+ *   (lightweight nav control) → 4 compact HubStatCards (value / total +
+ *   hairline progress) → roster/insights SectionCard (segmented):
+ *   · Roster   — hairline `divide-y` rows with a colored left border
+ *     accent per status; labeled action buttons on tablet+, a compact
+ *     4-up control on mobile. Search, bulk "mark all present".
  *   · Insights — 10-day present-rate trend, attention-needed absentees,
- *     perfect-record students.
+ *     perfect-record students (hairline lists, no nested boxes).
  */
 
 import { useMemo, useState } from 'react'
@@ -38,15 +40,17 @@ import {
   TrendingUp,
   Users,
   X,
-  type LucideIcon,
 } from 'lucide-react'
-import { GlassCard, GradientAvatar, PageTransition } from '@/components/shared/ui'
+import { GradientAvatar, PageTransition } from '@/components/shared/ui'
 import { ModuleToolbar } from '../../teacher-panel/module-toolbar'
 import {
   HubEmptyState,
   HubModuleSkeleton,
   HubSectionError,
+  HubStatCards,
+  type HubStat,
 } from '../shared/hub-stat-cards'
+import { SectionCard } from '../shared/section-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -77,29 +81,6 @@ import {
   type AttendanceStudent,
   type SaveCounts,
 } from './shared'
-
-// ─── count-card tones (recipe of the previous module) ─────────────────
-
-type StripTone = 'emerald' | 'rose' | 'amber' | 'info'
-
-const STRIP_TONES: Record<StripTone, { chip: string; text: string; bar: string }> = {
-  emerald: {
-    chip: 'bg-emerald-500/10 text-emerald-600',
-    text: 'text-emerald-600 dark:text-emerald-400',
-    bar: 'bg-emerald-500',
-  },
-  rose: {
-    chip: 'bg-rose-500/10 text-rose-600',
-    text: 'text-rose-600 dark:text-rose-400',
-    bar: 'bg-rose-500',
-  },
-  amber: {
-    chip: 'bg-amber-500/10 text-amber-600',
-    text: 'text-amber-600 dark:text-amber-400',
-    bar: 'bg-amber-500',
-  },
-  info: { chip: 'bg-info/10 text-info', text: 'text-info', bar: 'bg-info' },
-}
 
 /** House <input type="date"> — matches the h-9 controls around it. */
 const DATE_INPUT_CLASS =
@@ -155,6 +136,49 @@ export function AttendanceModule() {
     [board],
   )
 
+  /** The 4 compact summary metrics — one shared system with My Timetable. */
+  const stats: HubStat[] = useMemo(
+    () => [
+      {
+        key: 'present',
+        label: 'Present',
+        value: counts.present,
+        total,
+        progress: total > 0 ? counts.present / total : 0,
+        icon: Check,
+        tone: 'emerald',
+      },
+      {
+        key: 'absent',
+        label: 'Absent',
+        value: counts.absent,
+        total,
+        progress: total > 0 ? counts.absent / total : 0,
+        icon: X,
+        tone: 'rose',
+      },
+      {
+        key: 'late',
+        label: 'Late',
+        value: counts.late,
+        total,
+        progress: total > 0 ? counts.late / total : 0,
+        icon: Clock,
+        tone: 'amber',
+      },
+      {
+        key: 'leave',
+        label: 'On Leave',
+        value: counts.leave,
+        total,
+        progress: total > 0 ? counts.leave / total : 0,
+        icon: Plane,
+        tone: 'sky',
+      },
+    ],
+    [counts, total],
+  )
+
   const goPrevDay = () => selectDate(shiftDayKey(date, -1))
   const goNextDay = () => {
     const next = shiftDayKey(date, 1)
@@ -179,13 +203,11 @@ export function AttendanceModule() {
   if (classes.length === 0) {
     return (
       <PageTransition className="space-y-4">
-        <GlassCard hover={false}>
-          <HubEmptyState
-            icon={Users}
-            title="No classes assigned yet"
-            hint="Classes appear here once you are a class teacher or teach a subject in them."
-          />
-        </GlassCard>
+        <HubEmptyState
+          icon={Users}
+          title="No classes assigned yet"
+          hint="Classes appear here once you are a class teacher or teach a subject in them."
+        />
       </PageTransition>
     )
   }
@@ -317,16 +339,21 @@ export function AttendanceModule() {
       ) : board == null ? (
         <BoardSkeleton />
       ) : board.students.length === 0 ? (
-        <GlassCard hover={false}>
+        <SectionCard
+          icon={Users}
+          title={`${board.label} · Student roster`}
+          contentClassName=""
+        >
           <HubEmptyState
             icon={Users}
             title="No students in this class"
             hint="Active students enrolled in this class will appear here."
           />
-        </GlassCard>
+        </SectionCard>
       ) : (
         <>
-          {/* week strip: Mon–Sun, marked days dotted, today ringed */}
+          {/* week strip: Mon–Sun, marked days dotted, today ringed —
+              a lightweight navigation control, not a card */}
           <WeekStrip
             week={weekOf(date)}
             selected={date}
@@ -334,25 +361,18 @@ export function AttendanceModule() {
             onSelect={selectDate}
           />
 
-          {/* live count cards */}
-          <CountsStrip counts={counts} total={total} />
+          {/* live summary metrics — one shared system with My Timetable */}
+          <HubStatCards stats={stats} />
 
           {/* roster + insights */}
-          <GlassCard
-            className={cn(
-              'p-3 sm:p-4 lg:p-5 transition-opacity',
-              boardLoading && 'opacity-60',
-            )}
-          >
-            <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold">{board.label} · Student roster</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {rosterContextLine(board, subjectId, source)}
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {view === 'roster' ? (
+          <SectionCard
+            icon={Users}
+            title={`${board.label} · Student roster`}
+            subtitle={rosterContextLine(board, subjectId, source)}
+            className={cn('transition-opacity', boardLoading && 'opacity-60')}
+            actions={
+              <>
+                {view === 'roster' && (
                   <>
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -373,7 +393,7 @@ export function AttendanceModule() {
                       <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Mark all present
                     </Button>
                   </>
-                ) : null}
+                )}
                 <div
                   role="tablist"
                   aria-label="Attendance views"
@@ -403,9 +423,9 @@ export function AttendanceModule() {
                     </button>
                   ))}
                 </div>
-              </div>
-            </div>
-
+              </>
+            }
+          >
             {view === 'insights' ? (
               <InsightsView
                 students={board.students}
@@ -413,16 +433,16 @@ export function AttendanceModule() {
               />
             ) : (
               <>
-                <div className="max-h-[640px] space-y-2 overflow-y-auto pr-1 -mr-1">
-                  {filtered.length === 0 ? (
-                    <HubEmptyState
-                      icon={Search}
-                      title={`No students match “${search.trim()}”`}
-                      hint="Try a different name or roll number."
-                      className="py-8"
-                    />
-                  ) : (
-                    filtered.map((student, i) => (
+                {filtered.length === 0 ? (
+                  <HubEmptyState
+                    icon={Search}
+                    title={`No students match “${search.trim()}”`}
+                    hint="Try a different name or roll number."
+                    className="py-8"
+                  />
+                ) : (
+                  <ul className="divide-y divide-border/50">
+                    {filtered.map((student, i) => (
                       <RosterRow
                         key={student.id}
                         student={student}
@@ -432,12 +452,12 @@ export function AttendanceModule() {
                         onSetStatus={setStatus}
                         history={board.history}
                       />
-                    ))
-                  )}
-                </div>
+                    ))}
+                  </ul>
+                )}
 
-                {/* footer summary + history legend */}
-                <div className="mt-4 flex flex-col items-start justify-between gap-2.5 border-t border-border pt-4 sm:flex-row sm:items-center">
+                {/* footer: summary + history legend — one quiet strip */}
+                <div className="flex flex-col items-start justify-between gap-2.5 border-t border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center">
                   <div className="flex items-center gap-2 text-xs">
                     <Users className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">
@@ -471,7 +491,7 @@ export function AttendanceModule() {
                 </div>
               </>
             )}
-          </GlassCard>
+          </SectionCard>
         </>
       )}
     </PageTransition>
@@ -495,7 +515,7 @@ function WeekStrip({
   const today = todayKey()
   return (
     <div
-      className="flex items-center justify-between gap-1 overflow-x-auto rounded-xl border border-border bg-card/60 px-2 py-2"
+      className="flex items-center justify-between gap-1 overflow-x-auto rounded-xl border border-border bg-card px-2 py-2"
       role="group"
       aria-label="This week"
     >
@@ -555,61 +575,6 @@ function WeekStrip({
   )
 }
 
-/** The 4 live count cards (Present / Absent / Late / On Leave out of total). */
-function CountsStrip({ counts, total }: { counts: SaveCounts; total: number }) {
-  const cards: { key: AttendanceStatus; label: string; value: number; icon: LucideIcon; tone: StripTone }[] = [
-    { key: 'PRESENT', label: 'Present', value: counts.present, icon: Check, tone: 'emerald' },
-    { key: 'ABSENT', label: 'Absent', value: counts.absent, icon: X, tone: 'rose' },
-    { key: 'LATE', label: 'Late', value: counts.late, icon: Clock, tone: 'amber' },
-    { key: 'LEAVE', label: 'On Leave', value: counts.leave, icon: Plane, tone: 'info' },
-  ]
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {cards.map((c, i) => {
-        const tone = STRIP_TONES[c.tone]
-        const Icon = c.icon
-        const pct = total > 0 ? (c.value / total) * 100 : 0
-        return (
-          <motion.div
-            key={c.key}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05, duration: 0.3 }}
-          >
-            <GlassCard className="p-3 sm:p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">{c.label}</span>
-                <div className={cn('flex h-7 w-7 items-center justify-center rounded-lg', tone.chip)}>
-                  <Icon className="h-4 w-4" />
-                </div>
-              </div>
-              <p className={cn('font-display text-2xl font-bold', tone.text)}>
-                <motion.span
-                  key={`${c.key}-${c.value}`}
-                  initial={{ scale: 1.25 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 320, damping: 22 }}
-                >
-                  {c.value}
-                </motion.span>
-                <span className="text-base font-normal text-muted-foreground">/{total}</span>
-              </p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                <motion.div
-                  className={cn('h-full rounded-full', tone.bar)}
-                  initial={false}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-                />
-              </div>
-            </GlassCard>
-          </motion.div>
-        )
-      })}
-    </div>
-  )
-}
-
 /** P A L L mini-legend for the roster history dots. */
 function HistoryLegend() {
   const items: { status: AttendanceStatus; label: string }[] = [
@@ -631,7 +596,12 @@ function HistoryLegend() {
   )
 }
 
-/** One roster row: roll tile + avatar + name + history dots + rate + status buttons. */
+/**
+ * One roster row — a hairline (divide-y) list entry with a colored LEFT
+ * border accent for the current status. Tablet+: roll tile + labeled
+ * action buttons on the right. Mobile: roll folded into the name line
+ * and a compact 4-up action control under the identity block.
+ */
 function RosterRow({
   student,
   index,
@@ -651,30 +621,36 @@ function RosterRow({
   const stat = historyStatsFor(student.id, history)
   const rate = Math.round(stat.rate * 100)
   const tone = rateTone(stat.rate)
+  const cfg = STATUS_CONFIG[current]
   return (
-    <motion.div
+    <motion.li
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index, 10) * 0.025, duration: 0.25 }}
       className={cn(
-        'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border p-3 transition-colors',
-        STATUS_CONFIG[current].row,
+        'border-l-2 py-2.5 pl-3 pr-4 transition-colors sm:py-2',
+        cfg.accent,
+        disabled && 'opacity-60',
       )}
     >
-      <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold text-muted-foreground"
-        aria-hidden="true"
-      >
-        {student.rollNo}
-      </div>
-      <GradientAvatar name={student.name} size="sm" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{student.name}</p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-          <span>Roll #{student.rollNo}</span>
-          {recent.length > 0 && (
-            <>
-              <span aria-hidden="true">·</span>
+      <div className="flex items-center gap-3">
+        {/* roll tile — tablet+ (mobile folds the roll into the name) */}
+        <div
+          className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[11px] font-bold tabular-nums text-muted-foreground sm:flex"
+          aria-hidden="true"
+        >
+          {student.rollNo}
+        </div>
+        <GradientAvatar name={student.name} size="sm" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">
+            <span className="mr-1.5 text-[11px] font-semibold tabular-nums text-muted-foreground sm:hidden">
+              {student.rollNo} ·
+            </span>
+            {student.name}
+          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            {recent.length > 0 && (
               <span className="flex items-center gap-1" title="Last 5 marked days (oldest → newest)">
                 {recent.map((r) => (
                   <span
@@ -684,48 +660,94 @@ function RosterRow({
                   />
                 ))}
               </span>
-            </>
-          )}
-          {stat.marked > 0 && (
-            <span
-              className={cn(
-                'rounded-full px-1.5 py-px text-[10px] font-semibold',
-                tone.chip,
-              )}
-              title={`${stat.present}/${stat.marked} present across the last ${history?.days.length ?? 0} marked days`}
-            >
-              {rate}%
-            </span>
-          )}
+            )}
+            {stat.marked > 0 && (
+              <span
+                className={cn(
+                  'rounded-full px-1.5 py-px text-[10px] font-semibold',
+                  tone.chip,
+                )}
+                title={`${stat.present}/${stat.marked} present across the last ${history?.days.length ?? 0} marked days`}
+              >
+                {rate}%
+              </span>
+            )}
+          </div>
+        </div>
+        {/* actions — tablet+ labeled buttons */}
+        <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+          {ATTENDANCE_STATUSES.map((status) => (
+            <StatusButton
+              key={status}
+              status={status}
+              studentName={student.name}
+              isActive={current === status}
+              disabled={disabled}
+              onSetStatus={onSetStatus}
+              studentId={student.id}
+              labeled
+            />
+          ))}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        {ATTENDANCE_STATUSES.map((status) => {
-          const cfg = STATUS_CONFIG[status]
-          const isActive = current === status
-          const Icon = cfg.icon
-          return (
-            <motion.button
-              key={status}
-              type="button"
-              whileTap={{ scale: 0.92 }}
-              onClick={() => onSetStatus(student.id, status)}
-              disabled={disabled}
-              className={cn(
-                'flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all',
-                isActive ? cfg.active : cn('bg-transparent', cfg.inactive),
-              )}
-              title={cfg.label}
-              aria-label={`Mark ${student.name} as ${cfg.label}`}
-              aria-pressed={isActive}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{cfg.label}</span>
-            </motion.button>
-          )
-        })}
+      {/* actions — mobile compact control (one row, four equal parts) */}
+      <div className="mt-2 grid grid-cols-4 gap-1.5 sm:hidden">
+        {ATTENDANCE_STATUSES.map((status) => (
+          <StatusButton
+            key={status}
+            status={status}
+            studentName={student.name}
+            isActive={current === status}
+            disabled={disabled}
+            onSetStatus={onSetStatus}
+            studentId={student.id}
+          />
+        ))}
       </div>
-    </motion.div>
+    </motion.li>
+  )
+}
+
+/** One attendance action. Only the SELECTED state is visually dominant. */
+function StatusButton({
+  status,
+  studentName,
+  studentId,
+  isActive,
+  disabled,
+  onSetStatus,
+  labeled,
+}: {
+  status: AttendanceStatus
+  studentName: string
+  studentId: string
+  isActive: boolean
+  disabled: boolean
+  onSetStatus: (studentId: string, status: AttendanceStatus) => void
+  labeled?: boolean
+}) {
+  const cfg = STATUS_CONFIG[status]
+  const Icon = cfg.icon
+  return (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.92 }}
+      onClick={() => onSetStatus(studentId, status)}
+      disabled={disabled}
+      className={cn(
+        'flex items-center justify-center gap-1 rounded-md border font-medium transition-all',
+        labeled
+          ? 'px-2 py-1 text-[11px]'
+          : 'h-8 px-1 text-[10px]',
+        isActive ? cfg.active : cn('bg-transparent', cfg.inactive),
+      )}
+      title={cfg.label}
+      aria-label={`Mark ${studentName} as ${cfg.label}`}
+      aria-pressed={isActive}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{cfg.label}</span>
+    </motion.button>
   )
 }
 
@@ -770,9 +792,9 @@ function InsightsView({
   }
 
   return (
-    <div className="space-y-4">
-      {/* headline stat */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/30 px-4 py-3">
+    <div className="space-y-5 px-4 py-4">
+      {/* headline stat — one quiet strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/30 px-3.5 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <TrendingUp className="h-4.5 w-4.5" />
         </div>
@@ -798,12 +820,12 @@ function InsightsView({
         </p>
       </div>
 
-      {/* trend bars */}
+      {/* trend bars — bare, no nested box */}
       <div>
         <h4 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Daily present rate
         </h4>
-        <div className="flex items-end gap-1.5 sm:gap-2.5 rounded-xl border border-border bg-card/40 p-3 sm:p-4">
+        <div className="flex items-end gap-1.5 sm:gap-2.5">
           {days.map((d) => {
             const pct = Math.round(d.rate * 100)
             const tone = rateTone(d.rate)
@@ -834,30 +856,25 @@ function InsightsView({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* attention needed */}
-        <div className="rounded-xl border border-border bg-card/40 p-3 sm:p-4">
-          <div className="mb-2.5 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600">
-              <AlertTriangle className="h-4 w-4" />
-            </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* attention needed — hairline list */}
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" aria-hidden="true" />
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Attention needed
             </h4>
           </div>
           {attention.length === 0 ? (
             <p className="py-6 text-center text-xs text-muted-foreground">
-              No absences in the recent window — full class! 🎉
+              No absences in the recent window — full class!
             </p>
           ) : (
-            <ul className="space-y-1.5">
+            <ul className="divide-y divide-border/50">
               {attention.map(({ student, stat }) => {
                 const tone = rateTone(stat.rate)
                 return (
-                  <li
-                    key={student.id}
-                    className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-2"
-                  >
+                  <li key={student.id} className="flex items-center gap-2.5 py-2">
                     <GradientAvatar name={student.name} size="sm" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-semibold">{student.name}</p>
@@ -883,12 +900,10 @@ function InsightsView({
           )}
         </div>
 
-        {/* perfect record */}
-        <div className="rounded-xl border border-border bg-card/40 p-3 sm:p-4">
-          <div className="mb-2.5 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
-              <Award className="h-4 w-4" />
-            </div>
+        {/* perfect record — hairline list */}
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <Award className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Perfect record
             </h4>
@@ -898,12 +913,9 @@ function InsightsView({
               No student has a spotless record in the recent window yet.
             </p>
           ) : (
-            <ul className="space-y-1.5">
+            <ul className="divide-y divide-border/50">
               {perfect.slice(0, 8).map(({ student, stat }) => (
-                <li
-                  key={student.id}
-                  className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-2"
-                >
+                <li key={student.id} className="flex items-center gap-2.5 py-2">
                   <GradientAvatar name={student.name} size="sm" />
                   <p className="min-w-0 flex-1 truncate text-xs font-semibold">{student.name}</p>
                   <span
@@ -915,7 +927,7 @@ function InsightsView({
                 </li>
               ))}
               {perfect.length > 8 && (
-                <li className="pt-0.5 text-center text-[11px] text-muted-foreground">
+                <li className="py-1.5 text-center text-[11px] text-muted-foreground">
                   + {perfect.length - 8} more with perfect attendance
                 </li>
               )}
@@ -927,11 +939,11 @@ function InsightsView({
   )
 }
 
-/** Skeleton for a board load: week strip + 4 count cards + roster rows. */
+/** Skeleton for a board load: week strip + 4 stat cards + roster rows. */
 function BoardSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-1 rounded-xl border border-border bg-card/60 px-2 py-2">
+      <div className="flex items-center justify-between gap-1 rounded-xl border border-border bg-card px-2 py-2">
         {Array.from({ length: 7 }).map((_, i) => (
           <div key={i} className="flex min-w-[38px] flex-1 flex-col items-center gap-1.5 py-1">
             <div className="h-2.5 w-3 animate-pulse rounded bg-muted" />
@@ -942,45 +954,46 @@ function BoardSkeleton() {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <GlassCard key={i} hover={false} className="animate-pulse p-3 sm:p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="h-3 w-16 rounded bg-muted" />
-              <div className="h-7 w-7 rounded-lg bg-muted" />
+          <div key={i} className="animate-pulse rounded-xl border border-border bg-muted/20 p-3 sm:p-4">
+            <div className="mb-1.5 flex items-center justify-between">
+              <div className="h-2.5 w-16 rounded bg-muted" />
+              <div className="h-3.5 w-3.5 rounded bg-muted" />
             </div>
-            <div className="h-7 w-12 rounded bg-muted" />
-            <div className="mt-2 h-1.5 w-full rounded-full bg-muted" />
-          </GlassCard>
+            <div className="h-8 w-14 rounded bg-muted" />
+            <div className="mt-2 h-1 w-full rounded-full bg-muted" />
+          </div>
         ))}
       </div>
-      <GlassCard hover={false} className="p-3 sm:p-4 lg:p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3">
           <div className="space-y-1.5">
             <div className="h-3.5 w-44 animate-pulse rounded bg-muted" />
             <div className="h-2.5 w-56 animate-pulse rounded bg-muted" />
           </div>
           <div className="hidden h-9 w-64 animate-pulse rounded-md bg-muted sm:block" />
         </div>
-        <div className="space-y-2">
+        <ul className="divide-y divide-border/50">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3"
-            >
-              <div className="h-9 w-9 shrink-0 animate-pulse rounded-lg bg-muted" />
+            <li key={i} className="flex items-center gap-3 border-l-2 border-muted px-4 py-3">
               <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="h-3 w-32 animate-pulse rounded bg-muted" />
                 <div className="h-2.5 w-28 animate-pulse rounded bg-muted" />
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
                 {Array.from({ length: 4 }).map((_, j) => (
-                  <div key={j} className="h-6 w-8 animate-pulse rounded-md bg-muted" />
+                  <div key={j} className="h-6 w-14 animate-pulse rounded-md bg-muted" />
                 ))}
               </div>
-            </div>
+              <div className="grid w-full grid-cols-4 gap-1.5 sm:hidden">
+                {Array.from({ length: 4 }).map((_, j) => (
+                  <div key={j} className="h-8 animate-pulse rounded-md bg-muted" />
+                ))}
+              </div>
+            </li>
           ))}
-        </div>
-      </GlassCard>
+        </ul>
+      </div>
     </div>
   )
 }
