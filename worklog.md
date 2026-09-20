@@ -1862,3 +1862,25 @@ Stage Summary:
 5. Queued feature work (user-assigned earlier rounds, not started):
    Exam Duties module rebuild, Lessons Planner board-syllabus upgrade,
    teacher/student attendance UX, QuickStats fee-tile copy tightening.
+
+---
+Task ID: 8
+Agent: Z.ai Code (main)
+Task: Fix reported Radix a11y console error — `DialogContent requires a DialogTitle` in FeeReceiptViewer (teacher Students → profile sheet → payment history), plus a codebase-wide sweep for the same defect class.
+
+Work Log:
+- Read `src/components/shared/fee-collection/receipt-viewer.tsx` — root cause confirmed: `DialogTitle` was rendered only inside the `{data && t && (...)}` branch, so the loading and error states had NO title, violating the Radix dialog a11y contract.
+- Fixed receipt-viewer.tsx: DialogHeader + DialogTitle moved OUT of the conditional to render ALWAYS at the top of DialogContent, with a state-aware label (`Receipt unavailable` / `Loading receipt…` / `Fee Payment Receipt` / `Collection Acknowledgement` / `Payment Notice`). Added sr-only DialogDescription (preempts Radix's sibling "missing description" warning). Loading skeletons/error block adjusted to p-5 under the now-permanent header. Print stylesheet untouched (header stays outside #fee-receipt-print).
+- Codebase sweep #1 (count heuristic): every file with more `<DialogContent|SheetContent` than `<DialogTitle|SheetTitle` — found `salary-employee-drawer.tsx` (3 contents, 2 titles).
+- Fixed `src/components/principal/modules/salary/salary-employee-drawer.tsx`: the SheetContent had NO SheetTitle at all; converted the visible employee-name `<p>` into `SheetTitle` and the role line into `SheetDescription` (identical visual styling preserved).
+- Codebase sweep #2 (conditional-title heuristic): checked collect-dialog.tsx (both ternary branches titled ✓), student-profile-dialog.tsx (all three states titled incl. sr-only fallback ✓), add-topic-sheet.tsx ✓, fee-receipt-a5.tsx ✓, event-detail-dialog ✓, verification-workspace ✓, both learning resource-details ✓, review-dialog ✓ — no further instances.
+- Gates: `bunx tsc --noEmit` → 0 errors; `bun run lint` → clean (exit 0).
+- Browser QA via agent-browser (teacher rohan.mehta@greenwood.edu.in one-tap login): Student Directory → Aarav Sharma profile sheet → RECENT PAYMENTS → opened all three transaction states (Awaiting verification ₹100, Rejected ₹500, Verified ₹2.0K SCH-2026-000001). Each dialog now exposes its proper accessible name ("Collection Acknowledgement" / "Payment Notice" / "Fee Payment Receipt"); console completely clean — zero errors/warnings across all three opens.
+- Encountered and handled en route: stale Turbopack ChunkLoadError (fresh=2 reload), keepalive dev-server restart mid-QA (waited for `/` recompile before reloading).
+
+Stage Summary:
+- Reported error FIXED at the exact source; verified in-browser across all three receipt states with a clean console.
+- One additional latent instance of the same defect class (salary employee drawer SheetTitle) found and fixed proactively.
+- Both fixes preserve existing visuals exactly; a11y improved (screen-reader names on two more surfaces).
+- Gates green: tsc 0 errors, lint clean, robots 200.
+- Dev server left healthy; memory at ~628MB available after QA compiles (known post-compile state; keepalive guards it).

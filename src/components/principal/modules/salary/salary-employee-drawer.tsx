@@ -25,7 +25,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -96,10 +96,10 @@ export function SalaryEmployeeDrawer() {
                 <AvatarFallback className="text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">{initials}</AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="text-sm font-bold truncate">{employee.name}</p>
-                <p className="text-[11px] text-muted-foreground truncate">
+                <SheetTitle className="text-sm font-bold truncate text-left">{employee.name}</SheetTitle>
+                <SheetDescription className="text-[11px] truncate text-left">
                   {employee.designation} · {employee.department} · {employee.employeeId}
-                </p>
+                </SheetDescription>
               </div>
             </div>
           </div>

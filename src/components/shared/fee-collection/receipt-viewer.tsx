@@ -23,7 +23,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { GradientAvatar } from '@/components/shared/ui'
@@ -110,29 +110,47 @@ export function FeeReceiptViewer({ txnId, open, onOpenChange }: Props) {
   const isPending = t?.status === 'UNDER_VERIFICATION'
   const isRejected = t?.status === 'REJECTED'
 
+  // The DialogTitle must ALWAYS be rendered (Radix a11y contract) — even
+  // while loading or on error — so the label is derived from state instead
+  // of being gated behind the loaded-data branch.
+  const titleText = error
+    ? 'Receipt unavailable'
+    : !t
+      ? 'Loading receipt…'
+      : isVerified
+        ? 'Fee Payment Receipt'
+        : isPending
+          ? 'Collection Acknowledgement'
+          : 'Payment Notice'
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0">
+        <DialogHeader className="p-5 pb-3 border-b">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <FileText className="h-4 w-4 text-emerald-600" />
+            {titleText}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {error
+              ? 'The receipt could not be loaded. Please try again.'
+              : 'Fee collection document for the selected student transaction.'}
+          </DialogDescription>
+        </DialogHeader>
+
         {loading && (
-          <div className="space-y-4 p-6">
-            <Skeleton className="h-6 w-2/3" />
-            <Skeleton className="h-40 w-full rounded-xl" />
+          <div className="space-y-4 p-5">
+            <Skeleton className="h-36 w-full rounded-xl" />
             <Skeleton className="h-24 w-full rounded-xl" />
           </div>
         )}
         {error && (
-          <div className="p-6">
+          <div className="p-5">
             <p className="text-sm text-destructive">{error}</p>
           </div>
         )}
         {data && t && (
           <div>
-            <DialogHeader className="p-5 pb-3 border-b">
-              <DialogTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-4 w-4 text-emerald-600" />
-                {isVerified ? 'Fee Payment Receipt' : isPending ? 'Collection Acknowledgement' : 'Payment Notice'}
-              </DialogTitle>
-            </DialogHeader>
 
             {/* Receipt-only print stylesheet: everything outside the
                 sheet is hidden when the user prints / saves as PDF. */}
