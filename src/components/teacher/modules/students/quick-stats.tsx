@@ -155,8 +155,11 @@ export function QuickStats({
   return (
     <div
       className={cn(
-        'grid grid-cols-2 gap-3',
-        tiles.length > 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-4',
+        // 2-up on phones, 3-up on tablets/small laptops (the sidebar is
+        // still overlay until lg, and at lg the expanded sidebar leaves
+        // ~680px — 3-up keeps the tiles readable), full row on xl+.
+        'grid grid-cols-2 gap-3 md:grid-cols-3',
+        tiles.length > 4 ? 'xl:grid-cols-5' : 'xl:grid-cols-4',
       )}
     >
       {tiles.map((tile, i) => {
