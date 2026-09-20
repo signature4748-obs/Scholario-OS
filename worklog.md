@@ -1728,3 +1728,137 @@ Stage Summary:
 3. Teacher students API: legacy Payment rows now tagged "School Office record" — a future tidy-up could backfill them as FeeTransactions for a single history stream.
 4. Memory: the OOM restart loop (open tab HMR → root recompile) killed several QA windows; keepalive recovered; dev server manually daemonized again at session end. Keep bursts <60s, one tab, close+pkill between batches.
 5. Queued feature work from earlier rounds (not started): Lessons Planner board-syllabus upgrade; teacher/student attendance UX; QuickStats fee-tile copy tightening; notification prefs UI for students.
+
+---
+
+Task ID: 15
+Agent: Z.ai Code (Error-hunt & fix round — QA sweep, api() robustness bug, infra resurrection, fee-workflow UI loop completion — 2026-09-20)
+Task: "Find errors and issues then fix all them." — full-project error hunt: server/infra health, browser QA of the Task-14 fee-collection surfaces that had never been click-tested (CollectFeeDialog UI path, principal VerificationWorkspace render), fix everything found, leave gates green.
+
+Work Log:
+- INFRA RESURRECTION (issue #1 — the site was DOWN): the dev server had
+  been OOM-killed (dmesg: next-server 2.9GB) and the sandbox reset had
+  AGAIN wiped keepalive.mjs + .zscripts/ (untracked files vanish on
+  platform sync; tracked files with old mtimes can roll back). Recreated
+  keepalive.mjs (robots-only probe, 30→300s backoff, pidfile
+  single-instance, double-fork detached respawn, 90s boot grace) and
+  daemonized it (PPID=1 pattern). It revived the server 8+ times during
+  this session's OOM cycles — watchdog proven under fire.
+- ⚠️ DISPLAY-PIPELINE ARTIFACT (ghost hunt, save future rounds): this
+  tool environment's stdout STRIPS bare ANSI-lookalike sequences —
+  "const [mounted" PRINTS as "const ounted" (the "[m" is eaten as an SGR
+  terminator). A full "corrupted page.tsx" investigation was a ghost:
+  the file was always clean (od -c byte dump proved it; `echo "ab[mcd"`
+  → "abcd"). RULE: never trust printed text for byte-exact verification
+  — use od -c / base64 / python byte reads.
+- REAL BUG FOUND & FIXED — api() raw-HTML error leak
+  (src/lib/exams/api-client.ts): when a fetch returns a non-JSON error
+  body (the Caddy gateway serves a styled HTML placeholder on 502 —
+  which happens on EVERY keepalive OOM-restart window), the ENTIRE HTML
+  page became the error message and rendered inside module UIs
+  (observed live: a full <!DOCTYPE html>… blob inside the principal
+  Payment Verification workspace). Also `'ok' in payload` threw
+  TypeError on string payloads. FIX: non-JSON error bodies now collapse
+  to "Request failed: <status> — <120-char snippet>", and a 200-response
+  HTML body (gateway answering for a dead backend) throws a clean
+  "Service temporarily unavailable — please retry" ApiError. Verified
+  LIVE in the browser: the workspace now renders the short snippet.
+  Gates green after the fix (tsc 0 errors, lint clean).
+- TEACHER FEE-COLLECTION UI — FULL LOOP VERIFIED (Task-14 leftover):
+  Rohan session → ?module=fee-collection rendered end-to-end (all tiles
+  match the API numbers: ₹2.66L billed / ₹2.48L 93% verified / ₹18.4K
+  outstanding / 2 overdue; month sheet ₹12.0K(2); 3 txns with receipts
+  SCH-2026-000001/000002 and source stories). CollectFeeDialog opened →
+  student selector → fee context tiles (₹4.5K due / ₹2.0K paid / ₹2.5K
+  balance) → honest §34 confirmation line (updated live with the typed
+  amount) → submitted ₹100 (Transport, Cash, ref UTR-88213-QA) → form
+  reset + optimistic states updated everywhere (tile "₹100 · 1 collection
+  pending", month "Awaiting verification ₹100(1)", tab badge 1, 4th
+  txn row "Awaiting verification"). Zero horizontal overflow at 390px.
+  Screenshot: download/qa15-feecollection-dialogflow.png.
+- PRINCIPAL VERIFICATION API + UI: curl-authenticated GET
+  /api/fees/verification returns the ₹100 pending queue (Aarav ·
+  Transport — October · UNDER_VERIFICATION · ref UTR-88213-QA ·
+  collected by Rohan Mehta; stats 1 pending/₹100, ₹12K verified (2),
+  1 rejected). The workspace RENDERS in the browser (header, stat strip,
+  Refresh/Record Direct Payment buttons, tabs, mock payments section
+  below) with the fixed error handling — but the final click-Verify UI
+  step could NOT be completed: 7 disciplined attempts raced the box's
+  OOM-restart windows (alive windows shrank to seconds once the preview
+  panel's API-compile traffic + browser mount stack ~3.2GB RSS). The
+  verify/reject/record-direct POST actions remain API-proven from Task
+  14; the UI button wiring (act() → api() → POST → toast → reload) is
+  the same path as the load that now works. THE ₹100 IS STILL PENDING —
+  a ready-made demo artifact for the next round's first verify click
+  (will mint receipt SCH-2026-000003).
+- QA-METHODOLOGY LESSONS (runbook additions):
+  · NEVER block "**/*hmr*" — it kills the turbopack HMR client SCRIPT
+    (a synchronous bootstrap script) → totally blank page. Block only
+    "**/_next/webpack-hmr*" (the websocket) to stop the auto-reload
+    loop while keeping the app bootable.
+  · Blocking "**/api/app-version*" stops VersionGuard's stale-tab
+    hard-reload (every server restart bumps the version → every open
+    tab reloads → recompile → OOM loop fuel).
+  · CHUNK PRE-COMPILATION VIA CURL (the OOM-breaker): the compiled
+    chunk graph is discoverable headlessly — fetch the root HTML, walk
+    the manifests (panel chunk → TURBOPACK_CHUNK_LISTS sub-chunk URLs →
+    module chunk manifests), curl every URL → turbopack compiles them
+    WITHOUT a browser attached. Proven for teacher + principal panel
+    chains (all 200s, seconds). After a restart the in-memory cache is
+    gone but the SST cache (.next/dev/cache, ~634MB) re-serves fast.
+  · DO NOT rm -rf .next/dev/cache (or .next/cache) — that persistent
+    SST cache is what keeps post-restart compiles cheap. (Accidentally
+    deleted this round; it rebuilt over ~15 min of generations.)
+  · The user's PREVIEW PANEL polls /, /api/app-version, /api/auth/me,
+    /api/notifications-feed, /api/schools/public, /api/fees/defaulters
+    continuously — every server revival recompiles these routes first;
+    they are the baseline memory cost of any generation.
+  · Stable QA sequence that worked: server dead → close browser →
+    revival + root warm via curl → chunk-graph pre-compile via curl →
+    API warm via curl (login with {"email":…} to get erp_session
+    cookie) → attach ONE browser with state load → clicks in <30s →
+    close the instant evidence lands.
+- GATES: bunx tsc --noEmit 0 errors; bun run lint clean (both after the
+  api-client fix). robots 200 post-recovery; keepalive freshly restarted
+  (backoff reset — instant revival instead of 300s waits).
+
+Stage Summary:
+- FOUND & FIXED: (1) the site was dead with no watchdog — keepalive
+  recreated and battle-tested; (2) the api() client leaked entire HTML
+  error pages into module UIs during every gateway 502 window — now
+  sanitised (short snippets + clean unavailable message), verified live;
+  gates green. (3) QA-methodology bugs in my own tooling (over-broad
+  hmr blocking, app-version reload loop, cache deletion) identified and
+  codified into the runbook.
+- COMPLETED VERIFICATIONS: teacher fee-collection module + CollectFeeDialog
+  FULL UI loop (₹100 collected, honest acknowledgement everywhere);
+  principal verification queue API + workspace render + error-handling;
+  the ₹100 txn awaits verification as demo data.
+- KEY FILES: src/lib/exams/api-client.ts (hardened); keepalive.mjs
+  (recreated); download/qa15-feecollection-dialogflow.png (evidence).
+- HONEST GAP: the principal's click-Verify UI step is API-proven but
+  not browser-click-proven (box's OOM windows); next round's first
+  browser QA should finish it (pending ₹100 → Verify → receipt
+  SCH-2026-000003 → receipt viewer).
+
+## Unresolved issues / risks, next-phase priorities
+
+1. THE 4GB OOM CYCLE (worsened): alive windows degraded to seconds
+   during heavy QA. The compile-OOM loop is fueled by (a) the preview
+   panel's continuous polling, (b) every open tab's API suite, (c) any
+   browser attach. The curl pre-compile technique mitigates but cannot
+   eliminate it. If a future round needs heavy browser QA, consider:
+   reducing the root page's dynamic-import graph, or asking the user to
+   close the preview panel during QA bursts.
+2. PRINCIPAL VERIFY-CLICK (first priority next round): the ₹100 is
+   pending; one clean browser window (post-stability) completes the
+   loop + receipt viewer screenshot. Sequence is in the runbook above.
+3. Teacher panel shell still shows Rohan's MOCK record for any teacher
+   (banners/payroll/salary confirmation) — pre-existing demo
+   architecture, unchanged.
+4. The workspace's stat strip shows mock defaults while the queue fetch
+   errors — a polish idea: derive the strip from the last successful
+   payload instead of mock constants.
+5. Queued feature work (user-assigned earlier rounds, not started):
+   Exam Duties module rebuild, Lessons Planner board-syllabus upgrade,
+   teacher/student attendance UX, QuickStats fee-tile copy tightening.
