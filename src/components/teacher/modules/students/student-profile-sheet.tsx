@@ -23,15 +23,19 @@ import {
   Award,
   Calendar,
   CalendarCheck,
+  Clock3,
   GraduationCap,
   Mail,
   MapPin,
   Phone,
+  Receipt,
   User,
   Users,
   Wallet,
 } from 'lucide-react'
 import { StatusBadge, GradientAvatar } from '@/components/shared/ui'
+import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
+import { Button } from '@/components/ui/button'
 import {
   Sheet,
   SheetContent,
@@ -39,6 +43,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet'
+import { useState } from 'react'
 import { formatDate } from '@/lib/format'
 import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -97,6 +102,8 @@ export function StudentProfileSheet({
   onClose: () => void
 }) {
   const status = student ? statusOf(student) : null
+  const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
+  const [receiptOpen, setReceiptOpen] = useState(false)
 
   return (
     <Sheet open={!!student} onOpenChange={(o) => !o && onClose()}>
@@ -297,6 +304,12 @@ export function StudentProfileSheet({
                       className={student.fees.outstanding > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}
                     />
                   </div>
+                  {student.fees.awaitingVerification > 0 && (
+                    <p className="flex items-center gap-1.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                      <Clock3 className="h-3 w-3 shrink-0" />
+                      {formatINR(student.fees.awaitingVerification, true)} collected — awaiting the Principal&rsquo;s verification (not counted in the balance)
+                    </p>
+                  )}
                   <div className="space-y-1.5 rounded-xl border border-border bg-card/40 p-3">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                       Fee lines
@@ -323,17 +336,67 @@ export function StudentProfileSheet({
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         Recent payments
                       </p>
-                      {student.fees.payments.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="min-w-0 flex-1 truncate font-medium">{p.feeTitle}</span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {formatDate(p.createdAt.slice(0, 10))} · {(p.method ?? '—').replace('_', ' ').toLowerCase()}
-                          </span>
-                          <span className="shrink-0 tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
-                            {formatINR(p.amount, true)}
-                          </span>
-                        </div>
-                      ))}
+                      {student.fees.payments.map((p) => {
+                        const pending = p.status === 'UNDER_VERIFICATION'
+                        const rejected = p.status === 'REJECTED'
+                        return (
+                          <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="min-w-0 truncate font-medium">{p.feeTitle}</span>
+                                <span
+                                  className={cn(
+                                    'inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[9px] font-semibold',
+                                    pending
+                                      ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                                      : rejected
+                                        ? 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-400'
+                                        : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                                  )}
+                                >
+                                  {pending ? 'Awaiting verification' : rejected ? 'Rejected' : p.txnId ? 'Verified' : 'Paid'}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                                {formatDate(p.createdAt.slice(0, 10))} · {(p.method ?? '—').replace('_', ' ').toLowerCase()}
+                                {p.txnId
+                                  ? p.source === 'CLASS_TEACHER'
+                                    ? p.collectedBy
+                                      ? ` · collected by ${p.collectedBy}`
+                                      : ' · class teacher'
+                                    : p.source === 'SCHOOL_OFFICE'
+                                      ? ' · paid through School Office'
+                                      : p.source === 'PRINCIPAL'
+                                        ? ' · paid through the Principal'
+                                        : ''
+                                  : p.sourceLabel
+                                    ? ` · ${p.sourceLabel}`
+                                    : ''}
+                                {p.receiptNo ? ` · receipt ${p.receiptNo}` : ''}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <span className={cn('tabular-nums font-semibold', rejected ? 'text-rose-600 line-through dark:text-rose-400' : pending ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                                {formatINR(p.amount, true)}
+                              </span>
+                              {p.txnId && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  aria-label="View payment document"
+                                  onClick={() => {
+                                    setReceiptTxnId(p.txnId)
+                                    setReceiptOpen(true)
+                                  }}
+                                >
+                                  <Receipt className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </section>
@@ -351,6 +414,10 @@ export function StudentProfileSheet({
           </>
         )}
       </SheetContent>
+
+      {/* Shared receipt document — the SAME viewer the fee workspace and
+          the principal's queue open (canonical payment, canonical doc). */}
+      <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} />
     </Sheet>
   )
 }

@@ -220,6 +220,25 @@ export async function GET() {
           })
         : []
 
+      // Canonical collection transactions for the same students — the
+      // teacher's own collections (pending/verified/rejected) AND direct
+      // office payments (source PRINCIPAL/SCHOOL_OFFICE), so the class
+      // teacher always sees the student's real payment picture.
+      const ctTxnRows = ctStudentIds.length
+        ? await db.feeTransaction.findMany({
+            where: { studentId: { in: ctStudentIds }, source: { not: null } },
+            orderBy: { createdAt: 'desc' },
+            take: 300,
+          })
+        : []
+      const ctTxnByStudent = new Map<string, typeof ctTxnRows>()
+      for (const t of ctTxnRows) {
+        if (!t.studentId) continue
+        const list = ctTxnByStudent.get(t.studentId) ?? []
+        list.push(t)
+        ctTxnByStudent.set(t.studentId, list)
+      }
+
       const today = new Date()
       const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
 
@@ -233,14 +252,35 @@ export async function GET() {
         dueDate: string | null
         method: string | null
       }
+      /** ONE payment history entry — canonical FeeTransaction rows
+       * (with source / verification / receipt) UNION pre-workflow legacy
+       * Payment rows (no transactionId — they predate the workflow and
+       * are tagged as office records). Every surface renders this same
+       * union (MASTER TASK §19: one source of truth). */
+      interface StudentPaymentDto {
+        id: string
+        txnId: string | null
+        feeTitle: string
+        amount: number
+        method: string | null
+        status: string
+        createdAt: string
+        source: string | null
+        sourceLabel: string | null
+        receiptNo: string | null
+        collectedBy: string | null
+        verifiedBy: string | null
+        rejectionReason: string | null
+      }
       interface StudentFeesDto {
         status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
         totalBilled: number
         totalPaid: number
         outstanding: number
+        awaitingVerification: number
         lastPaymentAt: string | null
         items: FeeItemDto[]
-        payments: { id: string; feeTitle: string; amount: number; method: string | null; status: string; createdAt: string }[]
+        payments: StudentPaymentDto[]
       }
 
       const feesByStudent = new Map<string, StudentFeesDto>()
@@ -253,6 +293,7 @@ export async function GET() {
             totalBilled: 0,
             totalPaid: 0,
             outstanding: 0,
+            awaitingVerification: 0,
             lastPaymentAt: null,
             items: [],
             payments: [],
@@ -280,18 +321,44 @@ export async function GET() {
             method: f.method,
           }
         })
-        const payments = rows
-          .flatMap((f) =>
-            f.payments.map((p) => ({
+        const feeTitleByFeeId = new Map(rows.map((f) => [f.id, f.title]))
+        const legacyPayments: StudentPaymentDto[] = rows.flatMap((f) =>
+          f.payments
+            .filter((p) => !p.transactionId)
+            .map((p) => ({
               id: p.id,
-              feeTitle: f.title,
+              txnId: null,
+              feeTitle: feeTitleByFeeId.get(p.feeId ?? '') ?? f.title,
               amount: p.amount,
               method: p.method,
               status: p.status,
               createdAt: p.createdAt.toISOString(),
+              source: 'SCHOOL_OFFICE',
+              sourceLabel: 'School Office record',
+              receiptNo: null,
+              collectedBy: null,
+              verifiedBy: null,
+              rejectionReason: null,
             })),
-          )
+        )
+        const txnPayments: StudentPaymentDto[] = (ctTxnByStudent.get(s.id) ?? []).map((t) => ({
+          id: t.id,
+          txnId: t.id,
+          feeTitle: t.feeHeadName ?? feeTitleByFeeId.get(t.feeId ?? '') ?? 'Fee',
+          amount: t.amount,
+          method: t.method,
+          status: t.status,
+          createdAt: (t.collectedAt ?? t.createdAt).toISOString(),
+          source: t.source,
+          sourceLabel: null,
+          receiptNo: t.receiptNo,
+          collectedBy: t.collectedByName,
+          verifiedBy: t.verifiedByName,
+          rejectionReason: t.rejectionReason,
+        }))
+        const payments = [...txnPayments, ...legacyPayments]
           .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+          .slice(0, 12)
         const outstanding = items.reduce((sum, i) => sum + i.outstanding, 0)
         const status: StudentFeesDto['status'] =
           outstanding <= 0
@@ -306,9 +373,12 @@ export async function GET() {
           totalBilled: rows.reduce((sum, f) => sum + f.amount, 0),
           totalPaid: rows.reduce((sum, f) => sum + Math.min(f.amount, f.paid), 0),
           outstanding,
+          awaitingVerification: txnPayments
+            .filter((p) => p.status === 'UNDER_VERIFICATION')
+            .reduce((sum, p) => sum + p.amount, 0),
           lastPaymentAt: payments[0]?.createdAt ?? null,
           items: items.slice(0, 8),
-          payments: payments.slice(0, 5),
+          payments,
         })
       }
 

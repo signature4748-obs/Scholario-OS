@@ -1141,7 +1141,30 @@ model FeeTransaction {
   feeHeadName          String?
   amount               Float
   method               String           @default("CASH") // UPI, Card, Net Banking, Cash, Bank Transfer
-  status               String           @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED, UNDER_VERIFICATION
+  status               String           @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED, UNDER_VERIFICATION, REJECTED
+  // ── COLLECTION WORKFLOW (two-stage: Class Teacher collects → Principal verifies) ──
+  /// WHO collected / where the money entered the school:
+  /// CLASS_TEACHER | PRINCIPAL | SCHOOL_OFFICE | ONLINE | BANK_TRANSFER
+  source               String?
+  /// The legacy Fee row this collection applies to (ledger application).
+  feeId                String?
+  /// Collector identity (User.id + display snapshot) — who took the money.
+  collectedById        String?
+  collectedByName      String?
+  collectedAt          DateTime?
+  /// Verifier identity — WHO made the payment final (Principal only).
+  verifiedById         String?
+  verifiedByName       String?
+  verifiedAt           DateTime?
+  /// Rejection (Principal only) — the collection is returned to the
+  /// teacher with a reason; the student ledger is never touched.
+  rejectedById         String?
+  rejectedByName       String?
+  rejectedAt           DateTime?
+  rejectionReason      String?
+  /// Reference/transaction number supplied at collection time (UPI ref,
+  /// cheque no…) — used for duplicate detection.
+  referenceNumber      String?
   /// Gateway order id (e.g. Razorpay order_id) — used by the webhook
   /// to match the incoming payment.payment_id event back to this row.
   gatewayOrderId       String?          @unique
@@ -1163,6 +1186,9 @@ model FeeTransaction {
   @@index([schoolId, status])
   @@index([schoolId, reconciliationStatus])
   @@index([schoolId, createdAt])
+  @@index([schoolId, source])
+  @@index([studentId])
+  @@index([feeId])
 }
 
 /// Gateway payout settlement — a batch of transactions the gateway

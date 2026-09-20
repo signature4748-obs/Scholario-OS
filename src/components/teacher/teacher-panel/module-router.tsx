@@ -18,6 +18,7 @@ const LessonPlannerModule = lazy(() => import('../modules/lesson-planner'), 'Les
 const MarksEntryModule = lazy(() => import('../modules/marks'), 'MarksEntryModule')
 const StudentsModule = lazy(() => import('../modules/students'), 'StudentsModule')
 const ClassHubModule = lazy(() => import('../modules/class-hub'), 'ClassHubModule')
+const FeeCollectionModule = lazy(() => import('../modules/fee-collection'), 'FeeCollectionModule')
 const ApplicationReviewsModule = lazy(() => import('../modules/applications'), 'ApplicationReviewsModule')
 const StudentBehaviorModule = lazy(() => import('../modules/student-behavior'), 'StudentBehaviorModule')
 const TeacherAnalyticsModule = lazy(() => import('../modules/analytics'), 'TeacherAnalyticsModule')
@@ -40,6 +41,7 @@ export function ModuleRouter({ active, onNavigate }: ModuleRouterProps) {
       {active === 'marks' && <MarksEntryModule />}
       {active === 'students' && <StudentsModule />}
       {active === 'class-hub' && <ClassHubModule onNavigate={onNavigate} />}
+      {active === 'fee-collection' && <FeeCollectionModule />}
       {active === 'app-reviews' && <ApplicationReviewsModule />}
       {active === 'behavior' && <StudentBehaviorModule onNavigate={onNavigate} />}
       {active === 'analytics' && <TeacherAnalyticsModule onNavigate={onNavigate} />}

@@ -82,14 +82,24 @@ export interface DirectoryFeeItem {
   method: string | null
 }
 
-/** One recorded payment against any of the student's fees. */
+/** One recorded payment against any of the student's fees — the
+ *  canonical union: FeeTransaction rows (two-stage workflow: their own
+ *  collections + direct office payments) and pre-workflow office
+ *  records. txnId set ⇒ the shared receipt viewer can open it. */
 export interface DirectoryPaymentRecord {
   id: string
+  txnId: string | null
   feeTitle: string
   amount: number
   method: string | null
   status: string
   createdAt: string
+  source: string | null
+  sourceLabel: string | null
+  receiptNo: string | null
+  collectedBy: string | null
+  verifiedBy: string | null
+  rejectionReason: string | null
 }
 
 /** The class teacher's fee picture for one student. */
@@ -98,6 +108,7 @@ export interface DirectoryStudentFees {
   totalBilled: number
   totalPaid: number
   outstanding: number
+  awaitingVerification: number
   lastPaymentAt: string | null
   items: DirectoryFeeItem[]
   payments: DirectoryPaymentRecord[]

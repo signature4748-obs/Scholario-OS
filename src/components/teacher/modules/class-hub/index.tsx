@@ -178,7 +178,7 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
         <AttendanceCard cls={active} onNavigate={onNavigate} />
         <WellbeingCard cls={active} onNavigate={onNavigate} />
-        <FeesCard cls={active} />
+        <FeesCard cls={active} onNavigate={onNavigate} />
         <div className="lg:col-span-2">
           <ResultsCard cls={active} onNavigate={onNavigate} />
         </div>

@@ -25,6 +25,8 @@ export interface ClassHubFees {
   fullyPaidStudents: number
   studentsWithFees: number
   overdueStudents: number
+  awaitingVerificationCount: number
+  awaitingVerificationAmount: number
   defaulters: ClassHubDefaulter[]
 }
 

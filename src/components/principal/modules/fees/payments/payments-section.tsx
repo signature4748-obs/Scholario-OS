@@ -45,6 +45,7 @@ import { SummaryCard, SummaryCardGrid } from '../../shared/summary-card'
 import { FeesVerificationQueue } from '../fees-approvals'
 import { FeesAdditionalCharges } from '../fees-additional-charges'
 import { RecentPayments } from './recent-payments'
+import { VerificationWorkspace } from './verification-workspace'
 
 interface Props {
   data: ReturnType<typeof useFeeData>
@@ -74,6 +75,12 @@ export function PaymentsSection({ data, onCollect, onOpenTransactions }: Props) 
 
   return (
     <div className="space-y-4">
+      {/* 0 — PAYMENT VERIFICATION (real canonical ledger) — the two-stage
+          collection workflow's principal side: class-teacher collections
+          awaiting the Principal's decision + direct office payments.
+          Lives FIRST: it is the operational heart of this tab. */}
+      <VerificationWorkspace />
+
       {/* 1 — Payment summary + primary action. Overview-style compact
           summary cards; the "Payments" tab already establishes context,
           so no page heading — the page opens straight into live figures. */}

@@ -89,6 +89,19 @@ export async function GET() {
               })
             : []
           const nameByStudent = new Map(c.students.map((s) => [s.id, s.user.name]))
+          // Canonical pending collections (two-stage workflow) — the
+          // class teacher's own collections still awaiting the
+          // Principal's verification.
+          const pendingTxns = studentIds.length
+            ? await db.feeTransaction.findMany({
+                where: {
+                  studentId: { in: studentIds },
+                  source: { not: null },
+                  status: 'UNDER_VERIFICATION',
+                },
+                select: { amount: true },
+              })
+            : []
           const feesByStudent = new Map<string, { billed: number; paid: number; outstanding: number; overdue: boolean }>()
           for (const f of feeRows) {
             const entry = feesByStudent.get(f.studentId) ?? { billed: 0, paid: 0, outstanding: 0, overdue: false }
@@ -120,6 +133,8 @@ export async function GET() {
             fullyPaidStudents: [...feesByStudent.values()].filter((v) => v.outstanding <= 0).length,
             studentsWithFees: feesByStudent.size,
             overdueStudents: [...feesByStudent.values()].filter((v) => v.overdue).length,
+            awaitingVerificationCount: pendingTxns.length,
+            awaitingVerificationAmount: pendingTxns.reduce((sum, t) => sum + t.amount, 0),
             defaulters,
           }
 

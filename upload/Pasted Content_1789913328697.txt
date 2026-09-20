@@ -1,0 +1,2268 @@
+MASTER TASK
+============================================================
+
+SCHOLARIO — TEACHER / CLASS TEACHER ROLE ARCHITECTURE,
+STUDENT DIRECTORY, FEE COLLECTION, PAYMENT WORKFLOW,
+RECEIPTS, PERMISSIONS, DATA SYNCHRONIZATION & RESPONSIVE UI
+
+Act as a:
+
+• Senior SaaS Product Architect
+• Senior UX/UI Designer
+• Senior Frontend Engineer
+• Senior Backend Engineer
+• Database Architect
+• RBAC / Permission-System Architect
+• QA Engineer
+
+You are working on an existing production-grade School ERP called SCHOLARIO.
+
+This is NOT merely a UI task.
+
+I want you to audit the existing Teacher, Class Teacher and Principal workflows and implement a logically correct, production-ready role architecture where the UI, permissions, database, payments, receipts and data synchronization all work together.
+
+The final system must behave like a real school ERP — not like separate screens that happen to look connected.
+
+============================================================
+0. CORE BUSINESS RULE
+============================================================
+
+The most important rule of the system is:
+
+EVERY CLASS TEACHER IS A TEACHER,
+BUT EVERY TEACHER IS NOT A CLASS TEACHER.
+
+A teacher can have:
+
+A) SUBJECT TEACHER role/capability
+OR
+B) CLASS TEACHER assignment
+OR
+C) BOTH
+
+The Class Teacher assignment should be dynamic.
+
+Example:
+
+Teacher: Rohan Mehta
+
+Current assignments:
+• Mathematics — Grade 9-A
+• Science — Grade 10-A
+• Class Teacher — Grade 9-A
+
+Therefore:
+
+As Subject Teacher:
+→ sees only relevant academic/student information for assigned subjects/classes.
+
+As Class Teacher:
+→ receives an additional "My Class" module
+→ gets broader visibility into students of Grade 9-A
+→ gets class-level operational capabilities
+→ gets controlled fee collection capability
+→ gets class-level attendance/behavior/academic overview
+→ can view payment records relevant to students in his/her class
+
+If the Principal removes the Class Teacher assignment:
+
+→ "My Class" should disappear
+→ Class Teacher-only actions should disappear
+→ Fee collection capability should disappear
+→ Teacher retains normal Subject Teacher capabilities.
+
+DO NOT create separate duplicate user accounts for this.
+
+The system should derive capabilities from:
+
+USER
++
+ROLE
++
+SUBJECT ASSIGNMENTS
++
+CLASS TEACHER ASSIGNMENTS
++
+PERMISSIONS
+
+============================================================
+1. FIRST — AUDIT THE EXISTING SYSTEM
+============================================================
+
+Before modifying anything, inspect the complete existing implementation.
+
+Find:
+
+• Principal dashboard
+• Teacher dashboard
+• Teacher navigation
+• Class Teacher / My Class
+• Student Directory
+• Student profile
+• Marks
+• Attendance
+• Fee Management
+• Payment records
+• Fee receipts
+• User/team management
+• Teacher assignments
+• Class assignments
+• Student-class relationships
+• Authentication
+• Authorization
+• Database schema
+• API routes
+• Server actions
+• Supabase/database queries
+• Existing shared components
+• Existing design tokens
+• Existing responsive system
+
+Do not immediately start writing new components.
+
+First understand how the existing system works.
+
+Identify which parts are already reusable.
+
+Identify duplicate logic.
+
+Identify places where permissions are currently only visual instead of being enforced at the data/API level.
+
+Then create a clean implementation strategy.
+
+============================================================
+2. ROLE MODEL — FIX THE CONCEPTUAL ARCHITECTURE
+============================================================
+
+Do NOT treat "Teacher" and "Class Teacher" as two unrelated roles.
+
+Use capability-based logic.
+
+Conceptually:
+
+USER
+│
+├── Base Role
+│   └── TEACHER
+│
+├── Subject Assignments
+│   ├── Subject
+│   ├── Class
+│   └── Academic Year
+│
+└── Class Teacher Assignments
+    ├── Class
+    ├── Section
+    └── Academic Year
+
+Then calculate capabilities.
+
+Example:
+
+Teacher without Class Teacher assignment:
+
+TEACHER
+├── Dashboard
+├── My Salary & Payments
+├── My Attendance
+├── My Timetable
+├── Class Attendance
+├── Lesson Planner
+├── Marks Entry
+├── Student Directory
+├── Application Reviews (if permitted)
+├── Student Behavior (if permitted)
+├── Communication Hub
+├── Performance Analytics (subject scoped)
+└── Settings
+
+Teacher WITH Class Teacher assignment:
+
+All normal Teacher capabilities
++
+MY CLASS
++
+class-level student overview
++
+class-level attendance overview
++
+class-level behavior oversight
++
+class-level academic overview
++
+controlled fee collection
++
+class-level payment records
++
+class-specific communication
++
+other class-teacher capabilities
+
+Do NOT expose Principal-level controls.
+
+============================================================
+3. SUBJECT TEACHER — WHAT SHOULD THEY SEE?
+============================================================
+
+A normal Subject Teacher should have LIMITED student visibility.
+
+They should NOT automatically see every financial or administrative detail of a student.
+
+For students belonging to classes/subjects they teach, they may see:
+
+• Student name
+• Student photo/avatar
+• Roll number
+• Class/section
+• Admission number
+• Basic contact information where appropriate
+• Subject-specific attendance
+• Subject marks
+• Subject assessments
+• Subject performance
+• Relevant academic history
+• Relevant behavior information if permission allows
+• Their own subject-related remarks
+
+They should NOT see by default:
+
+• Full fee ledger
+• Fee collection controls
+• Payment collection
+• Payment verification
+• Financial transactions
+• Family financial information
+• Other subjects' confidential academic data
+• Principal-only information
+• School-wide financial reports
+
+The principle is:
+
+SUBJECT TEACHER =
+ACADEMIC VIEW WITH SUBJECT SCOPE
+
+NOT:
+
+SCHOOL-WIDE ADMINISTRATIVE VIEW
+
+============================================================
+4. CLASS TEACHER — MY CLASS
+============================================================
+
+When a teacher is assigned as Class Teacher, activate:
+
+MY CLASS
+
+This should become the central workspace for their assigned class.
+
+Example:
+
+MY CLASS
+Grade 9-A
+11 students
+
+Possible sections:
+
+• Overview
+• Students
+• Attendance
+• Academic Performance
+• Behavior
+• Homework / Class Work
+• Communication
+• Fee & Payments
+• Class Reports
+
+Do not overload the page.
+
+Use a clean dashboard hierarchy.
+
+============================================================
+5. MY CLASS — OVERVIEW
+============================================================
+
+The Class Teacher should see useful class-level information such as:
+
+CLASS:
+
+Grade 9-A
+
+Metrics:
+
+• Total Students
+• Average Attendance
+• Girls / Boys
+• Attendance Today
+• Academic Performance
+• Pending Results
+• Behavior Concerns
+• Fee Collection
+• Outstanding Amount
+• Overdue Accounts
+
+But make sure sensitive financial information is shown only because this teacher is explicitly the Class Teacher.
+
+Use appropriate privacy boundaries.
+
+============================================================
+6. STUDENT DIRECTORY — ROLE-AWARE
+============================================================
+
+The Student Directory should NOT be identical for every teacher.
+
+It should automatically adapt to permissions.
+
+------------------------------------------------------------
+SUBJECT TEACHER VIEW
+------------------------------------------------------------
+
+Example:
+
+Student Directory
+
+Grade 9-A
+Mathematics — 11 students
+
+Student cards/table should focus on:
+
+• Student
+• Roll
+• Admission No.
+• Subject
+• Subject Attendance
+• Subject Average
+• Subject Performance
+• Relevant academic indicators
+
+Do not show complete financial information.
+
+------------------------------------------------------------
+CLASS TEACHER VIEW
+------------------------------------------------------------
+
+Class Teacher can see broader information for students in MY CLASS.
+
+Student profile can include:
+
+• Basic student information
+• Family/contact information
+• Attendance
+• Overall academic performance
+• Subject-wise marks
+• Behavior
+• Homework/class records
+• Fee status
+• Payment history
+• Outstanding amount
+• Payment records
+• Receipts
+
+But access should still be limited to students in the teacher's assigned class.
+
+------------------------------------------------------------
+PRINCIPAL VIEW
+------------------------------------------------------------
+
+Principal retains school-wide access according to Principal permissions.
+
+Do not reduce Principal capabilities while implementing this architecture.
+
+============================================================
+7. FEE MANAGEMENT — CLASS TEACHER WORKFLOW
+============================================================
+
+This is a major requirement.
+
+A Class Teacher should be able to collect fees for students in their assigned class.
+
+However:
+
+THE CLASS TEACHER MUST NOT BE THE FINAL AUTHORITY FOR PAYMENT VERIFICATION.
+
+Use a two-stage workflow.
+
+------------------------------------------------------------
+STAGE 1 — CLASS TEACHER COLLECTION
+------------------------------------------------------------
+
+Example:
+
+Student:
+Aarav Sharma
+
+Fee Due:
+₹5,400
+
+Student pays:
+
+₹2,000
+
+Class Teacher records/collects the payment.
+
+System status:
+
+COLLECTED
+or
+PENDING VERIFICATION
+
+The payment is associated with:
+
+• Student
+• Fee structure/installment
+• Amount
+• Payment method
+• Collection date/time
+• Academic year
+• Class
+• Collected by
+• Teacher ID
+• Reference/transaction ID if available
+
+The Class Teacher can see:
+
+"Payment collected — awaiting Principal verification"
+
+The payment must NOT become the final verified school receipt until Principal verification.
+
+============================================================
+8. PRINCIPAL VERIFICATION
+============================================================
+
+Principal should have a proper verification queue.
+
+Example:
+
+PAYMENTS AWAITING VERIFICATION
+
+Student | Class | Amount | Collected By | Date | Method | Action
+
+Aarav Sharma
+Grade 9-A
+₹2,000
+Rohan Mehta
+20 Sep 2026
+Cash
+
+[View]
+[Verify]
+[Reject]
+
+Principal can:
+
+• Verify
+• Reject
+• View details
+• View supporting information
+• Add verification note if required
+
+Once verified:
+
+Payment status:
+
+VERIFIED
+
+Then:
+
+• Student ledger updates
+• Outstanding amount recalculates
+• Fee status updates
+• Final receipt becomes available
+• Receipt number is generated/confirmed
+• Class Teacher sees verified status
+• Student/parent-facing records update if applicable
+
+============================================================
+9. PAYMENT STATUS MODEL
+============================================================
+
+Do NOT use only:
+
+PAID / UNPAID
+
+Use a proper state model.
+
+At minimum:
+
+DUE
+PARTIALLY_PAID
+COLLECTED_PENDING_VERIFICATION
+VERIFIED
+REJECTED
+REFUNDED
+CANCELLED
+
+If the existing architecture supports a better state machine, use it.
+
+Important:
+
+A payment that is merely collected by a Class Teacher must NOT be treated as a finalized verified payment.
+
+============================================================
+10. DIRECT PRINCIPAL PAYMENT
+============================================================
+
+This is extremely important.
+
+A student may pay fees directly through:
+
+• Principal
+• School office
+• Authorized school payment channel
+• Online payment system
+
+In that situation:
+
+Class Teacher should still be able to SEE the relevant payment status for students in their class.
+
+Example:
+
+Aarav Sharma
+
+Fee:
+₹5,400
+
+Payment:
+₹5,400
+
+Status:
+Verified
+
+Paid through:
+School Office / Principal
+
+Date:
+18 Sep 2026
+
+Receipt:
+SCH-2026-000184
+
+The Class Teacher must NOT be able to edit or manipulate this payment.
+
+The teacher should simply see:
+
+"Paid directly through School Office"
+
+or:
+
+"Collected by Principal / Office"
+
+This prevents confusion.
+
+The Class Teacher should never incorrectly think:
+
+"Student still owes money"
+
+when the Principal has already collected it.
+
+============================================================
+11. PAYMENT SOURCE
+============================================================
+
+Every payment should have a clear source.
+
+For example:
+
+COLLECTION SOURCE:
+
+• Class Teacher
+• Principal
+• School Office
+• Online
+• Bank Transfer
+• Payment Gateway
+
+And:
+
+COLLECTED BY:
+Rohan Mehta
+
+VERIFIED BY:
+Principal / Authorized Finance User
+
+This information should be visible according to permissions.
+
+============================================================
+12. FEE LEDGER
+============================================================
+
+Create/ensure a proper student fee ledger.
+
+Example:
+
+STUDENT:
+Aarav Sharma
+
+Class:
+Grade 9-A
+
+Academic Year:
+2026–27
+
+--------------------------------------------------
+
+Fee Item              Due       Paid       Balance
+Tuition Fee           ₹3,000    ₹3,000     ₹0
+Transport Fee         ₹1,500    ₹1,000     ₹500
+Activity Fee          ₹900      ₹900       ₹0
+
+TOTAL                  ₹5,400    ₹4,900     ₹500
+
+--------------------------------------------------
+
+Payment History
+
+Date
+Amount
+Method
+Source
+Status
+Receipt No.
+
+This should be available to:
+
+• Principal
+• Authorized finance users
+• Class Teacher for students in their class
+
+Subject Teachers should NOT automatically receive this information.
+
+============================================================
+13. PAYMENT COLLECTION TABLE
+============================================================
+
+Class Teacher should have a proper table-based payment view.
+
+Not just cards.
+
+Example:
+
+FEE COLLECTION
+
+Filters:
+
+• Month
+• Date range
+• Student
+• Payment status
+• Payment source
+• Payment method
+• Fee type
+
+Table:
+
+Student
+Class
+Fee Type
+Amount
+Payment Date
+Method
+Collected By
+Source
+Status
+Receipt
+Actions
+
+Example:
+
+Aarav Sharma
+Grade 9-A
+Tuition Fee
+₹2,000
+20 Sep 2026
+Cash
+Rohan Mehta
+Class Teacher
+Pending Verification
+
+[View]
+
+Another:
+
+Diya Patel
+Grade 9-A
+Tuition Fee
+₹5,400
+18 Sep 2026
+UPI
+School Office
+Verified
+
+Receipt:
+SCH-2026-000184
+
+[View Receipt]
+
+============================================================
+14. MONTHLY COLLECTION VIEW
+============================================================
+
+Class Teacher should be able to see useful monthly summaries.
+
+Example:
+
+SEPTEMBER 2026
+
+Students: 11
+
+Total Expected:
+₹60,000
+
+Collected:
+₹48,500
+
+Pending Verification:
+₹2,000
+
+Verified:
+₹46,500
+
+Outstanding:
+₹11,500
+
+Overdue:
+₹5,400
+
+Do not make these figures editable by the teacher.
+
+They should be calculated from actual payment records.
+
+============================================================
+15. STUDENT-SPECIFIC PAYMENT VIEW
+============================================================
+
+Teacher should also be able to open:
+
+Student → Fees & Payments
+
+Example:
+
+Aarav Sharma
+Grade 9-A
+
+Fee Summary
+
+Total Due       ₹5,400
+Verified Paid   ₹3,400
+Pending          ₹2,000
+Balance          ₹0
+
+Payment History:
+
+20 Sep
+₹2,000
+Cash
+Collected by Rohan Mehta
+Pending Verification
+
+18 Sep
+₹3,400
+UPI
+Paid through School Office
+Verified
+
+This makes the entire payment history transparent.
+
+============================================================
+16. RECEIPT SYSTEM
+============================================================
+
+Build a proper receipt architecture.
+
+Every FINAL VERIFIED payment should have a unique receipt number.
+
+Example:
+
+SCH-2026-000001
+SCH-2026-000002
+SCH-2026-000003
+
+Do NOT generate receipt numbers based only on UI timestamps.
+
+Receipt numbers must be:
+
+• unique
+• persistent
+• database-backed
+• sequential or safely unique according to the existing architecture
+• impossible to duplicate
+
+Receipt should contain:
+
+SCHOLARIO
+School Name
+School Address
+Contact Information
+
+FEE PAYMENT RECEIPT
+
+Receipt No:
+SCH-2026-000184
+
+Date:
+20 September 2026
+
+Student:
+Aarav Sharma
+
+Admission No:
+DEMO-2026-0001
+
+Class:
+Grade 9-A
+
+Fee Details:
+
+Tuition Fee
+₹3,000
+
+Activity Fee
+₹400
+
+Total:
+₹3,400
+
+Payment Method:
+UPI
+
+Payment Source:
+School Office
+
+Collected By:
+School Office
+
+Verified By:
+Principal
+
+Verification Date:
+20 Sep 2026
+
+Academic Year:
+2026–27
+
+Include appropriate school branding.
+
+The receipt should look like an actual professional school receipt.
+
+============================================================
+17. RECEIPT AVAILABILITY
+============================================================
+
+Once a payment is VERIFIED:
+
+Receipt should be visible from:
+
+PRINCIPAL
+→ Payment record
+→ Student profile
+→ Fee ledger
+
+CLASS TEACHER
+→ My Class
+→ Student
+→ Fees & Payments
+→ Receipt
+
+STUDENT/PARENT
+→ Their own fee/payment area if that module exists
+
+Teacher should NOT be able to alter the final receipt.
+
+They can:
+
+VIEW
+DOWNLOAD
+PRINT
+
+according to permissions.
+
+============================================================
+18. PROVISIONAL COLLECTION ACKNOWLEDGEMENT
+============================================================
+
+Consider implementing a distinction between:
+
+COLLECTION ACKNOWLEDGEMENT
+
+and
+
+FINAL FEE RECEIPT
+
+If a Class Teacher collects ₹2,000:
+
+Show:
+
+COLLECTION ACKNOWLEDGEMENT
+Status:
+Awaiting Principal Verification
+
+After Principal verifies:
+
+FINAL FEE RECEIPT
+Receipt No:
+SCH-2026-000184
+
+This avoids the dangerous situation where a teacher-generated receipt is treated as an officially verified school receipt.
+
+============================================================
+19. PAYMENT SYNCHRONIZATION
+============================================================
+
+This is a HARD REQUIREMENT.
+
+All payment data must have ONE SOURCE OF TRUTH.
+
+Do NOT create:
+
+Teacher payment record
++
+Principal payment record
+
+as independent disconnected records.
+
+There should be ONE payment transaction.
+
+Example:
+
+Payment ID:
+PAY-2026-000871
+
+Student:
+Aarav Sharma
+
+Amount:
+₹2,000
+
+Source:
+CLASS_TEACHER
+
+Collected By:
+Teacher ID
+
+Status:
+PENDING_VERIFICATION
+
+When Principal verifies:
+
+Same Payment ID
+
+Status:
+VERIFIED
+
+Verified By:
+Principal ID
+
+Receipt:
+SCH-2026-000184
+
+Then every relevant screen reads the SAME transaction.
+
+============================================================
+20. REAL-TIME / DATA SYNCHRONIZATION
+============================================================
+
+When a payment changes:
+
+Principal verifies payment
+        ↓
+Database transaction updates
+        ↓
+Student ledger updates
+        ↓
+Fee balance updates
+        ↓
+Class Teacher dashboard updates
+        ↓
+Student Directory fee status updates
+        ↓
+Student profile updates
+        ↓
+Receipt becomes available
+        ↓
+Monthly collection totals update
+
+Do not require manual refresh wherever the existing architecture supports reactive updates.
+
+If Supabase realtime is already available, use it appropriately.
+
+Do not introduce unnecessary polling.
+
+============================================================
+21. PAYMENT SECURITY
+============================================================
+
+VERY IMPORTANT:
+
+Never rely only on hiding UI buttons.
+
+A Subject Teacher must not be able to call a hidden API and retrieve financial data.
+
+Enforce permissions at:
+
+• UI level
+• route level
+• API level
+• server/action level
+• database/RLS level where applicable
+
+Examples:
+
+Subject Teacher requests:
+GET student fees
+
+→ DENIED
+
+Class Teacher requests fees for assigned student:
+
+→ ALLOWED
+
+Class Teacher requests fees for student outside assigned class:
+
+→ DENIED
+
+Principal requests school-wide fee data:
+
+→ ALLOWED
+
+Class Teacher attempts to verify payment:
+
+→ DENIED
+
+Principal verifies payment:
+
+→ ALLOWED
+
+Class Teacher attempts to edit verified payment:
+
+→ DENIED
+
+This must be enforced server-side.
+
+============================================================
+22. CLASS ASSIGNMENT SECURITY
+============================================================
+
+A Class Teacher can only access students belonging to the class/section for which they are currently appointed.
+
+Example:
+
+Rohan Mehta
+Class Teacher:
+Grade 9-A
+
+Allowed:
+Grade 9-A students
+
+Not allowed:
+Grade 9-B
+Grade 10-A
+Other school classes
+
+unless another explicit assignment grants access.
+
+Do not rely on frontend filtering for this.
+
+============================================================
+23. SUBJECT ASSIGNMENT SECURITY
+============================================================
+
+Example:
+
+Rohan Mehta teaches:
+
+Mathematics
+Grade 9-A
+
+He should be able to access:
+
+Grade 9-A Mathematics students/records
+
+He should NOT automatically get:
+
+Grade 9-A Chemistry
+Grade 9-A Biology
+Grade 10-A Mathematics
+
+unless explicitly assigned.
+
+============================================================
+24. DYNAMIC NAVIGATION
+============================================================
+
+Teacher navigation should be generated from actual capabilities.
+
+NORMAL TEACHER:
+
+Overview
+Dashboard
+My Salary & Payments
+My Attendance
+My Timetable
+
+Academics & Teaching
+Class Attendance
+Lesson Planner
+Marks Entry
+Student Directory
+
+In-charge Duties
+Application Reviews (if permitted)
+
+Communication
+Communication Hub
+
+Insights
+Performance Analytics
+
+Account
+Settings
+
+CLASS TEACHER:
+
+Same navigation
+
+PLUS:
+
+CLASS TEACHER HUB
+→ My Class
+→ Student Behavior
+→ Class-specific Communication
+
+And wherever appropriate:
+
+My Class
+→ Fees & Payments
+
+Do NOT show irrelevant class-teacher modules to ordinary teachers.
+
+============================================================
+25. MY CLASS — FEE SECTION
+============================================================
+
+Inside My Class:
+
+Overview
+Students
+Attendance
+Academics
+Behavior
+Fees & Payments
+Communication
+Reports
+
+Fees & Payments should provide:
+
+• Collection overview
+• Pending verification
+• Verified payments
+• Outstanding
+• Overdue
+• Monthly collection
+• Student ledger
+• Payment history
+• Receipt access
+
+============================================================
+26. CLASS TEACHER DASHBOARD
+============================================================
+
+The existing "My Class" screenshot currently shows:
+
+Attendance Today
+Class Wellbeing
+Fee Collection
+Results Submission
+
+Keep the good visual language but improve the information architecture.
+
+The Fee Collection card should be meaningful.
+
+Example:
+
+FEE COLLECTION
+
+89% collected
+
+₹30.4K outstanding
+
+8 fully paid
+0 pending
+2 overdue
+
+[View Collection]
+
+If there are payments awaiting verification:
+
+2 awaiting verification
+
+This is more useful than simply showing "89% collected".
+
+============================================================
+27. PRINCIPAL PAYMENT MANAGEMENT
+============================================================
+
+Principal should have a broader financial workflow.
+
+Create/ensure:
+
+Payments
+├── All Payments
+├── Pending Verification
+├── Verified
+├── Rejected
+├── Refunds
+└── Receipts
+
+Principal can filter:
+
+• Academic year
+• Month
+• Class
+• Section
+• Student
+• Payment source
+• Payment method
+• Status
+• Collector
+• Date range
+
+Principal should be able to trace:
+
+WHO
+COLLECTED
+WHEN
+FROM WHOM
+HOW MUCH
+FOR WHAT
+THROUGH WHICH METHOD
+WHO VERIFIED
+WHEN VERIFIED
+WHICH RECEIPT WAS GENERATED
+
+============================================================
+28. AUDIT TRAIL
+============================================================
+
+Financial records need auditability.
+
+For every important payment event maintain:
+
+Created by
+Created at
+
+Collected by
+Collected at
+
+Verified by
+Verified at
+
+Rejected by
+Rejected at
+
+Refunded by
+Refunded at
+
+Do not allow silent modification of financial history.
+
+If an amount/status needs correction, use an auditable correction/reversal workflow.
+
+============================================================
+29. IMPORTANT EDGE CASES
+============================================================
+
+Handle at least:
+
+1. Partial payment
+
+₹5,400 due
+₹2,000 paid
+
+→ balance ₹3,400
+
+2. Multiple payments
+
+₹2,000
++
+₹2,000
++
+₹1,400
+
+→ ledger correctly aggregates
+
+3. Teacher collects payment
+→ pending verification
+
+4. Principal verifies payment
+→ final receipt generated
+
+5. Principal rejects payment
+→ teacher sees rejection + reason where permitted
+
+6. Student pays directly to Principal
+→ Class Teacher sees payment
+
+7. Student pays online
+→ Class Teacher sees verified payment when confirmed
+
+8. Duplicate transaction/reference
+→ prevent or flag duplicate
+
+9. Refund/reversal
+→ preserve original transaction and audit trail
+
+10. Teacher changes class assignment
+→ access updates automatically
+
+11. Academic year changes
+→ historical payment records remain intact
+
+12. Teacher is no longer Class Teacher
+→ class-teacher financial access disappears immediately
+
+13. Student transfers class
+→ access and fee visibility follow the correct current assignment rules
+
+14. Student leaves school
+→ historical records remain available according to Principal permissions
+
+============================================================
+30. STUDENT PROFILE — ROLE-AWARE TABS
+============================================================
+
+Student Profile should dynamically show tabs based on permissions.
+
+Subject Teacher:
+
+Overview
+Academic
+Attendance
+Subject Performance
+
+Class Teacher:
+
+Overview
+Academics
+Attendance
+Behavior
+Fees & Payments
+Communication
+
+Principal:
+
+All authorized sections
+
+Do not render sensitive tabs merely because the route exists.
+
+============================================================
+31. UI DESIGN — USE EXISTING PRINCIPAL DIRECTORY
+============================================================
+
+The provided screenshots show the current:
+
+Teacher My Class
+Teacher Student Directory
+Principal Student Directory
+
+Use the Principal Student Directory as a design-quality benchmark.
+
+The Teacher experience should feel like the same product.
+
+However, do NOT copy Principal permissions into Teacher.
+
+Separate:
+
+DESIGN CONSISTENCY
+
+from:
+
+DATA PERMISSION.
+
+Same design language.
+Different information scope.
+
+============================================================
+32. STUDENT DIRECTORY RESPONSIVE DESIGN
+============================================================
+
+Fix the current Teacher Student Directory issues:
+
+• text collisions
+• long student names
+• fee text wrapping
+• metric alignment
+• card height
+• family name overflow
+• footer alignment
+• search responsiveness
+• tablet layout
+• mobile layout
+
+Test:
+
+320
+360
+375
+390
+414
+480
+600
+768
+820
+1024
+1280
+1440
+1920
+
+No unintended horizontal scrolling.
+
+============================================================
+33. TABLE RESPONSIVENESS
+============================================================
+
+Payment tables must also work on mobile.
+
+Desktop:
+Full table.
+
+Tablet:
+Reduce non-essential columns.
+
+Mobile:
+Use either:
+
+• horizontally scrollable table container
+
+OR
+
+• responsive stacked transaction rows
+
+But NEVER create whole-page horizontal scrolling.
+
+Critical information must remain visible:
+
+Student
+Amount
+Date
+Status
+Receipt
+
+============================================================
+34. FEE COLLECTION UX
+============================================================
+
+For Class Teacher:
+
+[Collect Fee]
+
+Opening the action should clearly show:
+
+Student
+Fee Type
+Amount Due
+Previous Paid
+Current Balance
+Amount to Collect
+Payment Method
+Reference Number
+Notes
+
+Before submission:
+
+Confirm:
+
+"I am recording a payment of ₹2,000 from Aarav Sharma."
+
+After submission:
+
+Payment recorded.
+
+Status:
+Awaiting Principal Verification.
+
+Do NOT misleadingly show:
+
+"Payment successful"
+
+because the school-level verification is still pending.
+
+============================================================
+35. PRINCIPAL VERIFICATION UX
+============================================================
+
+Principal sees:
+
+PAYMENT VERIFICATION
+
+Student:
+Aarav Sharma
+
+Class:
+Grade 9-A
+
+Amount:
+₹2,000
+
+Collected By:
+Rohan Mehta
+
+Date:
+20 Sep 2026
+
+Method:
+Cash
+
+Reference:
+—
+
+Actions:
+
+[Verify Payment]
+[Reject]
+
+After verification:
+
+Payment Verified
+
+Receipt:
+SCH-2026-000184
+
+[View Receipt]
+[Download Receipt]
+
+============================================================
+36. DATA MODEL
+============================================================
+
+Inspect the existing database first.
+
+Do not blindly create duplicate tables.
+
+If required, introduce a clean relational model conceptually similar to:
+
+users
+roles
+teacher_assignments
+class_teacher_assignments
+subjects
+classes
+sections
+students
+student_class_assignments
+fee_structures
+student_fee_ledgers
+payments
+payment_verifications
+receipts
+audit_logs
+
+Potential payment structure:
+
+payments
+--------------------------
+id
+student_id
+academic_year_id
+fee_structure_id
+amount
+payment_method
+payment_source
+status
+reference_number
+collected_by
+collected_at
+verified_by
+verified_at
+rejection_reason
+notes
+created_at
+updated_at
+
+receipts
+--------------------------
+id
+payment_id
+receipt_number
+issued_at
+issued_by
+pdf/reference
+created_at
+
+Do NOT blindly use this exact schema.
+
+Adapt it to the existing database architecture.
+
+Most importantly:
+
+ONE payment = ONE canonical transaction.
+
+============================================================
+37. DATABASE INTEGRITY
+============================================================
+
+Financial calculations should not be manually duplicated across dashboards.
+
+For example:
+
+Outstanding Amount
+
+must be derived from:
+
+Total Verified/Applicable Dues
+-
+Verified Payments
+-
+Approved Adjustments
+
+according to the school's actual fee logic.
+
+Do not let:
+
+Dashboard = ₹30,400
+
+while:
+
+Student ledger = ₹28,400
+
+because of duplicated calculations.
+
+Create a consistent source of truth.
+
+============================================================
+38. NO FAKE DATA LOGIC
+============================================================
+
+Do not hardcode:
+
+89%
+₹30.4K
+8 paid
+2 overdue
+
+These must come from real data.
+
+Existing demo/seed data may remain if already part of the project, but UI calculations must be driven by the actual data layer.
+
+============================================================
+39. PERMISSION MATRIX
+============================================================
+
+Create a clear permission matrix in the implementation.
+
+Conceptually:
+
+                         Subject Teacher   Class Teacher   Principal
+----------------------------------------------------------------------
+Own profile                  YES                YES           YES
+Assigned students            YES                YES           YES
+Other students               NO*                NO*           YES
+Subject marks                YES                YES           YES
+Other subject marks          NO                 YES*          YES
+Class overview               LIMITED            YES           YES
+Fee visibility               NO                 YES           YES
+Collect fee                  NO                 YES           YES
+Verify fee                   NO                 NO            YES
+Reject payment               NO                 NO            YES
+Edit verified payment        NO                 NO            YES**
+View receipt                 NO                 YES           YES
+Download receipt             NO                 YES           YES
+School-wide fee reports      NO                 NO            YES
+Class assignment             NO                 NO            YES
+Teacher assignment           NO                 NO            YES
+
+* only if explicitly permitted by school policy/assignment.
+** subject to existing authorized finance workflow.
+
+Do not treat this table as merely frontend visibility.
+
+Implement it as actual authorization.
+
+============================================================
+40. PRINCIPAL REMAINS THE AUTHORITY
+============================================================
+
+Class Teacher can:
+
+COLLECT
+
+Principal can:
+
+VERIFY
+
+This distinction must exist everywhere.
+
+Do not accidentally give Class Teacher:
+
+• verification rights
+• receipt editing rights
+• financial configuration rights
+• fee structure modification
+• fee waiver authority
+• refund authority
+
+unless explicitly authorized by a separate permission.
+
+============================================================
+41. COMMUNICATION / NOTIFICATIONS
+============================================================
+
+When appropriate, create useful status notifications.
+
+Class Teacher records payment:
+
+"₹2,000 payment for Aarav Sharma is awaiting verification."
+
+Principal verifies:
+
+"Payment verified for Aarav Sharma — Receipt SCH-2026-000184."
+
+Principal rejects:
+
+"Payment for Aarav Sharma was rejected."
+
+Avoid notification spam.
+
+============================================================
+42. LOADING / EMPTY / ERROR STATES
+============================================================
+
+Every major page should have proper:
+
+Loading
+Empty
+Error
+Success
+Permission denied
+
+states.
+
+Example:
+
+No fee records:
+
+"No payment records for this student yet."
+
+No pending verification:
+
+"All collected payments are verified."
+
+Teacher without Class Teacher assignment:
+
+"My Class is unavailable because you are not currently assigned as a Class Teacher."
+
+Do NOT show broken blank cards.
+
+============================================================
+43. PERFORMANCE
+============================================================
+
+Do not load the entire school's student/payment dataset into the browser and filter it client-side.
+
+Use proper server-side authorization and scoped queries.
+
+Teacher:
+
+fetch only permitted records.
+
+Class Teacher:
+
+fetch only assigned-class records.
+
+Principal:
+
+fetch according to authorized school scope.
+
+Use pagination for large payment tables.
+
+============================================================
+44. FINAL UI QUALITY
+============================================================
+
+The design should remain:
+
+• clean
+• premium
+• minimal
+• professional
+• school-ERP appropriate
+• Apple/iOS-inspired where the existing design already follows that direction
+• spacious
+• readable
+
+Do not add unnecessary gradients, excessive glassmorphism, excessive animations or decorative UI.
+
+Information architecture matters more than decoration.
+
+============================================================
+45. IMPLEMENTATION ORDER
+============================================================
+
+Do the work in this order:
+
+PHASE 1
+Audit existing architecture.
+
+PHASE 2
+Audit Principal and Teacher permissions.
+
+PHASE 3
+Create capability/permission model.
+
+PHASE 4
+Fix class-teacher assignment logic.
+
+PHASE 5
+Fix Student Directory role-aware data scope.
+
+PHASE 6
+Implement My Class architecture.
+
+PHASE 7
+Implement Fee Collection workflow.
+
+PHASE 8
+Implement Principal Verification.
+
+PHASE 9
+Implement canonical payment ledger.
+
+PHASE 10
+Implement receipt generation and unique receipt numbers.
+
+PHASE 11
+Implement synchronization.
+
+PHASE 12
+Implement audit trail.
+
+PHASE 13
+Refine responsive UI.
+
+PHASE 14
+Test all roles.
+
+PHASE 15
+Test financial edge cases.
+
+PHASE 16
+Visual QA.
+
+============================================================
+46. DO NOT BREAK EXISTING FEATURES
+============================================================
+
+Do NOT unnecessarily modify:
+
+• authentication
+• existing routing
+• existing school data
+• existing student data
+• existing marks
+• existing attendance
+• existing timetable
+• existing payroll
+• existing principal functionality
+
+Reuse existing infrastructure wherever possible.
+
+If an existing component already solves a problem correctly, reuse/refactor it instead of duplicating it.
+
+============================================================
+47. IMPORTANT — DO NOT BUILD FAKE WORKFLOW
+============================================================
+
+Do not create UI buttons that appear to work but don't update the underlying data.
+
+For example:
+
+[Verify Payment]
+
+must actually:
+
+1. validate permission
+2. update payment state
+3. create verification metadata
+4. update ledger calculations
+5. generate/assign receipt
+6. update relevant dashboards
+7. update relevant student profile
+8. create audit event
+9. update the teacher view
+
+Similarly:
+
+[Collect Fee]
+
+must actually create the canonical payment transaction.
+
+============================================================
+48. TEST SCENARIO
+============================================================
+
+After implementation, run this exact scenario.
+
+STEP 1
+
+Create/identify:
+
+Teacher:
+Rohan Mehta
+
+Subject:
+Mathematics
+
+Class:
+Grade 9-A
+
+Class Teacher:
+YES
+
+STEP 2
+
+Login as Rohan.
+
+Confirm:
+
+My Class appears.
+
+STEP 3
+
+Open Student Directory.
+
+Confirm:
+
+Grade 9-A students are visible.
+
+STEP 4
+
+Open a student.
+
+Confirm:
+
+Academic + class-level information is visible.
+
+Fee section is visible because Rohan is Class Teacher.
+
+STEP 5
+
+Record:
+
+₹2,000 fee payment.
+
+Confirm:
+
+Payment appears as:
+
+COLLECTED — AWAITING VERIFICATION
+
+NOT FINAL VERIFIED PAYMENT.
+
+STEP 6
+
+Login as Principal.
+
+Open:
+
+Payments → Pending Verification
+
+Confirm:
+
+₹2,000 payment appears.
+
+STEP 7
+
+Principal verifies.
+
+Confirm:
+
+Status becomes VERIFIED.
+
+Unique receipt generated.
+
+Example:
+
+SCH-2026-XXXXXX
+
+STEP 8
+
+Return to Teacher.
+
+Confirm:
+
+Same payment now appears as VERIFIED.
+
+Receipt is available.
+
+STEP 9
+
+Open Student Profile.
+
+Confirm:
+
+Ledger updated.
+
+Outstanding amount recalculated.
+
+STEP 10
+
+Open monthly collection.
+
+Confirm:
+
+Totals updated.
+
+STEP 11
+
+Create another payment directly through Principal.
+
+Confirm:
+
+Teacher sees it under the student's payment history.
+
+Source:
+
+School Office / Principal
+
+Teacher cannot edit it.
+
+STEP 12
+
+Remove Rohan's Class Teacher assignment.
+
+Confirm:
+
+My Class disappears.
+
+Fee collection capability disappears.
+
+Rohan remains a Subject Teacher.
+
+He can still access assigned Mathematics academic information.
+
+He cannot access class-level fee collection.
+
+============================================================
+49. SECOND TEST SCENARIO — SUBJECT TEACHER ONLY
+============================================================
+
+Teacher:
+
+Anita Sharma
+
+Subject:
+English
+
+Class Teacher:
+NO
+
+Login.
+
+Confirm:
+
+No My Class module.
+
+Student Directory shows only permitted academic scope.
+
+Student profile:
+
+Academic
+English performance
+English marks
+relevant attendance
+
+No:
+
+Fee collection
+Fee ledger
+Payment records
+Financial information
+
+============================================================
+50. THIRD TEST SCENARIO — DIRECT PRINCIPAL PAYMENT
+============================================================
+
+Principal records:
+
+Student:
+Diya Patel
+
+Amount:
+₹5,400
+
+Source:
+School Office
+
+Status:
+Verified
+
+Receipt:
+SCH-2026-XXXXXX
+
+Login as Class Teacher.
+
+Open Diya Patel.
+
+Confirm:
+
+Fee status:
+
+PAID
+
+Payment source:
+
+School Office / Principal
+
+Receipt:
+
+View / Download
+
+No duplicate payment should be created.
+
+============================================================
+51. FOURTH TEST — ROLE CHANGE
+============================================================
+
+Principal assigns:
+
+Rohan Mehta
+Class Teacher → Grade 10-A
+
+System should automatically update:
+
+My Class → Grade 10-A
+
+Student access → Grade 10-A
+
+Fee visibility → Grade 10-A
+
+Fee collection scope → Grade 10-A
+
+Old Grade 9-A class-teacher-only access → removed
+
+Do not require hardcoded frontend changes.
+
+============================================================
+52. FINAL SECURITY TEST
+============================================================
+
+Attempt unauthorized access manually through:
+
+• URL
+• API
+• direct database query where testable
+• browser devtools request
+
+Test:
+
+Subject Teacher → Fee endpoint
+
+Class Teacher → another class's fee endpoint
+
+Class Teacher → verify payment endpoint
+
+Class Teacher → modify verified payment endpoint
+
+All unauthorized operations must fail securely.
+
+Do not simply hide the UI.
+
+============================================================
+53. FINAL DELIVERABLE
+============================================================
+
+After completing the work, provide a concise implementation report containing:
+
+1. What was audited
+2. What was changed
+3. Permission architecture
+4. Teacher vs Class Teacher behavior
+5. Fee workflow
+6. Payment state model
+7. Receipt architecture
+8. Synchronization approach
+9. Database changes
+10. Security/RLS/API changes
+11. Responsive UI changes
+12. Tests performed
+13. Any remaining limitations
+
+But DO NOT stop after writing the report.
+
+The actual application must be implemented and tested.
+
+============================================================
+FINAL PRINCIPLE
+============================================================
+
+Build SCHOLARIO around this simple rule:
+
+SUBJECT TEACHER
+=
+Academic responsibility for assigned subjects/classes.
+
+CLASS TEACHER
+=
+Teacher
++
+Responsibility for an assigned class
++
+Broader student visibility
++
+Class operations
++
+Controlled fee collection
+
+PRINCIPAL
+=
+School-wide authority
++
+Financial verification
++
+Administrative control
++
+Teacher/class assignment
++
+Final oversight
+
+And for payments:
+
+CLASS TEACHER COLLECTS
+        ↓
+PAYMENT CREATED
+        ↓
+AWAITING PRINCIPAL VERIFICATION
+        ↓
+PRINCIPAL VERIFIES
+        ↓
+PAYMENT BECOMES FINAL
+        ↓
+UNIQUE RECEIPT GENERATED
+        ↓
+STUDENT LEDGER UPDATED
+        ↓
+CLASS TEACHER UPDATED
+        ↓
+PRINCIPAL UPDATED
+        ↓
+STUDENT/PARENT RECORD UPDATED
+
+ONE PAYMENT.
+ONE SOURCE OF TRUTH.
+ONE CANONICAL LEDGER.
+NO DUPLICATE RECORDS.
+
+The system must feel coherent regardless of whether the user enters from:
+
+Principal → Payments
+Principal → Student
+Teacher → My Class
+Teacher → Student Directory
+Teacher → Student Profile
+Teacher → Fee Collection
+Student → Fee History
+
+All views must ultimately represent the SAME underlying data.
+
+Do not merely make the screens look synchronized.
+
+MAKE THE DATA, PERMISSIONS, WORKFLOWS AND UI ACTUALLY SYNCHRONIZED.
+
+Execute this as a senior production engineer and product designer, not as a superficial UI task.

@@ -2,13 +2,15 @@
 
 /**
  * class-hub/fees-card — the class teacher's fee collection picture: a
- * spring collection bar, honest counts (fully paid / pending / overdue)
- * and the defaulters list (overdue first, amounts + guardian phone),
- * thin-scroll capped at ~11 rows.
+ * spring collection bar, honest counts (fully paid / pending / overdue,
+ * awaiting verification), the defaulters list (overdue first, amounts +
+ * guardian phone), thin-scroll capped at ~11 rows, and the door into
+ * the full Fees & Payments workspace (collect → verify workflow).
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, Phone, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Phone, Wallet } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { GlassCard, GradientAvatar } from '@/components/shared/ui'
 import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -17,7 +19,7 @@ import type { ClassHubClass } from './types'
 const THIN_SCROLLBAR =
   '[scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-track]:bg-transparent'
 
-export function FeesCard({ cls }: { cls: ClassHubClass }) {
+export function FeesCard({ cls, onNavigate }: { cls: ClassHubClass; onNavigate?: (key: string) => void }) {
   const reduce = useReducedMotion()
   const fees = cls.fees
   const collectedPct =
@@ -30,8 +32,29 @@ export function FeesCard({ cls }: { cls: ClassHubClass }) {
           <Wallet className="h-4 w-4 text-amber-500" aria-hidden="true" />
           Fee Collection
         </h3>
-        <span className="text-[10px] text-muted-foreground">Class teacher&rsquo;s view</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-[11px] text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
+          onClick={() => onNavigate?.('fee-collection')}
+        >
+          View collection <ArrowRight className="h-3 w-3" aria-hidden="true" />
+        </Button>
       </div>
+
+      {fees.awaitingVerificationCount > 0 && (
+        <button
+          onClick={() => onNavigate?.('fee-collection')}
+          className="mb-3 flex w-full items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-left transition-colors hover:bg-amber-500/15"
+        >
+          <Clock3 className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+          <span className="min-w-0 flex-1 text-[11px] font-medium leading-relaxed text-amber-800 dark:text-amber-300">
+            {fees.awaitingVerificationCount} collection{fees.awaitingVerificationCount === 1 ? '' : 's'} ·{' '}
+            {formatINR(fees.awaitingVerificationAmount, true)} awaiting the Principal&rsquo;s verification
+          </span>
+          <ArrowRight className="h-3 w-3 shrink-0 text-amber-600" aria-hidden="true" />
+        </button>
+      )}
 
       {fees.totalBilled === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">

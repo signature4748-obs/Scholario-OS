@@ -33,7 +33,7 @@ const MySalaryModule = dynamic(
 const TEACHER_MODULE_KEYS = [
   'dashboard', 'payroll', 'my-attendance', 'my-timetable', 'attendance',
   'lesson-planner', 'marks', 'students', 'app-reviews', 'behavior',
-  'class-hub', 'analytics', 'settings', 'communication', 'profile',
+  'class-hub', 'fee-collection', 'analytics', 'settings', 'communication', 'profile',
   'fee-management',
 ] as const
 
