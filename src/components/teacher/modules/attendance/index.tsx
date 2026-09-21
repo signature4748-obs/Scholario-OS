@@ -11,7 +11,7 @@
  *     session (a separate record — viewing never writes anything).
  *
  * Composition (My-Timetable design language):
- *   ModuleToolbar (class + subject + date nav + Save) → week strip
+ *   ModuleToolbar (class + subject + date nav) → week strip
  *   (lightweight nav control) → 4 compact HubStatCards (value / total +
  *   hairline progress) → roster/insights SectionCard (segmented):
  *   · Roster   — hairline `divide-y` rows with a colored left border
@@ -19,6 +19,11 @@
  *     4-up control on mobile. Search, bulk "mark all present".
  *   · Insights — 10-day present-rate trend, attention-needed absentees,
  *     perfect-record students (hairline lists, no nested boxes).
+ *
+ * Mobile: the toolbar Save is hidden (it used to be pushed off-screen by
+ * the non-wrapping action row) and a STICKY bottom save bar follows the
+ * viewport while the teacher marks her way down the roster — Save is
+ * always at thumb reach, with the unsaved state made explicit.
  */
 
 import { useMemo, useState } from 'react'
@@ -247,49 +252,58 @@ export function AttendanceModule() {
               </Select>
             )}
 
-            {/* date: prev / picker / next + Today */}
-            <div className="flex h-9 items-center rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-              <button
-                type="button"
-                onClick={goPrevDay}
-                aria-label="Previous day"
-                title="Previous day"
-                className="flex h-full w-7 items-center justify-center rounded-l-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            {/* date stepper + Today — ONE semantic group so a wrapped
+                toolbar keeps the day controls together */}
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 items-center rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+                <button
+                  type="button"
+                  onClick={goPrevDay}
+                  aria-label="Previous day"
+                  title="Previous day"
+                  className="flex h-full w-7 items-center justify-center rounded-l-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="h-5 w-px bg-border" aria-hidden="true" />
+                <input
+                  type="date"
+                  value={date}
+                  max={todayKey()}
+                  onChange={(e) => selectDate(e.target.value)}
+                  aria-label="Attendance date"
+                  className={DATE_INPUT_CLASS}
+                />
+                <span className="h-5 w-px bg-border" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={goNextDay}
+                  disabled={date >= todayKey()}
+                  aria-label="Next day"
+                  title="Next day"
+                  className="flex h-full w-7 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goToday}
+                disabled={date === todayKey()}
+                className="h-9 px-2.5 text-xs"
               >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <span className="h-5 w-px bg-border" aria-hidden="true" />
-              <input
-                type="date"
-                value={date}
-                max={todayKey()}
-                onChange={(e) => selectDate(e.target.value)}
-                aria-label="Attendance date"
-                className={DATE_INPUT_CLASS}
-              />
-              <span className="h-5 w-px bg-border" aria-hidden="true" />
-              <button
-                type="button"
-                onClick={goNextDay}
-                disabled={date >= todayKey()}
-                aria-label="Next day"
-                title="Next day"
-                className="flex h-full w-7 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+                Today
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goToday}
-              disabled={date === todayKey()}
-              className="h-9 px-2.5 text-xs"
-            >
-              Today
-            </Button>
 
-            <Button onClick={save} disabled={!canSave} className="h-9">
+            {/* Save — tablet/desktop toolbar slot (mobile uses the sticky
+                bottom bar so the button is never pushed out of range) */}
+            <Button
+              onClick={save}
+              disabled={!canSave}
+              className="hidden h-9 sm:inline-flex"
+            >
               <AnimatePresence mode="wait" initial={false}>
                 {saving ? (
                   <motion.span
@@ -492,6 +506,17 @@ export function AttendanceModule() {
               </>
             )}
           </SectionCard>
+
+          {/* mobile: Save rides at thumb reach while the roster scrolls */}
+          <MobileSaveBar
+            save={save}
+            canSave={canSave}
+            saving={saving}
+            justSaved={justSaved}
+            dirty={dirty}
+            marked={source !== 'present'}
+            isSubjectMode={isSubjectMode}
+          />
         </>
       )}
     </PageTransition>
@@ -748,6 +773,116 @@ function StatusButton({
       <Icon className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{cfg.label}</span>
     </motion.button>
+  )
+}
+
+/**
+ * MobileSaveBar — the phone-screen replacement for the toolbar Save slot.
+ *
+ * The old toolbar row could not fit class + subject + date + Save inside a
+ * 358px column and pushed Save out of the visible range. Now Save is a
+ * full-width 44px-touch primary action in a bar that STICKS to the bottom
+ * of the scroll area while the teacher marks her way down the roster,
+ * with a live status line (unsaved / in sync / saved) next to it.
+ *
+ * `sticky bottom-0 -mx-4 -mb-4` cancels the scroll container's p-4 padding
+ * so the bar anchors flush to the bottom edge (edge-to-edge, rounded top
+ * corners, hairline top border, blurred card backdrop). `sm:hidden` —
+ * tablet/desktop keeps the toolbar Save instead.
+ */
+function MobileSaveBar({
+  save,
+  canSave,
+  saving,
+  justSaved,
+  dirty,
+  marked,
+  isSubjectMode,
+}: {
+  save: () => Promise<void>
+  canSave: boolean
+  saving: boolean
+  justSaved: boolean
+  dirty: boolean
+  marked: boolean
+  isSubjectMode: boolean
+}) {
+  const status = saving ? (
+    <span className="flex items-center gap-1.5">
+      <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+    </span>
+  ) : justSaved ? (
+    <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+      <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+    </span>
+  ) : dirty ? (
+    <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" aria-hidden="true" />
+      Unsaved changes
+    </span>
+  ) : marked ? (
+    'In sync with saved record'
+  ) : (
+    'Not marked yet'
+  )
+
+  return (
+    <div
+      role="region"
+      aria-label="Save attendance"
+      className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center gap-3 rounded-t-xl border-t border-border bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.25)] backdrop-blur sm:hidden"
+    >
+      <p className="w-[96px] min-w-0 shrink-0 text-[11px] font-medium leading-snug text-muted-foreground">
+        {status}
+      </p>
+      <Button
+        onClick={save}
+        disabled={!canSave}
+        className="h-11 min-w-0 flex-1 text-sm"
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {saving ? (
+            <motion.span
+              key="saving"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-1.5"
+            >
+              <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+            </motion.span>
+          ) : justSaved ? (
+            <motion.span
+              key="saved"
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Saved
+            </motion.span>
+          ) : (
+            <motion.span
+              key="save"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex min-w-0 items-center gap-1.5"
+            >
+              <Save className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {isSubjectMode ? 'Save session' : 'Save attendance'}
+              </span>
+              {dirty && (
+                <span
+                  className="ml-0.5 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-400"
+                  aria-label="Unsaved changes"
+                />
+              )}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </Button>
+    </div>
   )
 }
 

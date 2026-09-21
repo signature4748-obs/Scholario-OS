@@ -16,6 +16,11 @@
  *   · `action`  — the module's primary control(s) (Create / class selector
  *     / status chip), right-aligned on the same row.
  *
+ * Responsive contract: the action slot `flex-wrap`s and may shrink below
+ * its max-content width. On narrow viewports the controls wrap onto their
+ * own full-width rows (below the context line) instead of overflowing the
+ * content column — a toolbar must NEVER push a control off-screen.
+ *
  * Modules with neither context nor action render nothing at all — their
  * content simply begins, which is the intended premium behaviour.
  */
@@ -50,7 +55,9 @@ export function ModuleToolbar({ context, action, className }: ModuleToolbarProps
         <span aria-hidden="true" className="min-w-0 flex-1" />
       )}
       {hasAction && (
-        <div className="flex shrink-0 items-center gap-2 sm:ml-auto">{action}</div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
+          {action}
+        </div>
       )}
     </div>
   )

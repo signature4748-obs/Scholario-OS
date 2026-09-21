@@ -1990,3 +1990,73 @@ Stage Summary:
 - Recovered sandbox infrastructure: keepalive.mjs + spawn-detached.mjs + warm-chunks.mjs at project root (the janitor wipes .zscripts and /home/z/.qa — root files survived this time).
 - The 4GB OOM cycle remains the dominant environmental risk (~6 server deaths during this QA; all auto-recovered by keepalive). Server deaths during a browser-attached chunk-compile are the trigger; cache-warm serving is stable.
 - For the user: refresh the preview panel once, then Sign In works on the phone screen (and any screen).
+
+---
+Task ID: 11
+Agent: Z.ai Code (main)
+Task: User report — "in teacher role, class attendance, the mobile screen size ui needs some solution, save attendance button is not in the correct range."
+
+Work Log:
+- Read worklog (Tasks 9/10 context), confirmed dev server health; diagnosed from
+  source before touching the browser: ModuleToolbar's action wrapper was
+  `flex shrink-0` — on a 390px phone the attendance action row (class select
+  120 + date nav 176 + Today 58 + Save ~150 + gaps ≈ 528px max-content) could
+  not shrink or wrap, overflowing the ~358px content column; the shell's
+  `overflow-hidden` clipped it silently (why earlier "zero overflow" QA passed
+  while the Save button was actually off-screen).
+- Root fix (shared): module-toolbar.tsx action wrapper `shrink-0` →
+  `min-w-0 flex-wrap` (+ doc comment). Controls now wrap onto their own rows
+  under the context line instead of pushing off-screen. No visual change on
+  screens where the action fits; benefits all 13 teacher modules.
+- Attendance mobile redesign (attendance/index.tsx):
+  · date stepper + Today grouped into ONE semantic unit (clean wrap boundary);
+  · toolbar Save hidden on mobile (`hidden sm:inline-flex`);
+  · NEW MobileSaveBar — sticky bottom bar (`sticky bottom-0 z-20 -mx-4 -mb-4
+    sm:hidden`): edge-to-edge anchored (rounded-t-xl, hairline top border,
+    bg-card/95 + backdrop-blur, up-shadow), live status line (Unsaved changes /
+  Saving… / Saved / In sync with saved record / Not marked yet) + full-width
+    h-11 (44px touch) primary Save with the same 3-state animation + dirty dot;
+    safe-area bottom padding for iOS.
+  · 320px hardening after live measurement found TWO more flex traps: status
+    <p> min-width:auto (min-content 140px for "In sync with saved record")
+    overrode w-[104px] → `w-[96px] min-w-0`; button nowrap label min-content
+    173px → `min-w-0` on button + truncate span safety net. 320px went from
+    scrollW 341 (>viewport) to 320 (exact).
+- Environment recovery en route: dev server OOM-died twice (chunk-compile +
+  preview-panel polling on 4GB); keepalive.mjs had been WIPED by the sandbox
+  janitor — recreated (robots-only probe, respawn, backoff) + killed the zombie
+  `bun run dev` wrappers (parent alive, next-server dead — pgrep-based
+  alreadyRunning check was passing on the zombie) → watchdog revived the
+  server both times.
+- Gates: bunx tsc --noEmit → 0 errors; bun run lint → clean.
+- Browser QA (teacher session, true viewports):
+  · 390×844 — zero overflow (scrollW==clientW==390); toolbar Save display:none
+    (as designed); sticky-bar Save x=114–374 IN RANGE, h=44; pinned at bottom
+    through 600px roster scroll; E2E flow: mark Absent → "Unsaved changes" +
+    enabled → Save → toast "Attendance saved" → "Saved" → settles "In sync
+    with saved record"; at max scroll the last roster row sits fully above the
+    bar (no overlap), app footer trails below inside the scroll area.
+  · 320×700 — zero overflow after hardening; Save right=304 in range.
+  · 1280×800 — mobile bar hidden; toolbar Save back, right-aligned
+    (x=1075–1248); no overflow.
+  · Regressions: fee-collection (Collect Fee in range) + marks (no overflow) at
+    390; my-timetable (benchmark file untouched) safe by code review — its
+    action slot is a small chip + export button that always fits.
+  · Console/page errors: clean. VLM review of the 390 screenshot: "high-quality
+    mobile interface", toolbar "stacked logically and wrapped cleanly",
+    "no horizontal overflow".
+
+Stage Summary:
+- FIXED at root cause: the Save button can never again be pushed out of range
+  by a non-wrapping toolbar (shared ModuleToolbar contract), and on phones
+  Save now lives in a sticky bottom bar at thumb reach with an explicit
+  unsaved/saved status — the correct mobile pattern for a scroll-to-mark
+  workflow (no more scrolling back to the top to save).
+- All QA green at 320/390/1280 + E2E save flow + regressions; gates green.
+- Environmental: keepalive.mjs recreated (janitor keeps wiping it); OOM cycles
+  remain the top environmental risk (2 server deaths this round, both
+  auto-recovered once the zombie wrappers were cleared).
+- Next-phase candidates: attendance desktop screenshot pass, login QA matrix
+  (session-persist/refresh/logout), Student Directory redesign, Class Teacher
+  conditional access, Exam Duties rework, Lessons Planner upgrade (queued from
+  the master task).
