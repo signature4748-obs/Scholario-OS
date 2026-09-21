@@ -2060,3 +2060,37 @@ Stage Summary:
   (session-persist/refresh/logout), Student Directory redesign, Class Teacher
   conditional access, Exam Duties rework, Lessons Planner upgrade (queued from
   the master task).
+
+---
+Task ID: 9
+Agent: main (Z.ai Code)
+Task: (1) Teacher → Class Attendance mobile layout fix per explicit user spec: move "Save attendance" OUT of the floating/sticky-bottom placement INTO the top/header area (after class+date controls, before roster). (2) Fix pre-existing committed breakage found during gates (lesson-planner tsc errors, proctoring Prisma types). (3) Re-verify mobile login (PART 9).
+
+Work Log:
+- Read worklog + audited attendance module (1134-line composition root) + ModuleToolbar contract: previous round's MobileSaveBar was `sticky bottom-0 z-20 -mx-4 -mb-4 sm:hidden` — the exact pattern the user rejected.
+- Implemented MobileSaveRow (replacing MobileSaveBar): plain IN-FLOW `flex items-center gap-3 sm:hidden` row — live status line (w-[96px] min-w-0) + full-width h-11 (44px touch) primary Save with the same 3-state animation + dirty dot. Placed as FIRST child of the board fragment: ModuleToolbar (class/date controls) → MobileSaveRow → WeekStrip → HubStatCards → roster SectionCard. No sticky, no z-index, no negative margins, no shadow/backdrop, no safe-area chrome — zero extra empty space. Doc comments updated (file header, toolbar Save slot note, component doc).
+- Fixed prop type: hook's public contract types `save: () => void` (hooks.ts line 104) but MobileSaveBar had declared `() => Promise<void>` (pre-existing latent tsc error — my edit just moved it); MobileSaveRow now declares `() => void`.
+- Gates surfaced ~22 PRE-EXISTING tsc errors in committed code (two clusters, NOT from my change):
+  · lesson-planner (15×): `shared.ts` AND `shared.tsx` both existed — `./shared` resolves .ts-first → stale pre-LP-2 subset shadowed the complete LP-2 shared.tsx (missing unitAccent/AnimatedBar/LIST_STAGGER/LIST_ITEM/ConfettiBurst/applyTopicRemoval + TopicStatusConfig.dot/.text). Lesson Planner module was RUNTIME-BROKEN (chunk load failure on open). Fix: deleted stale shared.ts (shared.tsx is a strict superset — verified line-by-line).
+  · proctoring (7×): PrismaClient missing examDutyCompletion/examIncident — models had been lost from prisma/schema.prisma (db tables still existed → schema once had them). Fix: re-added ExamDutyCompletion (schoolId/scheduleItemId @unique/teacherId/startedAt/completedAt/presentCount/absentCount/lateCount/incidentCount) + ExamIncident (schoolId/examId/scheduleItemId/studentId?/incidentType/occurredAt/description/reportedById/reportedByName + indexes) with back-relations on School/User/Student/Exam/ExamScheduleItem; `bun run db:push` → "already in sync" + client regenerated.
+- Browser QA (teacher rohan.mehta, agent-browser, OOM-constrained environment — see risks):
+  · Environment: dev server OOM-killed repeatedly (next-server anon-rss ≈3.0–3.2GB on 4GB cgroup; dmesg confirms). Recovery procedure refined: chrome CLOSED during `/` compile push (curl :3000 direct, ~20s) → settle ~60s → chrome opens → never reload mid-session (viewport switches reflow client-side only). Compile becomes disk-cached after first push (35ms re-serves) which finally stabilized the window.
+  · 390×844: save row position STATIC (not sticky), x=16 w=358 h=44; button x=124 w=250 h=44 in range; hierarchy date(536)→save(588)→weekStrip(648)→stats(739)→roster(1106); scrollW==390 zero h-overflow; scrolls away naturally at scrollTop 800 (y=-212, NOT pinned); no bottom bar.
+  · 320×700: scrollW==320 exact; button x=124 w=180 h=44 in range; same order (592/644/704/1226). Three elements extend past 320 (right=392) — pre-existing app-header cluster clipped by ancestor overflow (NOT attendance, NOT page-scrollable, not a regression).
+  · 360×780: scrollW==360; button w=220 in range; static; order OK.
+  · 414×896: scrollW==414; button w=274 in range; static; order OK.
+  · E2E @390: mark Aarav Sharma Absent → status "Unsaved changes" + enabled → Save → toast "Attendance saved" → "In sync with saved record"; reverted to Present + saved (data left clean).
+  · Student rows usable @320: 4-up status grid all in range (60×32 each) + click-verified (marked Late, reverted).
+  · Desktop 1280×800: mobile row display:none; toolbar Save back at x=1075–1248 (baseline); weekStrip y=383 directly under toolbar; scrollW==1280. NO regression.
+  · Mobile login @390 (PART 9 probe): worked BOTH times this session (teacher chip → Sign In → panel). Kick-back bug NOT reproduced — remains un-reproduced across 2 sessions; needs a reproducible case (browser/surface/step details from the user) to investigate further.
+  · Lesson Planner @390 after shared.ts fix: module loads, renders ("Grade 10 - A · Computer Applications · 9% complete"), scrollW==390, zero page errors, no chunk errors, no error boundary.
+  · Console: only Fast Refresh/HMR logs + one benign pre-existing logo.svg aspect-ratio warning. Page errors: none.
+- Gates after all fixes: `bunx tsc --noEmit` → 0 errors (was 22+); `bun run lint` → clean.
+- Verified 15-min webDevReview cron still registered (platform shows "Disabled due to exec limits exceeded" — outside sandbox control; job definition intact).
+
+Stage Summary:
+- DONE (user-requested): Class Attendance mobile Save is now a top-of-page in-flow row exactly per the specified hierarchy (title → banner → class/date controls → Save → date strip → summary → roster). No floating/sticky button over the roster at any width; verified at 320/360/390/414 + desktop unchanged + E2E save flow + student-row usability.
+- DONE (bonus fixes): Lesson Planner runtime breakage (stale shared.ts shadow) + proctoring Prisma models restored — tsc went from ~22 errors to 0; Lesson Planner browser-verified loading.
+- Files changed: src/components/teacher/modules/attendance/index.tsx (MobileSaveBar→MobileSaveRow, moved to top, prop type, comments), src/components/teacher/modules/lesson-planner/shared.ts (DELETED), prisma/schema.prisma (+2 models +5 back-relations), db/custom.db (via db:push).
+- Environment risk (TOP): OOM death spiral is now frequent — next-server reaches ~3.1GB alone; chrome (~0.7GB) + preview-panel poller recompile pressure tips it over. Working QA procedure documented above; disk-cached compiles make reloads cheap once warm. Consider (next phase): trimming compiled-route memory (turbopackMemoryLimit tuning), or accept the close-browser-during-compile-push protocol as standard.
+- Next-phase candidates (unchanged queue): Student Directory redesign → Class Teacher conditional access → Exam Duties (proctoring UI now type-safe; verify module renders when a teacher has invigilator duties) → Lessons Planner upgrade; attendance desktop screenshot pass; login QA matrix (refresh/logout/session-persist).

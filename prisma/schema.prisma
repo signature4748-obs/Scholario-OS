@@ -54,6 +54,8 @@ model School {
   examTypes            ExamTypeConfig[]
   gradeScales          GradeScale[]
   examRules            ExamRule[]
+  examDutyCompletions  ExamDutyCompletion[]
+  examIncidents        ExamIncident[]
   admitCardConfigs     AdmitCardConfig[]
   reportCardConfigs    ReportCardConfig[]
   homeworks            Homework[]
@@ -121,6 +123,10 @@ model User {
   sentParentMessages       ParentMessage[]      @relation("ParentMessageSender")
   recordedBehavior         BehaviorRecord[]     @relation("BehaviorRecordRecorder")
   ownedTeacherFollowUps    TeacherFollowUp[]     @relation("TeacherFollowUpTeacher")
+
+  // Teacher Exam Proctoring — duty sign-offs + reported irregularities
+  examDutyCompletions  ExamDutyCompletion[]
+  reportedExamIncidents ExamIncident[]
 }
 
 model Teacher {
@@ -165,6 +171,7 @@ model Student {
   examAttendance      ExamAttendance[]
   seatAssignments     ExamSeatAssignment[]
   resultOutcomes      ExamResultOutcome[]
+  examIncidents       ExamIncident[]
   homeworkSubmissions HomeworkSubmission[]
   subjectAttendanceEntries SubjectAttendanceEntry[]
 
@@ -237,7 +244,7 @@ model Subject {
   assignments      Assignment[]
   questionBanks    QuestionBank[]
   examSubjects     ExamSubjectConfig[]
-  examSchedule     ExamScheduleItem[]
+  examSchedule       ExamScheduleItem[]
   examMarks        ExamMark[]
   homeworks        Homework[]
   examAttendances  ExamAttendance[]
@@ -317,6 +324,7 @@ model Exam {
   examAttendance  ExamAttendance[]
   seatAssignments ExamSeatAssignment[]
   resultOutcomes  ExamResultOutcome[]
+  examIncidents  ExamIncident[]
 }
 
 model ExamClass {
@@ -364,7 +372,9 @@ model ExamScheduleItem {
   invigilatorName String?
   createdAt       DateTime @default(now())
 
-  examAttendance ExamAttendance[]
+  examAttendance   ExamAttendance[]
+  dutyCompletion   ExamDutyCompletion?
+  examIncidents    ExamIncident[]
 }
 
 model ExamMark {
@@ -432,6 +442,49 @@ model ExamSeatAssignment {
 
   @@unique([examId, classId, studentId])
   @@unique([examId, room, seatNumber])
+}
+
+/// Invigilator sign-off for ONE ExamScheduleItem duty — written once, after
+/// exam-day attendance is fully marked (teacher proctoring module).
+model ExamDutyCompletion {
+  id             String           @id @default(cuid())
+  schoolId       String
+  school         School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  scheduleItemId String           @unique
+  scheduleItem   ExamScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  teacherId      String
+  teacher        User             @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  startedAt      DateTime
+  completedAt    DateTime
+  presentCount   Int
+  absentCount    Int
+  lateCount      Int
+  incidentCount  Int
+  createdAt      DateTime         @default(now())
+}
+
+/// Irregularity report filed by an invigilator during a paper
+/// (LATE_ARRIVAL · UNFAIR_MEANS · MEDICAL_ISSUE · PAPER_ISSUE · OTHER).
+model ExamIncident {
+  id              String           @id @default(cuid())
+  schoolId        String
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  examId          String
+  exam            Exam             @relation(fields: [examId], references: [id], onDelete: Cascade)
+  scheduleItemId  String
+  scheduleItem    ExamScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  studentId       String?
+  student         Student?         @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  incidentType    String
+  occurredAt      DateTime
+  description     String
+  reportedById    String
+  reportedBy      User             @relation(fields: [reportedById], references: [id], onDelete: Cascade)
+  reportedByName  String?
+  createdAt       DateTime         @default(now())
+
+  @@index([scheduleItemId])
+  @@index([examId])
 }
 
 model ExamResultOutcome {

@@ -20,10 +20,12 @@
  *   · Insights — 10-day present-rate trend, attention-needed absentees,
  *     perfect-record students (hairline lists, no nested boxes).
  *
- * Mobile: the toolbar Save is hidden (it used to be pushed off-screen by
- * the non-wrapping action row) and a STICKY bottom save bar follows the
- * viewport while the teacher marks her way down the roster — Save is
- * always at thumb reach, with the unsaved state made explicit.
+ * Mobile: the toolbar Save is hidden (a non-wrapping action row used to
+ * push it off-screen) and Save instead HEADS the page — one plain in-flow
+ * row directly under the class/date controls and BEFORE the week strip /
+ * roster, so it is visible before marking begins, scrolls naturally with
+ * the content and can never float over or cover a student row. The
+ * unsaved state stays explicit next to the button.
  */
 
 import { useMemo, useState } from 'react'
@@ -297,8 +299,8 @@ export function AttendanceModule() {
               </Button>
             </div>
 
-            {/* Save — tablet/desktop toolbar slot (mobile uses the sticky
-                bottom bar so the button is never pushed out of range) */}
+            {/* Save — tablet/desktop toolbar slot (mobile heads the page
+                in its own row instead; see MobileSaveRow) */}
             <Button
               onClick={save}
               disabled={!canSave}
@@ -366,6 +368,19 @@ export function AttendanceModule() {
         </SectionCard>
       ) : (
         <>
+          {/* mobile: Save heads the page — one in-flow row directly under
+              the class/date controls, before any roster content; it never
+              floats over, covers or obscures student rows while scrolling */}
+          <MobileSaveRow
+            save={save}
+            canSave={canSave}
+            saving={saving}
+            justSaved={justSaved}
+            dirty={dirty}
+            marked={source !== 'present'}
+            isSubjectMode={isSubjectMode}
+          />
+
           {/* week strip: Mon–Sun, marked days dotted, today ringed —
               a lightweight navigation control, not a card */}
           <WeekStrip
@@ -507,16 +522,6 @@ export function AttendanceModule() {
             )}
           </SectionCard>
 
-          {/* mobile: Save rides at thumb reach while the roster scrolls */}
-          <MobileSaveBar
-            save={save}
-            canSave={canSave}
-            saving={saving}
-            justSaved={justSaved}
-            dirty={dirty}
-            marked={source !== 'present'}
-            isSubjectMode={isSubjectMode}
-          />
         </>
       )}
     </PageTransition>
@@ -777,20 +782,21 @@ function StatusButton({
 }
 
 /**
- * MobileSaveBar — the phone-screen replacement for the toolbar Save slot.
+ * MobileSaveRow — the phone-screen replacement for the toolbar Save slot.
  *
  * The old toolbar row could not fit class + subject + date + Save inside a
- * 358px column and pushed Save out of the visible range. Now Save is a
- * full-width 44px-touch primary action in a bar that STICKS to the bottom
- * of the scroll area while the teacher marks her way down the roster,
- * with a live status line (unsaved / in sync / saved) next to it.
+ * 358px column and pushed Save out of the visible range, and a later
+ * sticky-bottom variant floated the action over the roster. The settled
+ * pattern: Save HEADS the page — one plain in-flow row directly under the
+ * class/date controls and BEFORE the week strip / roster, so the action is
+ * visible before marking begins, scrolls naturally with the content and
+ * can never cover a student row. A live status line (unsaved / in sync /
+ * saved / not marked) sits beside the full-width 44px-touch button — no
+ * extra chrome, no extra empty space.
  *
- * `sticky bottom-0 -mx-4 -mb-4` cancels the scroll container's p-4 padding
- * so the bar anchors flush to the bottom edge (edge-to-edge, rounded top
- * corners, hairline top border, blurred card backdrop). `sm:hidden` —
- * tablet/desktop keeps the toolbar Save instead.
+ * `sm:hidden` — tablet/desktop keeps the toolbar Save slot instead.
  */
-function MobileSaveBar({
+function MobileSaveRow({
   save,
   canSave,
   saving,
@@ -799,7 +805,7 @@ function MobileSaveBar({
   marked,
   isSubjectMode,
 }: {
-  save: () => Promise<void>
+  save: () => void
   canSave: boolean
   saving: boolean
   justSaved: boolean
@@ -828,9 +834,9 @@ function MobileSaveBar({
 
   return (
     <div
-      role="region"
+      role="group"
       aria-label="Save attendance"
-      className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center gap-3 rounded-t-xl border-t border-border bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.25)] backdrop-blur sm:hidden"
+      className="flex items-center gap-3 sm:hidden"
     >
       <p className="w-[96px] min-w-0 shrink-0 text-[11px] font-medium leading-snug text-muted-foreground">
         {status}
