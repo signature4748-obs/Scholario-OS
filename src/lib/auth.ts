@@ -1,6 +1,6 @@
 import { db } from './db'
 import { randomBytes } from 'crypto'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 
 // Lightweight password hashing using Node's scrypt (no external deps)
 import { scryptSync, timingSafeEqual } from 'crypto'
@@ -71,8 +71,32 @@ export async function clearSessionCookie() {
 }
 
 export async function getSessionToken(): Promise<string | undefined> {
+  // Primary: the HttpOnly cookie (first-party tabs).
   const store = await cookies()
-  return store.get(SESSION_COOKIE)?.value
+  const cookieToken = store.get(SESSION_COOKIE)?.value
+  if (cookieToken) return cookieToken
+
+  // Fallback: `Authorization: Bearer <token>` for embedded contexts.
+  // The sandbox preview panel renders this app inside a CROSS-SITE iframe;
+  // browsers refuse to store AND send SameSite=Lax cookies in third-party
+  // frames, so a login that succeeds server-side (200 + Set-Cookie) was
+  // followed by cookie-less 401s on every subsequent call, and the client's
+  // dead-session policy signed the user straight back out (the "kicked
+  // back to the login screen" bug). The login response now also returns the
+  // session token; the client persists it per-origin and attaches it as a
+  // Bearer header (src/lib/auth-session-token.ts). Wherever the cookie
+  // works it still takes precedence — first-party behavior is unchanged.
+  try {
+    const h = await headers()
+    const auth = h.get('authorization')
+    if (auth?.startsWith('Bearer ')) {
+      const bearer = auth.slice(7).trim()
+      if (bearer) return bearer
+    }
+  } catch {
+    // headers() unavailable outside request scope — cookie-only mode.
+  }
+  return undefined
 }
 
 /** SS-1 — the caller's Session row (token never leaves the server; the

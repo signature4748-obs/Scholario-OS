@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/lib/store/auth-store'
+import { installApiBearerInterceptor } from '@/lib/auth-session-token'
+
+// Install once, before any component can fire an API call. In embedded
+// (cross-site iframe) contexts the session cookie is blocked, so API auth
+// rides on the Bearer header instead — see lib/auth-session-token.ts.
+installApiBearerInterceptor()
 
 const PublicWebsite = dynamic(() => import('@/components/public-website/public-website').then((m) => m.PublicWebsite), {
   loading: () => <LoadingSpinner />,

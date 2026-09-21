@@ -35,6 +35,11 @@ export async function POST(req: NextRequest) {
       role: user.role,
       schoolId: user.schoolId,
       avatarUrl: user.avatarUrl,
+      // Same secret the HttpOnly cookie carries. Needed for embedded
+      // contexts (cross-site preview iframes) where the browser drops the
+      // SameSite=Lax cookie — see lib/auth.ts getSessionToken. Where the
+      // cookie works it remains the primary mechanism.
+      sessionToken: token,
       school: user.school
         ? {
             id: user.school.id,

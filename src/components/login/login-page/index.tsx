@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Image from 'next/image'
 import { useAuth, type Role } from '@/lib/store/auth-store'
+import { saveSessionToken } from '@/lib/auth-session-token'
 import { school } from '@/lib/mock/school'
 import { LoadingPhase } from './loading-phase'
 import { credentials, type CredentialCard } from './data'
@@ -63,7 +64,7 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
       const payload = (await res.json().catch(() => null)) as {
         ok?: boolean
         error?: string
-        data?: { id?: string; email?: string; name?: string; role?: string }
+        data?: { id?: string; email?: string; name?: string; role?: string; sessionToken?: string }
       } | null
 
       if (!res.ok || !payload?.ok) {
@@ -75,6 +76,14 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
         serverRole === 'principal' || serverRole === 'teacher' || serverRole === 'student' || serverRole === 'superadmin'
           ? serverRole
           : roleOverride ?? selectedRole ?? 'principal'
+
+      // Persist the session token BEFORE the panel mounts. In embedded
+      // contexts (the cross-site preview iframe) the browser drops the
+      // SameSite=Lax cookie, so every panel API call must instead carry
+      // `Authorization: Bearer <token>` (installed in app boot). Without
+      // this, the freshly mounted panel's first 401 would trigger the
+      // dead-session policy and bounce straight back to this screen.
+      if (payload.data?.sessionToken) saveSessionToken(payload.data.sessionToken)
 
       // 3) Navigate ONLY after the session cookie exists. `login()` flips
       //    isAuthenticated → Home swaps the login screen for the role's
