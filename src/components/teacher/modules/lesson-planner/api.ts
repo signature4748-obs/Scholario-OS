@@ -67,7 +67,7 @@ export interface SyllabusMissingTopic {
 
 /** Board-syllabus coverage for the selected class + subject (LP-2). */
 export interface SyllabusInfo {
-  board: 'CBSE' | 'UP_BOARD'
+  board: string
   boardLabel: string
   bookLabel: string
   subjectLabel: string

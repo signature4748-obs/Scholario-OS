@@ -2,7 +2,7 @@
 // calendar.
 //
 // ⚠ MIRROR DISCIPLINE: the holiday list below mirrors `HOLIDAY_SEED` in
-// prisma/curriculum-data.ts (seeded into the DB as SchoolEvent HOLIDAY rows
+// prisma/holiday-data.ts (seeded into the DB as SchoolEvent HOLIDAY rows
 // by prisma/seed-teacher-academics.ts) and MUST stay in sync with it.
 // The AUTHORITATIVE source is the DB — modules that can fetch should use
 // `GET /api/events?type=HOLIDAY` (schoolId-scoped SchoolEvent rows); this
@@ -44,9 +44,9 @@ const FIXED_HOLIDAYS: { month: number; day: number; name: string; type: 'nationa
 
 /**
  * The school's declared session 2026-27 holidays — a 1:1 mirror of
- * HOLIDAY_SEED in prisma/curriculum-data.ts (DB SchoolEvent HOLIDAY rows).
+ * HOLIDAY_SEED in prisma/holiday-data.ts (DB SchoolEvent HOLIDAY rows).
  * Date ranges are inclusive; a date inside a multi-day break is a holiday.
- * KEEP IN SYNC with prisma/curriculum-data.ts.
+ * KEEP IN SYNC with prisma/holiday-data.ts.
  */
 const DECLARED_SESSION_HOLIDAYS: {
   name: string

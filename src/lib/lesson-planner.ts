@@ -24,11 +24,10 @@ import {
   type ScheduledTopic,
 } from '@/lib/lesson-schedule'
 import {
-  BOARD_LABELS,
-  findSyllabusTemplate,
+  findCurriculumForClassSubject,
   normalizeTopicName,
-  type SyllabusTemplate,
-} from '@/lib/syllabus-templates'
+  type SubjectCurriculum,
+} from '@/lib/curriculum/2026-27'
 
 export type { ScheduledTopic, TopicStatus, HolidayRange } from '@/lib/lesson-schedule'
 
@@ -60,7 +59,7 @@ export interface SyllabusMissingTopic {
 
 /** Board-syllabus coverage for the selected class + subject (LP-2). */
 export interface SyllabusInfo {
-  board: 'CBSE' | 'UP_BOARD'
+  board: string
   boardLabel: string
   bookLabel: string
   subjectLabel: string
@@ -152,7 +151,12 @@ export async function getTeachingAssignments(user: AuthUser): Promise<TeachingAs
       })
     }
   }
-  return [...byKey.values()].sort((a, b) => a.classLabel.localeCompare(b.classLabel) || a.subjectName.localeCompare(b.subjectName))
+  // Numeric class order (6 → 12) — a lexicographic sort would list
+  // "Grade 11" before "Grade 6".
+  const levelOf = (label: string) => Number(label.match(/\d{1,2}/)?.[0] ?? 99)
+  return [...byKey.values()].sort(
+    (a, b) => levelOf(a.classLabel) - levelOf(b.classLabel) || a.classLabel.localeCompare(b.classLabel) || a.subjectName.localeCompare(b.subjectName),
+  )
 }
 
 // ─── Pace + calendar ────────────────────────────────────────────────────
@@ -206,85 +210,123 @@ export async function getHolidays(schoolId: string): Promise<HolidayRange[]> {
   }))
 }
 
-// ─── Board-syllabus templates (LP-2) ───────────────────────────────────
+// ─── Global curriculum library (2026-27) ────────────────────────────────
 
-async function loadTemplateFor(
+/** Boards whose schools attach the NCERT-based library curriculum. */
+const LIBRARY_BOARDS = new Set(['CBSE', 'UP_BOARD', 'NCERT', ''])
+
+async function resolveCurriculumFor(
   schoolId: string,
   classLabel: string,
   subjectName: string,
-): Promise<SyllabusTemplate | null> {
+): Promise<SubjectCurriculum | null> {
   const school = await db.school.findUnique({
     where: { id: schoolId },
     select: { board: true },
   })
-  return findSyllabusTemplate(school?.board, classLabel, subjectName)
+  if (school && !LIBRARY_BOARDS.has((school.board || '').trim().toUpperCase())) {
+    // ICSE / STATE / CUSTOM boards carry no library curriculum — the planner
+    // falls back to its honest "build your own plan" state for them.
+    return null
+  }
+  const found = findCurriculumForClassSubject(classLabel, subjectName)
+  return found?.curriculum ?? null
 }
 
-/** Instantiate board-template topics as the class+subject's curriculum.
- *  `topicsToCreate` defaults to the whole template (auto-feed) — the merge
- *  path passes only the missing ones. */
-async function instantiateTemplate(
+/** Instantiate library chapters as the class+subject's curriculum.
+ *  `chaptersToCreate` defaults to the whole curriculum (auto-attach) — the
+ *  merge path passes only the missing ones. */
+async function instantiateCurriculum(
   schoolId: string,
   classId: string,
   subjectId: string,
-  template: SyllabusTemplate,
+  curriculum: SubjectCurriculum,
   existing: { orderIndex: number; topicNo: number }[],
-  topicsToCreate: SyllabusTemplate['topics'],
+  chaptersToCreate: { unitNo: number; unitName: string; name: string; description: string; periods: number }[],
 ): Promise<number> {
-  if (topicsToCreate.length === 0) return 0
+  if (chaptersToCreate.length === 0) return 0
   const baseOrder = existing.length > 0 ? Math.max(...existing.map((t) => t.orderIndex)) : 0
   let topicNo = existing.length > 0 ? Math.max(...existing.map((t) => t.topicNo)) : 0
-  for (let i = 0; i < topicsToCreate.length; i++) {
-    const t = topicsToCreate[i]
+  for (let i = 0; i < chaptersToCreate.length; i++) {
+    const t = chaptersToCreate[i]
     await db.curriculumTopic.create({
       data: {
         schoolId,
         classId,
         subjectId,
-        sourceBoard: template.sourceBoard,
+        sourceBoard: curriculum.sourceBoard,
         unitNo: t.unitNo,
         unitName: t.unitName,
         topicNo: ++topicNo,
-        topicName: t.topicName,
+        topicName: t.name,
         description: t.description,
-        periodsNeeded: t.periodsNeeded,
+        periodsNeeded: t.periods,
         orderIndex: baseOrder + (i + 1) * 10,
       },
     })
   }
-  return topicsToCreate.length
+  return chaptersToCreate.length
+}
+
+/** Flatten a curriculum into chapter seeds (unit order preserved). */
+function flattenCurriculum(curriculum: SubjectCurriculum) {
+  return curriculum.units.flatMap((u) =>
+    u.topics.map((t) => ({ unitNo: u.unitNo, unitName: u.unitName, ...t })),
+  )
+}
+
+/** Attach the official curriculum to a configured (class, subject) pair.
+ *  Safe to call repeatedly — it only instantiates when nothing exists yet.
+ *  Intended to be called when a principal configures a subject AND on the
+ *  teacher's first plan open (spec §11). */
+export async function attachCurriculumForAssignment(
+  schoolId: string,
+  classId: string,
+  classLabel: string,
+  subjectId: string,
+  subjectName: string,
+): Promise<number> {
+  const existing = await db.curriculumTopic.findMany({
+    where: { schoolId, classId, subjectId },
+    select: { id: true },
+  })
+  if (existing.length > 0) return 0
+  const curriculum = await resolveCurriculumFor(schoolId, classLabel, subjectName)
+  if (!curriculum) return 0
+  return instantiateCurriculum(schoolId, classId, subjectId, curriculum, [], flattenCurriculum(curriculum))
 }
 
 function buildSyllabusInfo(
-  template: SyllabusTemplate,
+  curriculum: SubjectCurriculum,
   planTopicNames: Set<string>,
 ): SyllabusInfo {
   const missingTopics: SyllabusMissingTopic[] = []
   const unitMap = new Map<number, { unitNo: number; unitName: string; topicCount: number; coveredCount: number }>()
-  for (const u of template.units) {
-    unitMap.set(u.unitNo, { ...u, coveredCount: 0 })
+  for (const u of curriculum.units) {
+    unitMap.set(u.unitNo, { unitNo: u.unitNo, unitName: u.unitName, topicCount: u.topics.length, coveredCount: 0 })
   }
-  for (const t of template.topics) {
-    const unit = unitMap.get(t.unitNo)
-    if (planTopicNames.has(normalizeTopicName(t.topicName))) {
+  for (const chapter of flattenCurriculum(curriculum)) {
+    const unit = unitMap.get(chapter.unitNo)
+    if (planTopicNames.has(normalizeTopicName(chapter.name))) {
       if (unit) unit.coveredCount += 1
     } else {
       missingTopics.push({
-        unitNo: t.unitNo,
-        unitName: t.unitName,
-        topicName: t.topicName,
-        description: t.description,
-        periodsNeeded: t.periodsNeeded,
+        unitNo: chapter.unitNo,
+        unitName: chapter.unitName,
+        topicName: chapter.name,
+        description: chapter.description,
+        periodsNeeded: chapter.periods,
       })
     }
   }
+  const totalTopics = flattenCurriculum(curriculum).length
   return {
-    board: template.board,
-    boardLabel: BOARD_LABELS[template.board],
-    bookLabel: template.bookLabel,
-    subjectLabel: template.subjectLabel,
-    totalTopics: template.topics.length,
-    coveredTopics: template.topics.length - missingTopics.length,
+    board: 'CBSE',
+    boardLabel: `${curriculum.sourceBoard.replace('-', ' · ')} syllabus`,
+    bookLabel: curriculum.bookLabel,
+    subjectLabel: curriculum.subjectLabel,
+    totalTopics,
+    coveredTopics: totalTopics - missingTopics.length,
     units: [...unitMap.values()],
     missingTopics,
   }
@@ -476,15 +518,15 @@ export async function deleteCustomTopic(user: AuthUser, topicId: string): Promis
   await rewriteOrderIndexes(siblings, orderedIds)
 }
 
-/** Add every template topic the plan is missing (LP-2 syllabus merge). */
+/** Add every library chapter the plan is missing (LP-2 syllabus merge). */
 export async function mergeSyllabusTemplate(
   user: AuthUser,
   classId: string,
   subjectId: string,
 ): Promise<{ added: number }> {
   const { schoolId, classLabel, subjectName } = await assertOwnsAssignment(user, classId, subjectId)
-  const template = await loadTemplateFor(schoolId, classLabel, subjectName)
-  if (!template) throw new Error('No board syllabus template exists for this subject')
+  const curriculum = await resolveCurriculumFor(schoolId, classLabel, subjectName)
+  if (!curriculum) throw new Error('No board curriculum exists for this subject')
 
   const existing = await db.curriculumTopic.findMany({
     where: { schoolId, classId, subjectId },
@@ -492,14 +534,14 @@ export async function mergeSyllabusTemplate(
     select: { orderIndex: true, topicNo: true, topicName: true },
   })
   const existingNames = new Set(existing.map((t) => normalizeTopicName(t.topicName)))
-  const missing = template.topics.filter((t) => !existingNames.has(normalizeTopicName(t.topicName)))
+  const missing = flattenCurriculum(curriculum).filter((t) => !existingNames.has(normalizeTopicName(t.name)))
   if (missing.length === 0) return { added: 0 }
 
-  const added = await instantiateTemplate(
+  const added = await instantiateCurriculum(
     schoolId,
     classId,
     subjectId,
-    template,
+    curriculum,
     existing.map((t) => ({ orderIndex: t.orderIndex, topicNo: t.topicNo })),
     missing,
   )
@@ -531,16 +573,16 @@ export async function getLessonPlan(
     getHolidays(schoolId),
   ])
 
-  // ── LP-2 AUTO-FEED: a newly adopted subject has no curriculum yet —
-  // instantiate the COMPLETE session plan from the school's board syllabus
-  // (CBSE / UP Board) the moment the teacher opens it. Failures are quiet:
+  // ── AUTO-ATTACH (spec §11): a newly configured subject has no curriculum
+  // yet — instantiate the COMPLETE official 2026-27 plan from the global
+  // curriculum library the moment the teacher opens it. Failures are quiet:
   // the plan simply renders its honest empty state.
   let autoProvisioned = false
   if (topicRows.length === 0) {
-    const template = findSyllabusTemplate(school?.board, assignment.classLabel, assignment.subjectName)
-    if (template) {
+    const curriculum = await resolveCurriculumFor(schoolId, assignment.classLabel, assignment.subjectName)
+    if (curriculum) {
       try {
-        const fed = await instantiateTemplate(schoolId, classId, subjectId, template, [], template.topics)
+        const fed = await instantiateCurriculum(schoolId, classId, subjectId, curriculum, [], flattenCurriculum(curriculum))
         if (fed > 0) {
           autoProvisioned = true
           topicRows = await db.curriculumTopic.findMany({
@@ -549,7 +591,7 @@ export async function getLessonPlan(
           })
         }
       } catch {
-        // Auto-feed is best-effort; never block the plan read.
+        // Auto-attach is best-effort; never block the plan read.
       }
     }
   }
@@ -622,13 +664,14 @@ export async function getLessonPlan(
     ? pace.periodsPerWeek / Math.max(1, pace.teachingDaysPerWeek)
     : 1
 
-  // Board-syllabus coverage (LP-2) — null when no template matches.
+  // Board-curriculum coverage (LP-2) — null when the library carries no
+  // curriculum for this class+subject (honest empty state, custom plans).
   let syllabus: SyllabusInfo | null = null
   {
-    const template = findSyllabusTemplate(school?.board, assignment.classLabel, assignment.subjectName)
-    if (template) {
+    const curriculum = await resolveCurriculumFor(schoolId, assignment.classLabel, assignment.subjectName)
+    if (curriculum) {
       const planNames = new Set(topicRows.map((t) => normalizeTopicName(t.topicName)))
-      syllabus = buildSyllabusInfo(template, planNames)
+      syllabus = buildSyllabusInfo(curriculum, planNames)
     }
   }
 
