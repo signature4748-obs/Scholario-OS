@@ -31,13 +31,10 @@ const nextConfig: NextConfig = {
       'motion',
       'date-fns',
     ],
+    // Memory guidance for Turbopack runs (webpack mode ignores it; kept for
+    // the times the project is booted without --webpack).
+    turbopackMemoryLimit: 2200,
   },
-  // Memory guidance for Turbopack runs (webpack mode ignores it; kept for
-  // the times the project is booted without --webpack).
-  turbopackMemoryLimit: 2200,
-  // Dev-only: only the lazily-imported modules compile on demand. Applied
-  // in the webpack branch below (this project boots `next dev --webpack`).
-  ...(process.env.NODE_ENV === "production" ? {} : {}),
   images: {
     remotePatterns: [
       {
