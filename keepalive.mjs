@@ -42,7 +42,7 @@ async function listening(port) {
   if (port === 3000) {
     // [d] bracket: the sh -c wrapper's own cmdline (which contains this
     // literal pattern text) must not match the regex it executes.
-    const { stdout } = await sh(`pgrep -f "next de[v] -p 3000" | head -1`)
+    const { stdout } = await sh(`pgrep -f "next de[v].*-p 3000" | head -1`)
     return stdout.trim().length > 0
   }
   if (port === 3003) {
@@ -158,7 +158,7 @@ async function tick() {
   try {
     await ensureService(
       'next dev', 3000, '/api/app-version',
-      ['bun run dev', 'next dev -p 3000', 'tee dev.log'],
+      ['bun run dev', 'next dev', 'tee dev.log'],
       ['--cwd', ROOT, 'bun', 'run', 'dev'], ROOT, state.next,
     )
     await ensureService(
