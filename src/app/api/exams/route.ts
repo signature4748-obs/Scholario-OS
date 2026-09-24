@@ -11,7 +11,10 @@ export async function GET() {
     const school = await db.school.findUnique({ where: { id: schoolId }, select: { academicYear: true } })
     const exams = await listExams(schoolId)
     return { exams, classes: await getClasses(schoolId), academicYear: school?.academicYear ?? '2025-2026' }
-  })
+    },
+    // Exam management list is staff surface.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

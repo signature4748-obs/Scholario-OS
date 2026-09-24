@@ -37,7 +37,10 @@ export async function GET(req: NextRequest) {
       },
     })
     return transactions
-  })
+    },
+    // Payment ledger is school-admin surface (matches POST gate).
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] }
+  )
 }
 
 /// POST /api/fees/transactions — record a manual (offline) payment as a

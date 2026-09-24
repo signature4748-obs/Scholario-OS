@@ -38,5 +38,8 @@ export async function GET(req: NextRequest) {
     }
 
     return { users, grouped }
-  })
+    },
+    // User directory (emails/phones) is staff surface only (spec §7/§32).
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }

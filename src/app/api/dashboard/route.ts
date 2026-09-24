@@ -213,7 +213,10 @@ export async function GET() {
       recentActivity,
       upcomingExams,
     }
-  })
+    },
+    // School-wide dashboard stats are admin surface (POST /api/dashboard stays self-scoped).
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] }
+  )
 }
 
 // allow filtering via query for student/teacher/parent specific dashboards

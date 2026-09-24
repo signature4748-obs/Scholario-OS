@@ -5,19 +5,24 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const { searchParams } = new URL(req.url)
-    const withCounts = searchParams.get('counts') === '1'
-    const classes = await db.class.findMany({
-      where: { schoolId },
-      orderBy: { gradeLevel: 'asc' },
-      include: withCounts
-        ? { _count: { select: { students: true, subjects: true } } }
-        : undefined,
-    })
-    return classes
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const { searchParams } = new URL(req.url)
+      const withCounts = searchParams.get('counts') === '1'
+      const classes = await db.class.findMany({
+        where: { schoolId },
+        orderBy: { gradeLevel: 'asc' },
+        include: withCounts
+          ? { _count: { select: { students: true, subjects: true } } }
+          : undefined,
+      })
+      return classes
+    },
+    // Class catalogue (rooms, capacities, class-teacher ids) is staff
+    // surface — students get their own class via /api/auth/me + dashboard.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

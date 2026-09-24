@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
       take: 500,
     })
     return questions
-  })
+    },
+    // Question bank is assessment content — staff only (matches POST/DELETE gates).
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

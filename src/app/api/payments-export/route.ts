@@ -89,5 +89,8 @@ export async function GET(req: NextRequest) {
         'Cache-Control': 'no-store',
       },
     })
-  })
+    },
+    // Financial CSV export is school-admin surface only (spec §7/§32).
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] }
+  )
 }

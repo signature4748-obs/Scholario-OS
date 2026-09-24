@@ -21,7 +21,10 @@ export async function GET(req: NextRequest) {
       take: 500,
     })
     return results
-  })
+    },
+    // Marks of every student are staff surface only — students see their own results (spec §7/§32).
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

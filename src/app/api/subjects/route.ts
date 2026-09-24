@@ -5,16 +5,20 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const { searchParams } = new URL(req.url)
-    const classId = searchParams.get('classId')
-    const subjects = await db.subject.findMany({
-      where: { schoolId, ...(classId ? { classId } : {}) },
-      orderBy: { name: 'asc' },
-    })
-    return subjects
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const { searchParams } = new URL(req.url)
+      const classId = searchParams.get('classId')
+      const subjects = await db.subject.findMany({
+        where: { schoolId, ...(classId ? { classId } : {}) },
+        orderBy: { name: 'asc' },
+      })
+      return subjects
+    },
+    // Subject catalogue is staff surface (timetable/exam/marks pickers).
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

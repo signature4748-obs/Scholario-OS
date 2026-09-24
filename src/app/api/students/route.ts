@@ -6,25 +6,31 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const { searchParams } = new URL(req.url)
-    const classId = searchParams.get('classId')
-    const q = searchParams.get('q')
-    const students = await db.student.findMany({
-      where: {
-        schoolId,
-        ...(classId ? { classId } : {}),
-        ...(q
-          ? { OR: [{ user: { name: { contains: q } } }, { admissionNo: { contains: q } }] }
-          : {}),
-      },
-      include: { class: true, user: { select: { name: true, email: true, phone: true } }, route: true },
-      orderBy: { rollNo: 'asc' },
-      take: 200,
-    })
-    return students
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const { searchParams } = new URL(req.url)
+      const classId = searchParams.get('classId')
+      const q = searchParams.get('q')
+      const students = await db.student.findMany({
+        where: {
+          schoolId,
+          ...(classId ? { classId } : {}),
+          ...(q
+            ? { OR: [{ user: { name: { contains: q } } }, { admissionNo: { contains: q } }] }
+            : {}),
+        },
+        include: { class: true, user: { select: { name: true, email: true, phone: true } }, route: true },
+        orderBy: { rollNo: 'asc' },
+        take: 200,
+      })
+      return students
+    },
+    // Full student roster (names/emails/phones/guardians) is school-admin
+    // surface only. Teachers use their scoped /api/teacher/students;
+    // students/parents must never enumerate the roster (spec §7/§32).
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

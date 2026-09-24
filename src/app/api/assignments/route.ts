@@ -16,7 +16,10 @@ export async function GET(req: NextRequest) {
       take: 100,
     })
     return items
-  })
+    },
+    // All-class assignment lists are staff surface.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {

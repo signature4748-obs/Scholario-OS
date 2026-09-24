@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
       take: 300,
     })
     return fees
-  })
+    },
+    // Fee ledger (every student) is staff surface — students use /api/student/* surfaces.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] }
+  )
 }
 
 export async function POST(req: NextRequest) {
