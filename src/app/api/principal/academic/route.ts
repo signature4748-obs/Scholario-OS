@@ -74,7 +74,10 @@ export async function GET() {
         where: { schoolId },
         include: { user: { select: { id: true, name: true, email: true } } },
       })
-      const teacherById = new Map(teachers.map((t) => [t.id, t]))
+      // Class.classTeacherId stores the teacher's USER id (the canonical
+      // reference every teacher-side reader expects — role, dashboard,
+      // class-hub, attendance scope).
+      const teacherByUserId = new Map(teachers.map((t) => [t.userId, t]))
 
       // Teaching load per (class, subject) — from the published timetable.
       const ttRows = await db.timetable.findMany({
@@ -97,7 +100,7 @@ export async function GET() {
           .map((t) => ({ id: t.id, name: t.user.name ?? t.user.email, email: t.user.email }))
           .sort((a, b) => a.name.localeCompare(b.name)),
         classes: classes.map((c) => {
-          const classTeacher = c.classTeacherId ? teacherById.get(c.classTeacherId) : null
+          const classTeacher = c.classTeacherId ? teacherByUserId.get(c.classTeacherId) : null
           return {
             id: c.id,
             name: c.name,
@@ -278,7 +281,7 @@ export async function POST(req: NextRequest) {
           const classId = body.classId?.trim()
           if (!classId) throw new Error('MISSING_FIELDS')
           const cls = await ensureClass(classId)
-          let teacherId: string | null = null
+          let teacherUserId: string | null = null
           if (body.teacherName != null && `${body.teacherName}`.trim() !== '') {
             const wanted = `${body.teacherName}`.trim()
             const match = await db.teacher.findFirst({
@@ -286,20 +289,22 @@ export async function POST(req: NextRequest) {
               include: { user: { select: { name: true } } },
             })
             if (!match) throw new Error('TEACHER_NOT_FOUND')
-            teacherId = match.id
+            teacherUserId = match.userId
           }
-          await db.class.update({ where: { id: classId }, data: { classTeacherId: teacherId } })
+          // Class.classTeacherId = the teacher's USER id — the canonical
+          // reference the teacher-side capability gates read.
+          await db.class.update({ where: { id: classId }, data: { classTeacherId: teacherUserId } })
           await db.activityLog.create({
             data: {
               schoolId,
               userId: user.id,
               action: 'ACADEMIC_CONFIG_UPDATED',
-              detail: teacherId
+              detail: teacherUserId
                 ? `Class teacher appointed for ${cls.name}${cls.section ? ` (${cls.section})` : ''}`
                 : `Class teacher removed for ${cls.name}${cls.section ? ` (${cls.section})` : ''}`,
             },
           })
-          return { ok: true, classId, classTeacherId: teacherId }
+          return { ok: true, classId, classTeacherId: teacherUserId }
         }
 
         default:
