@@ -2167,3 +2167,26 @@ Stage Summary:
 - All 12 acceptance tests of the A–Q spec are now browser-verified (TEST9 was the last code-only one).
 - Known residual (honest): teacher-roster-store still seeds DEMO-T-00x mock fallback entries beside the live GWS-T-014 (visible in the slot-editor teacher picker); legacy mock classes (Pre-Nursery/KG/Class 2/Class 4) still power non-linked Students & Classes surfaces (labelled "Demo class"); Salary Structures editor exemplar-base semantics could surface in a future pass.
 - Next-phase candidates: replace the teacher-roster mock fallback with server-only roster; migrate remaining mock Students & Classes surfaces to the academic API; salary payroll-report PDF mode-awareness polish; principal-side timetable conflict resolver UI.
+
+---
+Task ID: 19-a
+Agent: Z.ai Code (main orchestrator — FULL SYSTEM STABILIZATION PASS)
+Task: User directive: STOP feature development. Full-project stabilization + QA (40-section spec): baseline, build/type/lint, runtime health, auth audit, role data consistency, master data integrity, module-by-module browser testing, cross-role workflows, responsive, exports, error states, final A–T report.
+
+Work Log:
+- BASELINE: tsc --noEmit → 0 errors; dev server :3000 healthy (200 in ~30ms); gateway :81 healthy; lint → clean (verified in background).
+- DATA VALIDATION SUITE BUILT: prisma/validate.ts (bun run db:validate) — checks orphan refs, duplicate subjects/receipts, timetable class/teacher/room conflicts, CSA validity, attendance canonical identity + status, exam-mark ranges vs ExamSubjectConfig, fee arithmetic, FeeTransaction verification states, behavior refs, class-teacher validity, multi-tenant school-scoping; prints canonical class rosters for cross-role agreement.
+- VALIDATION FOUND + ROOT-CAUSED:
+  · Attendance duplicates: 11 Grade-9A students had 3 rows each on 2026-09-16 (timestamps 04:27/04:29/04:45) — root cause: legacy POST /api/attendance used `new Date()`/raw timestamps which bypass the (studentId,date) unique constraint. Also 201 historical rows had non-midnight timestamps.
+  · 8 stale FeeTransactions referencing dead mock universe (studentId STU-1/STU-2/STU-37, "Pre-Nursery"/"Class 11" labels, Aug 27-31) incl. DUPLICATE RECEIPT RCP-2026-1061.
+  · 18 Result rows (Mid-Term Examination, declared 2026-09-08) for Grade 9-A Physics/Chemistry/Biology — legitimate declared-exam history from before the Task-16 subject reconfig (KEEP; verify UI renders cleanly).
+- DATA REPAIRS (one-time script, scripts/repair-data.ts): merged 11 dup day-groups (22 rows deleted, latest save wins), normalized 201 dates to midnight UTC, deleted the 8 stale FeeTransactions (incl. the duplicate-receipt pair). Re-validation → ZERO CRITICAL ERRORS.
+- CODE FIXES:
+  · /api/attendance POST rewritten: date normalization (YYYY-MM-DD or ISO → midnight UTC; NEVER `new Date()`), roster-truth validation, day-window replace semantics (same as baseline route), future-date guard. GET: day-window filter instead of exact-timestamp match.
+  · STUDENT ATTENDANCE MOCK UNIVERSE ELIMINATED: Student My Attendance / Profile snapshot / Report Card attendance line all read the SEEDED zustand store for hardcoded demo student 'STU-58' (a separate attendance universe — teacher writes in another browser never reached the student). NEW /api/student/attendance (server-side identity via requireStudent; returns the student's own canonical rows) + NEW useMyServerAttendance hook (loading/error/retry states); attendance module rewired with loading skeleton + honest error state; profile stat shows '…'/'—' while loading/empty; report-card receives server stats via props. student-attendance-store.ts reduced to pure types+helpers (seed + zustand persist + write actions deleted).
+- Gates after fixes: tsc → 0 errors.
+
+Stage Summary:
+- DB is internally consistent (ZERO critical errors from the validation suite; only 18 documented historical-result warnings).
+- Attendance now has ONE canonical write path per role surface + ONE read path per student surface; no second attendance universe remains.
+- Next: browser QA (principal → teacher → student module-by-module, console/network capture), auth audit, cross-role workflows A–F, responsive, exports, final report.

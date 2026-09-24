@@ -19,7 +19,7 @@
  * student can never alter official marks — this module is read-only.
  */
 
-import { useRef } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { FileBadge2, Download, Printer, Eye } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -29,10 +29,10 @@ import { downloadHTMLFile, safeFileName } from '@/lib/download-file'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { getActiveAcademicSessionLabel } from '@/lib/academic-session'
 import {
-  useStudentAttendanceStore,
   computeStats,
-  studentRecords,
+  type StudentAttendanceRecord,
 } from '@/lib/store/student-attendance-store'
+import { useMyServerAttendance } from '@/hooks/use-my-attendance'
 import {
   fmtPct,
   pctOf,
@@ -44,7 +44,6 @@ import {
   type ClassStanding,
 } from '@/lib/store/student-results-store'
 import { school as schoolFallback } from '@/lib/mock/school'
-import { useState } from 'react'
 
 function esc(v: string): string {
   return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -58,6 +57,8 @@ interface ReportCardInput {
   showRank: boolean
   reportCardConfig: { includeAttendance: boolean; includePrincipalRemark: boolean; includeSealNote: boolean }
   identity: { name: string; admissionNo: string; classSection: string; rollNo: string }
+  /** Server-verified attendance stats for the CURRENT student (null = omit the line). */
+  attendance: { percent: number; attended: number; total: number } | null
 }
 
 const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -79,14 +80,11 @@ function buildReportCardHTML(input: ReportCardInput): string {
   const overallGrade = gradeFor(t.pct, gradeScale)
   const mine = standings.find((s) => s.isMe)
 
-  // Attendance — only when the school includes it on the report card.
+  // Attendance — only when the school includes it on the report card
+  // (stats come from the server's canonical rows via the parent).
   let attendanceLine = ''
-  if (reportCardConfig.includeAttendance) {
-    const records = studentRecords(useStudentAttendanceStore.getState().records, 'STU-58')
-    const stats = computeStats(records)
-    if (stats.total > 0) {
-      attendanceLine = `<tr><th>Attendance</th><td>${stats.percent}% (${stats.attended} of ${stats.total} recorded school days)</td></tr>`
-    }
+  if (reportCardConfig.includeAttendance && input.attendance && input.attendance.total > 0) {
+    attendanceLine = `<tr><th>Attendance</th><td>${input.attendance.percent}% (${input.attendance.attended} of ${input.attendance.total} recorded school days)</td></tr>`
   }
 
   const rows = result.subjects
@@ -218,8 +216,14 @@ interface ReportCardProps {
 export function ReportCard(props: ReportCardProps) {
   const [open, setOpen] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  // Server-verified attendance for the signed-in student (canonical rows).
+  const { records: myAttendance } = useMyServerAttendance()
+  const attendanceStats = useMemo(() => {
+    const s = computeStats(myAttendance as StudentAttendanceRecord[])
+    return s.total > 0 ? { percent: s.percent, attended: s.attended, total: s.total } : null
+  }, [myAttendance])
 
-  const html = buildReportCardHTML(props)
+  const html = buildReportCardHTML({ ...props, attendance: attendanceStats })
   const filename = safeFileName(`Report Card ${props.assessment.name} ${props.identity.name}`, 'html')
 
   const handleDownload = () => {

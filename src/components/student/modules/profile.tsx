@@ -33,7 +33,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStudentsStore } from '@/lib/store/students-store'
 import type { StudentRecord } from '@/lib/store/students-store'
-import { useStudentAttendanceStore, computeStats, studentRecords } from '@/lib/store/student-attendance-store'
+import { computeStats } from '@/lib/store/student-attendance-store'
+import { useMyServerAttendance } from '@/hooks/use-my-attendance'
 import { useFeeStore } from '@/lib/store/fee-store'
 import { useCertificatesStore } from '@/lib/store/certificates-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
@@ -75,13 +76,14 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
     [allTxns],
   )
 
-  // STU-ATT — attendance derives LIVE from the canonical attendance records
-  // (the same rows Teacher/Principal write), so a correction anywhere updates
-  // the profile snapshot — it can never disagree with the Attendance module.
-  const allAttendance = useStudentAttendanceStore((s) => s.records)
+  // STU-ATT — attendance derives LIVE from the server's canonical
+  // attendance records (the same rows Teacher/Principal write via
+  // /api/student/attendance), so a correction anywhere updates the
+  // profile snapshot — it can never disagree with the Attendance module.
+  const { records: myAttendance, loading: attendanceLoading } = useMyServerAttendance()
   const attendancePct = useMemo(
-    () => computeStats(studentRecords(allAttendance, DEMO_STUDENT_ID)).percent,
-    [allAttendance],
+    () => computeStats(myAttendance).percent,
+    [myAttendance],
   )
 
   // Certificates — the same store My Certificates reads (raw array +
@@ -198,7 +200,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-0 sm:divide-x sm:divide-border">
           <SnapshotStat
             label="Attendance"
-            value={`${attendancePct}%`}
+            value={attendanceLoading ? '…' : myAttendance.length === 0 ? '—' : `${attendancePct}%`}
             icon={<Activity className="h-4 w-4" />}
             color="text-emerald-600 dark:text-emerald-400"
             bg="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"

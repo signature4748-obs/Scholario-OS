@@ -4,13 +4,15 @@
  * AttendanceModule — Student "My Attendance" (SECOND-GENERATION redesign).
  *
  * READ-ONLY personal attendance record: every number derives from the
- * canonical `student-attendance-store` — the same records the Teacher /
- * Principal attendance UI writes. When staff correct a record, the
- * student sees the updated status here live.
+ * SERVER's canonical Attendance rows via /api/student/attendance — the
+ * same records the Teacher / Principal attendance UI writes. When staff
+ * correct a record, the student sees the updated status here (on reload
+ * / next visit). Identity is resolved server-side — never a hardcoded
+ * student id, never a client-side attendance seed.
  *
- * Resolution chain: authenticated demo student → enrollment (class +
+ * Resolution chain: authenticated student (server) → enrollment (class +
  * section, never chosen) → active academic session (school settings) →
- * this student's records only (§41 privacy — the store filter is by
+ * this student's records only (§41 privacy — the server filter is by
  * student id).
  *
  * Percentage policy (the school's existing convention, unchanged):
@@ -26,17 +28,15 @@
  */
 
 import { useMemo, useState } from 'react'
-import { CalendarOff } from 'lucide-react'
+import { CalendarOff, AlertTriangle, RefreshCw } from 'lucide-react'
 import { GlassCard, PageTransition } from '@/components/shared/ui'
 import {
-  useStudentAttendanceStore,
   computeStats,
-  studentRecords,
   weeklyTrend,
   type StudentAttendanceRecord,
 } from '@/lib/store/student-attendance-store'
+import { useMyServerAttendance } from '@/hooks/use-my-attendance'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
-import { useStudentsStore } from '@/lib/store/students-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 import { Snapshot, type TodayStatus } from './snapshot'
 import { CalendarView } from './calendar-view'
@@ -55,23 +55,18 @@ import {
   type MonthCursor,
 } from './date-utils'
 
-/** The canonical demo student (single roster backs every role). */
-const STUDENT_ID = 'STU-58'
-
 export function AttendanceModule() {
-  // ── Canonical data — the same rows Teacher/Principal write ──
-  const allRecords = useStudentAttendanceStore((s) => s.records)
-  const my = useMemo(() => studentRecords(allRecords, STUDENT_ID), [allRecords])
+  // ── Canonical data — the SAME server rows Teacher/Principal write ──
+  const { records: my, loading, error, reload } = useMyServerAttendance()
   const stats = computeStats(my)
 
   // ── School policy — thresholds drive labels and chips only (§27) ──
   const thresholds = useSchoolSettingsStore((s) => s.academics?.attendanceThresholds)
 
   // ── Identity — enrollment decides the class (never hardcoded, §38) ──
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === STUDENT_ID))
   // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
   const srvClassLabel = useCurrentUser((s) => s.me?.student?.classLabel)
-  const classLabel = srvClassLabel ?? (student ? `${student.className}-${student.section}` : 'My Class')
+  const classLabel = srvClassLabel ?? 'My Class'
 
   // ── Time + month navigation (local-timezone safe) ──
   const todayIso = isoOf(new Date())
@@ -118,6 +113,43 @@ export function AttendanceModule() {
     () => (my.length > 0 ? formatWindow(my[0].date, my[my.length - 1].date) : ''),
     [my],
   )
+
+  /* ── ERROR STATE — honest, retryable (§22 failure isolation) ── */
+  if (error && loading === false && my.length === 0) {
+    return (
+      <PageTransition>
+        <GlassCard hover={false} className="on-card px-6 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
+            <AlertTriangle className="h-6 w-6" aria-hidden />
+          </div>
+          <p className="text-sm font-semibold">Attendance unavailable</p>
+          <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">{error}</p>
+          <button
+            type="button"
+            onClick={reload}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground shadow-2xs transition-all hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Try again
+          </button>
+        </GlassCard>
+      </PageTransition>
+    )
+  }
+
+  /* ── LOADING STATE — first fetch, no data yet ── */
+  if (loading) {
+    return (
+      <PageTransition>
+        <div className="space-y-6" aria-busy="true" aria-label="Loading attendance">
+          <div className="h-28 animate-pulse rounded-2xl bg-muted/50" />
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+            <div className="h-72 animate-pulse rounded-2xl bg-muted/40 lg:col-span-2" style={{ animationDelay: '90ms' }} />
+            <div className="h-72 animate-pulse rounded-2xl bg-muted/30" style={{ animationDelay: '180ms' }} />
+          </div>
+        </div>
+      </PageTransition>
+    )
+  }
 
   /* ── EMPTY STATE — no records, no fabricated numbers (§44) ── */
   if (my.length === 0) {
