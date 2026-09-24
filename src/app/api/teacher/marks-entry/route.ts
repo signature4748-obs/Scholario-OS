@@ -15,7 +15,10 @@ export async function GET() {
       const schoolId = schoolScoped(user)
       const teacherName = (user.name || '').trim().toLowerCase()
 
-      // The teacher's (class, subject) teaching assignments.
+      // The teacher's (class, subject) teaching assignments — validated
+      // against the Principal's ACTIVE ClassSubjectAssignments (same gate
+      // as the Lesson Planner / My Timetable): a subject the Principal has
+      // not configured for the class can never become editable here.
       const ttRows = teacherName
         ? await db.timetable.findMany({
             where: { schoolId, teacherName: { not: null } },
@@ -27,9 +30,20 @@ export async function GET() {
             },
           })
         : []
+      const activeCSA = new Set(
+        (await db.classSubjectAssignment.findMany({
+          where: { schoolId, isActive: true },
+          select: { classId: true, subjectId: true },
+        })).map((c) => `${c.classId}|${c.subjectId}`)
+      )
       const mine = new Set(
         ttRows
-          .filter((r) => (r.teacherName || '').trim().toLowerCase() === teacherName && r.subjectId)
+          .filter(
+            (r) =>
+              (r.teacherName || '').trim().toLowerCase() === teacherName &&
+              r.subjectId &&
+              activeCSA.has(`${r.classId}|${r.subjectId}`)
+          )
           .map((r) => `${r.classId}|${r.subjectId}`)
       )
       const classLabels = new Map(ttRows.map((r) => [r.classId, r.class]))

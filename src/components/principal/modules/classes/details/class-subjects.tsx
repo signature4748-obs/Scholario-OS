@@ -3,20 +3,27 @@
 /**
  * ClassSubjects — subject allocation management.
  *
- * Spec §1 / §6 / §7 / §8 / §27: this component is the Students & Classes
- * side of the shared mock academic source. All subject mutations go
- * through the Zustand store, which is the single source of truth
- * consumed by Examination.
+ * TWO DATA MODES (single-source-of-truth architecture):
  *
- * Available subjects for the "Add Subject" picker come from the
+ *   1. SERVER-AUTHORITATIVE — when this class card links to a server
+ *      class (Grade 6–12 of the real school), the tab renders
+ *      ServerSubjectsPanel: the Principal's mutations go through
+ *      /api/principal/academic and become the school's actual
+ *      configuration (ClassSubjectAssignment). Teacher modules derive
+ *      from exactly this data.
+ *
+ *   2. LEGACY MOCK — classes with no server record (Pre-Nursery, KG,
+ *      Class 2, Class 4 demo classes) keep the classic Zustand-store
+ *      behaviour, clearly labelled as demo-only.
+ *
+ * Available subjects for the legacy "Add Subject" picker come from the
  * `academicSubjects` registry (Spec §28) — NOT a hardcoded
- * `SUBJECTS_BY_LEVEL` constant. The picker now also offers a
- * "Create custom subject" affordance (Spec §8) so the principal can
- * add a brand-new subject not in the default catalog.
+ * `SUBJECTS_BY_LEVEL` constant. The picker also offers a
+ * "Create custom subject" affordance (Spec §8).
  */
 
-import { useState, useMemo } from 'react'
-import { BookOpen, Plus, Archive, Pencil, Search, Sparkles } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { BookOpen, Plus, Archive, Pencil, Search, Sparkles, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,12 +32,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useStudentsStore } from '@/lib/store/students-store'
 import type { ClassRecord } from '@/lib/store/students-store'
 import type { SubjectDef } from '@/lib/mock/academic'
+import { useAcademicConfigStore, resolveDbClassFor } from '@/lib/academic-config/client'
 import { SubjectCard } from './subject-card'
 import { ArchivedSubjectsPanel } from './archived-subjects-panel'
+import { ServerSubjectsPanel } from './server-subjects-panel'
 import { ConfirmDialog } from '../../shared/confirm-dialog'
 import { toast } from 'sonner'
 
 export function ClassSubjects({ cls }: { cls: ClassRecord }) {
+  // ── Server link resolution (single fetch, shared store) ────────────
+  const config = useAcademicConfigStore((s) => s.config)
+  const fetchAcademic = useAcademicConfigStore((s) => s.fetch)
+  useEffect(() => { void fetchAcademic() }, [fetchAcademic])
+  const dbClass = resolveDbClassFor(cls, config?.classes ?? [])
+
+  // SERVER-AUTHORITATIVE mode — the real configuration surface.
+  if (dbClass) {
+    return <ServerSubjectsPanel dbClass={dbClass} />
+  }
+
+  // LEGACY MOCK mode — no server record for this demo class.
+  return <LegacyClassSubjects cls={cls} />
+}
+
+function LegacyClassSubjects({ cls }: { cls: ClassRecord }) {
   // Subscribe to canonical class so external mutations reflect here immediately.
   const liveClass = useStudentsStore((s) => s.getClassById(cls.id)) ?? cls
   const addClassSubject = useStudentsStore((s) => s.addClassSubject)
@@ -87,7 +112,13 @@ export function ClassSubjects({ cls }: { cls: ClassRecord }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-primary uppercase tracking-wider">Subjects</p>
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-xs font-bold text-primary uppercase tracking-wider">Subjects</p>
+          <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400 shrink-0">
+            <Server className="h-2.5 w-2.5 mr-1" aria-hidden="true" />
+            Demo class — no server record
+          </Badge>
+        </div>
         <div className="flex items-center gap-1.5">
           <Button
             size="sm"

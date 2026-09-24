@@ -4,21 +4,16 @@
  * salary-payslip-pdf — the teacher's own monthly payslip, as a real PDF
  * download ("My Salary & Payments" → Payslips → Download PDF).
  *
- * Follows the app's established export architecture (jsPDF + autotable,
- * same as the Principal's payroll-report-pdf and the attendance monthly
- * register) so the output reads like an official school document, not a
- * database dump:
- *   - Official header: school name, tagline, affiliation
- *   - Identity strip: teacher name / designation / employee id
- *   - Earnings table + Deductions table (green heads, totals)
- *   - NET PAY band — ALWAYS gross − deductions, computed, never a second
- *     hardcoded number (the single calculation path rule of the store)
- *   - Payment details: method / reference / paid-on / receipt number —
- *     only what actually exists on the payment record
- *   - Footer note + generated timestamp
+ * CONFIGURATION-DRIVEN LAYOUT (the Principal's salary model decides):
+ *   · SIMPLE (default) — the school's simple-salary workflow: Monthly
+ *     Salary → adjustments (bonus/recovery, only when present) → Amount
+ *     Paid. NO gross/deductions component tables are fabricated.
+ *   · DETAILED — the Principal configured components: Earnings table +
+ *     Deductions table + NET PAY band (single calculation path).
  *
- * Only the signed-in teacher's own data is ever passed in (the module
- * scopes everything by employeeId before calling).
+ * Both share the official document frame: school header, identity strip,
+ * payment details (method / reference / paid-on / receipt — only what
+ * actually exists on the payment record), footer + timestamp.
  */
 
 import jsPDF from 'jspdf'
@@ -38,13 +33,24 @@ export interface PayslipPdfPayment {
   receiptNo?: string
 }
 
+export type PayslipMode = 'simple' | 'detailed'
+
 export interface TeacherPayslipInput {
   teacherName: string
   designation: string
   employeeId: string
   monthLabel: string
-  earnings: PayslipPdfComponent[]
-  deductions: PayslipPdfComponent[]
+  /** Which salary model the Principal configured for this employee. */
+  mode: PayslipMode
+  /** SIMPLE mode — the configured fixed monthly salary. */
+  monthlySalary?: number
+  /** SIMPLE mode — that month's positive adjustments (bonus), if any. */
+  bonus?: number
+  /** SIMPLE mode — that month's negative adjustments (recovery), if any. */
+  recovered?: number
+  /** DETAILED mode — the configured component lines. */
+  earnings?: PayslipPdfComponent[]
+  deductions?: PayslipPdfComponent[]
   netPay: number
   payment: PayslipPdfPayment | null
 }
@@ -74,9 +80,12 @@ export function downloadTeacherPayslip(input: TeacherPayslipInput): void {
   const generatedAt = new Date().toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+  const isSimple = input.mode === 'simple'
   // Single calculation path: net is derived, never independently supplied.
-  const gross = input.earnings.reduce((s, c) => s + c.amount, 0)
-  const totalDeductions = input.deductions.reduce((s, c) => s + c.amount, 0)
+  const earnings = input.earnings ?? []
+  const deductions = input.deductions ?? []
+  const gross = earnings.reduce((s, c) => s + c.amount, 0)
+  const totalDeductions = deductions.reduce((s, c) => s + c.amount, 0)
 
   // ── Official school header ───────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
@@ -126,7 +135,7 @@ export function downloadTeacherPayslip(input: TeacherPayslipInput): void {
     y += 18
   })
 
-  // ── Earnings ─────────────────────────────────────────────────────────
+  // ── Earnings / Deductions — DETAILED mode only ────────────────────
   const tableStyles = {
     styles: { fontSize: 9, cellPadding: 5, lineColor: [226, 232, 240] as [number, number, number], lineWidth: 0.5 },
     headStyles: { fillColor: [22, 101, 80] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8 },
@@ -135,38 +144,54 @@ export function downloadTeacherPayslip(input: TeacherPayslipInput): void {
     margin: { left: marginX, right: marginX },
   }
 
-  autoTable(doc, {
-    startY: y + 2,
-    theme: 'grid',
-    ...tableStyles,
-    head: [['Earnings', 'Amount']],
-    body: input.earnings.map((c) => [c.name, inr(c.amount)]),
-    foot: [['Gross Earnings', inr(gross)]],
-  })
+  let afterTables = y + 8
+  if (!isSimple) {
+    autoTable(doc, {
+      startY: y + 2,
+      theme: 'grid',
+      ...tableStyles,
+      head: [['Earnings', 'Amount']],
+      body: earnings.map((c) => [c.name, inr(c.amount)]),
+      foot: [['Gross Earnings', inr(gross)]],
+    })
 
-  // ── Deductions ───────────────────────────────────────────────────────
-  const afterEarnings = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 60
-  autoTable(doc, {
-    startY: afterEarnings + 14,
-    theme: 'grid',
-    ...tableStyles,
-    head: [['Deductions', 'Amount']],
-    body: input.deductions.length > 0
-      ? input.deductions.map((c) => [c.name, inr(c.amount)])
-      : [['—', '—']],
-    foot: [['Total Deductions', inr(totalDeductions)]],
-  })
+    // ── Deductions ───────────────────────────────────────────────────────
+    const afterEarnings = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 60
+    autoTable(doc, {
+      startY: afterEarnings + 14,
+      theme: 'grid',
+      ...tableStyles,
+      head: [['Deductions', 'Amount']],
+      body: deductions.length > 0
+        ? deductions.map((c) => [c.name, inr(c.amount)])
+        : [['—', '—']],
+      foot: [['Total Deductions', inr(totalDeductions)]],
+    })
+    afterTables = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? afterEarnings + 60
+  } else {
+    // ── SIMPLE — Monthly Salary → adjustments (only when present) ─────
+    const rows: Array<[string, string]> = [['Monthly Salary', inr(input.monthlySalary ?? input.netPay)]]
+    if (input.bonus && input.bonus > 0) rows.push(['Bonus / Additional', `+ ${inr(input.bonus)}`])
+    if (input.recovered && input.recovered > 0) rows.push(['Recovery / Adjustment', `− ${inr(input.recovered)}`])
+    autoTable(doc, {
+      startY: y + 2,
+      theme: 'grid',
+      ...tableStyles,
+      head: [['Salary for the month', 'Amount']],
+      body: rows,
+    })
+    afterTables = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 80
+  }
 
-  // ── Net pay band (always gross − deductions, computed) ───────────────
-  const afterDeductions = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? afterEarnings + 60
-  const bandY = afterDeductions + 16
+  // ── Net pay band — the amount actually paid (both modes) ────────────
+  const bandY = afterTables + 16
   const bandH = 26
   doc.setFillColor(22, 101, 80)
   doc.rect(marginX, bandY, pageWidth - marginX * 2, bandH, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.setTextColor(255, 255, 255)
-  doc.text('NET PAY', marginX + 10, bandY + bandH / 2 + 3.5)
+  doc.text(isSimple ? 'AMOUNT PAID' : 'NET PAY', marginX + 10, bandY + bandH / 2 + 3.5)
   doc.setFontSize(12)
   doc.text(inr(input.netPay), pageWidth - marginX - 10, bandY + bandH / 2 + 3.5, { align: 'right' })
 

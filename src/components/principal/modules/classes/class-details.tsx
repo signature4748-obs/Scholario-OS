@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { ArrowLeft, LayoutGrid, List } from 'lucide-react'
 import { PageTransition, GradientAvatar } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { getVirtualOccupied, useStudentsStore } from '@/lib/store/students-store'
 import type { ClassRecord, StudentRecord } from '@/lib/store/students-store'
+import { useAcademicConfigStore, resolveDbClassFor } from '@/lib/academic-config/client'
 import { formatINR } from '@/lib/format'
 import { classStreamBadge } from './class-display'
 import { SegmentedTabs } from '../shared/segmented-tabs'
@@ -25,6 +26,15 @@ export function ClassDetailsPage({ cls, onBack, store, onStudentClick }: {
   // Brief section 22 (Real data persistence) + section 33 (Subject archive
   // must actually work) — the header is part of the same surface.
   const liveClass = useStudentsStore((s) => s.getClassById(cls.id)) ?? cls
+
+  // ── Server link — when this class maps to the authoritative school
+  // record, the header counts the SERVER's configured subjects (the
+  // single source of truth), not the legacy mock list.
+  const academicConfig = useAcademicConfigStore((s) => s.config)
+  const fetchAcademic = useAcademicConfigStore((s) => s.fetch)
+  useEffect(() => { void fetchAcademic() }, [fetchAcademic])
+  const dbClass = resolveDbClassFor(liveClass, academicConfig?.classes ?? [])
+  const subjectCount = dbClass ? dbClass.subjects.length : liveClass.subjects.length
   const students = useMemo(() => store.students.filter((s: any) => s.classId === liveClass.id), [store.students, liveClass.id])
   const cap = liveClass.capacity * liveClass.sections.length
   const enr = liveClass.sections.reduce((a, s) => a + getVirtualOccupied(s.id, s.capacity), 0)
@@ -58,7 +68,7 @@ export function ClassDetailsPage({ cls, onBack, store, onStudentClick }: {
         )}
         <Badge variant="secondary" className="bg-muted text-muted-foreground text-[10px]">{liveClass.sections.length} sections</Badge>
         <Badge variant="secondary" className={cn('text-[10px]', pct >= 90 ? 'bg-amber-500/10 text-amber-700' : 'bg-emerald-500/10 text-emerald-700')}>{pct}% full</Badge>
-        <Badge variant="secondary" className="bg-muted text-muted-foreground text-[10px]">{liveClass.subjects.length} subjects</Badge>
+        <Badge variant="secondary" className="bg-muted text-muted-foreground text-[10px]">{subjectCount} subjects</Badge>
       </div>
 
       <div className="space-y-4">

@@ -152,36 +152,62 @@ export function PayslipDocument({
 
       <div className="border-t border-slate-200" />
 
-      {/* ── Salary details ── */}
+      {/* ── Salary details — configuration-driven ── */}
       <div className="px-5 py-3.5">
         <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Salary Details</p>
 
-        <table className="w-full">
-          <tbody>
-            {earningLines.map((c, i) => (
-              <AmountRow key={`e-${c.name}-${i}`} name={c.name} amount={c.amount} />
-            ))}
-            {deductionLines.map((c, i) => (
-              <AmountRow key={`d-${c.name}-${i}`} name={c.name} amount={-c.amount} muted />
-            ))}
-            {deductionLines.length === 0 && (
-              <tr><td colSpan={2} className="py-1 text-[10px] italic text-slate-400">No deductions</td></tr>
-            )}
-          </tbody>
-        </table>
+        {(session.mode ?? 'detailed') === 'simple' ? (
+          <>
+            {/* SIMPLE — the Principal's configured Monthly Salary and any
+                actual adjustments. No gross/deduction lines are invented. */}
+            <table className="w-full">
+              <tbody>
+                <AmountRow name="Monthly Salary" amount={session.netBase} />
+                {adjustments.filter((a) => a.amount > 0).map((a) => (
+                  <AmountRow key={`sa-${a.id}`} name={a.label} amount={a.amount} />
+                ))}
+                {adjustments.filter((a) => a.amount < 0).map((a) => (
+                  <AmountRow key={`sd-${a.id}`} name={a.label} amount={a.amount} />
+                ))}
+              </tbody>
+            </table>
 
-        {/* Subtotals */}
-        <div className="mt-2 pt-2 border-t border-dashed border-slate-300 space-y-1">
-          <SubtotalRow label="Gross Earnings" value={`₹${gross.toLocaleString('en-IN')}`} />
-          <SubtotalRow label="Total Deductions" value={`₹${totalDeductions.toLocaleString('en-IN')}`} />
-        </div>
+            <div className="mt-2.5 pt-2.5 border-t-[1.5px] border-slate-700 flex items-end justify-between gap-3">
+              <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-slate-700 pb-0.5">Amount Payable</p>
+              <p className="text-[19px] font-bold tabular-nums leading-none">{`₹${Math.round(payable).toLocaleString('en-IN')}`}</p>
+            </div>
+            <p className="text-[9px] italic text-slate-400 mt-1.5">{amountInWordsINR(payable)}</p>
+          </>
+        ) : (
+          <>
+            <table className="w-full">
+              <tbody>
+                {earningLines.map((c, i) => (
+                  <AmountRow key={`e-${c.name}-${i}`} name={c.name} amount={c.amount} />
+                ))}
+                {deductionLines.map((c, i) => (
+                  <AmountRow key={`d-${c.name}-${i}`} name={c.name} amount={-c.amount} muted />
+                ))}
+                {deductionLines.length === 0 && (
+                  <tr><td colSpan={2} className="py-1 text-[10px] italic text-slate-400">No deductions</td></tr>
+                )}
+              </tbody>
+            </table>
 
-        {/* Net pay */}
-        <div className="mt-2.5 pt-2.5 border-t-[1.5px] border-slate-700 flex items-end justify-between gap-3">
-          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-slate-700 pb-0.5">Net Pay</p>
-          <p className="text-[19px] font-bold tabular-nums leading-none">{`₹${Math.round(payable).toLocaleString('en-IN')}`}</p>
-        </div>
-        <p className="text-[9px] italic text-slate-400 mt-1.5">{amountInWordsINR(payable)}</p>
+            {/* Subtotals */}
+            <div className="mt-2 pt-2 border-t border-dashed border-slate-300 space-y-1">
+              <SubtotalRow label="Gross Earnings" value={`₹${gross.toLocaleString('en-IN')}`} />
+              <SubtotalRow label="Total Deductions" value={`₹${totalDeductions.toLocaleString('en-IN')}`} />
+            </div>
+
+            {/* Net pay */}
+            <div className="mt-2.5 pt-2.5 border-t-[1.5px] border-slate-700 flex items-end justify-between gap-3">
+              <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-slate-700 pb-0.5">Net Pay</p>
+              <p className="text-[19px] font-bold tabular-nums leading-none">{`₹${Math.round(payable).toLocaleString('en-IN')}`}</p>
+            </div>
+            <p className="text-[9px] italic text-slate-400 mt-1.5">{amountInWordsINR(payable)}</p>
+          </>
+        )}
       </div>
 
       <div className="border-t border-slate-200" />

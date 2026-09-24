@@ -113,6 +113,7 @@ export function SalaryStructuresSection() {
             const isArchived = s.status === 'Archived'
             const earnings = s.components.filter((c) => c.type === 'Earning')
             const deductions = s.components.filter((c) => c.type === 'Deduction')
+            const isSimple = (s.mode ?? 'detailed') === 'simple'
             return (
               <motion.div
                 key={s.id}
@@ -126,7 +127,17 @@ export function SalaryStructuresSection() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{s.name}</p>
+                    <p className="text-sm font-semibold truncate">
+                      {s.name}
+                      <span className={cn(
+                        'ml-1.5 inline-block rounded px-1 py-px align-middle text-[8px] font-bold uppercase tracking-wider',
+                        isSimple
+                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                          : 'bg-violet-500/10 text-violet-700 dark:text-violet-400',
+                      )}>
+                        {isSimple ? 'Simple' : 'Detailed'}
+                      </span>
+                    </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
                       {s.applicableTo}{s.description ? ` · ${s.description}` : ''}
                     </p>
@@ -140,30 +151,45 @@ export function SalaryStructuresSection() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
-                    <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Base</p>
-                    <p className="text-sm font-bold tabular-nums mt-0.5">{moneyMy(s.baseAmount)}</p>
+                {isSimple ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-emerald-500/[0.07] px-2.5 py-1.5">
+                      <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Monthly Salary</p>
+                      <p className="text-sm font-bold tabular-nums mt-0.5 text-emerald-600 dark:text-emerald-400">{moneyMy(s.baseAmount)}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
+                      <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Model</p>
+                      <p className="text-sm font-bold mt-0.5">Simple</p>
+                    </div>
                   </div>
-                  <div className="rounded-lg bg-emerald-500/[0.07] px-2.5 py-1.5">
-                    <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Net / month</p>
-                    <p className="text-sm font-bold tabular-nums mt-0.5 text-emerald-600 dark:text-emerald-400">{moneyMy(math.net)}</p>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
+                        <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Base</p>
+                        <p className="text-sm font-bold tabular-nums mt-0.5">{moneyMy(s.baseAmount)}</p>
+                      </div>
+                      <div className="rounded-lg bg-emerald-500/[0.07] px-2.5 py-1.5">
+                        <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Net / month</p>
+                        <p className="text-sm font-bold tabular-nums mt-0.5 text-emerald-600 dark:text-emerald-400">{moneyMy(math.net)}</p>
+                      </div>
+                    </div>
 
-                <div className="space-y-1 text-[10px] leading-relaxed min-h-[2rem]">
-                  <p className="text-muted-foreground">
-                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">+ </span>
-                    Basic {shortInr(s.baseAmount)}
-                    {earnings.slice(0, 2).map((c) => ` · ${shortName(c.name)} ${shortInr(c.basis === 'Percentage' ? Math.round(s.baseAmount * c.value / 100) : c.value)}`).join('')}
-                    {earnings.length > 2 ? ` · +${earnings.length - 2} more` : ''}
-                  </p>
-                  <p className="text-muted-foreground">
-                    <span className="text-rose-600 dark:text-rose-400 font-semibold">− </span>
-                    {deductions.slice(0, 2).map((c) => `${shortName(c.name)} ${shortInr(c.basis === 'Percentage' ? Math.round(s.baseAmount * c.value / 100) : c.value)}`).join(' · ') || '—'}
-                    {deductions.length > 2 ? ` · +${deductions.length - 2} more` : ''}
-                  </p>
-                </div>
+                    <div className="space-y-1 text-[10px] leading-relaxed min-h-[2rem]">
+                      <p className="text-muted-foreground">
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">+ </span>
+                        Basic {shortInr(s.baseAmount)}
+                        {earnings.slice(0, 2).map((c) => ` · ${shortName(c.name)} ${shortInr(c.basis === 'Percentage' ? Math.round(s.baseAmount * c.value / 100) : c.value)}`).join('')}
+                        {earnings.length > 2 ? ` · +${earnings.length - 2} more` : ''}
+                      </p>
+                      <p className="text-muted-foreground">
+                        <span className="text-rose-600 dark:text-rose-400 font-semibold">− </span>
+                        {deductions.slice(0, 2).map((c) => `${shortName(c.name)} ${shortInr(c.basis === 'Percentage' ? Math.round(s.baseAmount * c.value / 100) : c.value)}`).join(' · ') || '—'}
+                        {deductions.length > 2 ? ` · +${deductions.length - 2} more` : ''}
+                      </p>
+                    </div>
+                  </>
+                )}
 
                 <div className="flex items-center gap-1.5 pt-1 border-t mt-auto">
                   <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1" onClick={() => setEditing(s)}>
@@ -213,15 +239,19 @@ export function SalaryStructuresSection() {
 interface EditorState {
   name: string
   applicableTo: EmployeeType | 'All'
+  /** 'simple' — one fixed monthly salary (the default workflow);
+   *  'detailed' — explicit component structure (Basic/HRA/PF/…). */
+  mode: 'simple' | 'detailed'
   baseAmount: string
   components: StructureComponent[]
 }
 
 function toEditorState(s: SalaryStructureTemplate | null): EditorState {
-  if (!s) return { name: '', applicableTo: 'Teaching', baseAmount: '', components: [] }
+  if (!s) return { name: '', applicableTo: 'Teaching', mode: 'simple', baseAmount: '', components: [] }
   return {
     name: s.name,
     applicableTo: s.applicableTo,
+    mode: s.mode ?? 'detailed',
     baseAmount: String(s.baseAmount),
     components: s.components.map((c) => ({ ...c })),
   }
@@ -259,13 +289,16 @@ function StructureEditorDialog({
 
   const handleSave = () => {
     if (!state.name.trim()) { toast.error('Enter a name for this structure.'); return }
-    if (base <= 0) { toast.error('Enter a valid base amount.'); return }
-    const components = state.components.filter((c) => c.name.trim() && c.value > 0)
+    if (base <= 0) { toast.error(state.mode === 'simple' ? 'Enter the monthly salary.' : 'Enter a valid base amount.'); return }
+    const components = state.mode === 'simple'
+      ? [] // simple = ONE fixed monthly salary — components are never stored
+      : state.components.filter((c) => c.name.trim() && c.value > 0)
     try {
       if (structure) {
         updateStructure(structure.id, {
           name: state.name.trim(),
           applicableTo: state.applicableTo,
+          mode: state.mode,
           baseAmount: base,
           components,
         })
@@ -273,8 +306,9 @@ function StructureEditorDialog({
       } else {
         createStructure({
           name: state.name.trim(),
-          description: '',
+          description: state.mode === 'simple' ? 'Monthly salary' : 'Component structure',
           applicableTo: state.applicableTo,
+          mode: state.mode,
           baseAmount: base,
           components,
         })
@@ -315,32 +349,75 @@ function StructureEditorDialog({
               </div>
             </div>
 
+            {/* Salary model — Simple is the school's default workflow */}
             <div className="space-y-1.5">
-              <Label className="text-xs" htmlFor="st-base">Base Amount (₹/month)</Label>
+              <Label className="text-xs">Salary Model</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setState((st) => ({ ...st, mode: 'simple' }))}
+                  className={cn(
+                    'rounded-lg border p-2.5 text-left transition-colors',
+                    state.mode === 'simple'
+                      ? 'border-emerald-500/50 bg-emerald-500/[0.06]'
+                      : 'border-border hover:border-emerald-500/30',
+                  )}
+                >
+                  <p className="text-xs font-semibold">Simple · Monthly Salary</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                    One fixed amount per month. The default school workflow — nothing is auto-computed.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState((st) => ({ ...st, mode: 'detailed' }))}
+                  className={cn(
+                    'rounded-lg border p-2.5 text-left transition-colors',
+                    state.mode === 'detailed'
+                      ? 'border-emerald-500/50 bg-emerald-500/[0.06]'
+                      : 'border-border hover:border-emerald-500/30',
+                  )}
+                >
+                  <p className="text-xs font-semibold">Detailed · Components</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Explicit Basic / HRA / PF / Tax lines — shown only when you configure them.
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="st-base">
+                {state.mode === 'simple' ? 'Monthly Salary (₹)' : 'Base Amount (₹/month)'}
+              </Label>
               <Input
-                id="st-base" inputMode="numeric" className="h-9 text-xs tabular-nums sm:max-w-[220px]" placeholder="10000"
+                id="st-base" inputMode="numeric" className="h-9 text-xs tabular-nums sm:max-w-[220px]"
+                placeholder={state.mode === 'simple' ? '25000' : '10000'}
                 value={state.baseAmount}
                 onChange={(e) => setState((st) => ({ ...st, baseAmount: e.target.value.replace(/[^0-9]/g, '') }))}
               />
             </div>
 
-            {/* Live preview */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
-                <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Earnings</p>
-                <p className="text-sm font-bold tabular-nums mt-0.5">{moneyMy(math.earnings)}</p>
+            {/* Live preview — detailed mode only (simple = the salary itself) */}
+            {state.mode === 'detailed' && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
+                  <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Earnings</p>
+                  <p className="text-sm font-bold tabular-nums mt-0.5">{moneyMy(math.earnings)}</p>
+                </div>
+                <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
+                  <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Deductions</p>
+                  <p className="text-sm font-bold tabular-nums mt-0.5 text-rose-600 dark:text-rose-400">{moneyMy(math.deductions)}</p>
+                </div>
+                <div className="rounded-lg bg-emerald-500/[0.07] px-2.5 py-1.5">
+                  <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Net</p>
+                  <p className="text-sm font-bold tabular-nums mt-0.5 text-emerald-600 dark:text-emerald-400">{moneyMy(math.net)}</p>
+                </div>
               </div>
-              <div className="rounded-lg bg-muted/40 px-2.5 py-1.5">
-                <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Deductions</p>
-                <p className="text-sm font-bold tabular-nums mt-0.5 text-rose-600 dark:text-rose-400">{moneyMy(math.deductions)}</p>
-              </div>
-              <div className="rounded-lg bg-emerald-500/[0.07] px-2.5 py-1.5">
-                <p className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">Net</p>
-                <p className="text-sm font-bold tabular-nums mt-0.5 text-emerald-600 dark:text-emerald-400">{moneyMy(math.net)}</p>
-              </div>
-            </div>
+            )}
 
-            {/* Components */}
+            {/* Components — detailed mode only */}
+            {state.mode === 'detailed' && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">Components</Label>
@@ -409,6 +486,7 @@ function StructureEditorDialog({
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 

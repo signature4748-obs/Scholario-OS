@@ -8,7 +8,7 @@
  *     canonical rows students and parents see). One Save writes the day.
  *   · SUBJECT TEACHER → the class teacher's baseline arrives PREFILLED;
  *     she changes only exceptions and explicitly submits her OWN subject
- *     session (a separate record — viewing never writes anything).
+ *     the SAME canonical record (spec §K — Class+Section+Date+Student).
  *
  * Composition (My-Timetable design language):
  *   ModuleToolbar (class + subject + date nav) → week strip
@@ -335,7 +335,7 @@ export function AttendanceModule() {
                     className="flex items-center gap-1.5"
                   >
                     <Save className="h-3.5 w-3.5" />
-                    {isSubjectMode ? 'Save session' : 'Save attendance'}
+                    'Save attendance'
                     {dirty && (
                       <span
                         className="ml-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400"
@@ -876,7 +876,7 @@ function MobileSaveRow({
             >
               <Save className="h-4 w-4 shrink-0" />
               <span className="truncate">
-                {isSubjectMode ? 'Save session' : 'Save attendance'}
+                'Save attendance'
               </span>
               {dirty && (
                 <span

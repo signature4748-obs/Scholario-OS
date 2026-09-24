@@ -7,12 +7,19 @@
  * module renders ONLY the signed-in teacher's own salary, payments,
  * receipts and change requests. No other employee's data is ever read.
  *
- * Information architecture (top → bottom, Marks Entry design language):
+ * Information architecture — CONFIGURATION-DRIVEN (Principal owns it):
+ *   SIMPLE salary (default — the school's chosen workflow):
+ *   1. Monthly Salary + Effective From + Latest Payment summary cards.
+ *      NO gross / deductions / net breakdown — nothing is auto-computed
+ *      or invented (no HRA, PF, Tax lines appear unless the Principal
+ *      has explicitly configured a detailed structure).
+ *   DETAILED salary (only when the Principal configured components):
  *   1. Current Salary        — gross / deductions / net / effective from.
  *      Net is ALWAYS computed (gross − deductions) and lands exactly on
  *      the session's netBase — never a second hardcoded number.
  *   2. Salary Breakdown      — every component of the applied scale, plus
  *      the current month's adjustments when present.
+ *   Both modes share:
  *   3. Trust workflow        — the payment lifecycle, presented honestly:
  *      the Principal records a payment → "Pending Receipt" (awaiting
  *      YOUR confirmation) → you confirm ✓ Received (status Confirmed,
@@ -165,7 +172,13 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
       .sort((a, b) => b.periodKey.localeCompare(a.periodKey))
   }, [myPayments])
 
-  // Structure numbers — net is computed, never a separate constant.
+  // Salary MODE — 'simple' (one fixed Monthly Salary, the default) or
+  // 'detailed' (components the Principal explicitly configured). Absence
+  // of the field (legacy records) is treated as detailed.
+  const mode = session?.mode ?? 'detailed'
+
+  // Structure numbers — only meaningful in detailed mode. Net is computed,
+  // never a separate constant.
   const grossBase = session?.earnings.reduce((s, c) => s + c.amount, 0) ?? 0
   const deductionBase = session?.deductions.reduce((s, c) => s + c.amount, 0) ?? 0
   const netPay = grossBase - deductionBase
@@ -173,7 +186,23 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
 
   const receipt = receipts.find((r) => r.receiptNo === receiptNo) ?? null
 
-  const stats: HubStat[] = session ? [
+  // SIMPLE — exactly what the Principal configured: the monthly salary,
+  // its effective date and the latest payment. Nothing derived.
+  const stats: HubStat[] = session && mode === 'simple' ? [
+    {
+      key: 'monthly', label: 'Monthly Salary', value: moneyMy(session.netBase), icon: Wallet, tone: 'emerald',
+      context: `${session.structureName} · per month`,
+    },
+    {
+      key: 'effective', label: 'Effective From', value: fmtDayYear(session.effectiveFrom), icon: CalendarDays,
+      context: `Session ${sessionLabelOf(salaryState.session)}`,
+    },
+    ...(latestConfirmed ? [{
+      key: 'latest', label: 'Latest Payment',
+      value: moneyMy(latestConfirmed.amount), icon: BadgeCheck,
+      context: `${latestConfirmed.monthLabel} · ${latestConfirmed.method}`,
+    }] : []),
+  ] : session ? [
     {
       key: 'gross', label: 'Monthly Gross', value: moneyMy(grossBase), icon: ArrowUpRight,
       context: `${session.structureName} scale`,
@@ -195,7 +224,35 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
   const handleDownloadPayslip = (m: PayslipMonth) => {
     if (!employee || !session) return
     const adj = adjustments.filter((a) => a.employeeId === employeeId && a.periodKey === m.periodKey)
-    // Slip lines = structure components + that month's adjustments.
+    const isSimple = (session.mode ?? 'detailed') === 'simple'
+
+    if (isSimple) {
+      // SIMPLE slip — the Monthly Salary and what was actually paid.
+      // No component breakdown is fabricated.
+      const bonus = adj.filter((a) => a.amount > 0).reduce((s, a) => s + a.amount, 0)
+      const recovered = adj.filter((a) => a.amount < 0).reduce((s, a) => s + Math.abs(a.amount), 0)
+      downloadTeacherPayslip({
+        teacherName: employee.name,
+        designation: employee.designation,
+        employeeId: employee.employeeId,
+        monthLabel: m.monthLabel,
+        mode: 'simple',
+        monthlySalary: session.netBase,
+        bonus,
+        recovered,
+        netPay: m.primary.amount,
+        payment: {
+          method: m.primary.method,
+          reference: m.primary.reference,
+          date: m.primary.date,
+          receiptNo: m.primary.receiptNo,
+        },
+      })
+      toast.success('Payslip downloaded', { description: `${m.monthLabel} · ${moneyMy(m.primary.amount)}` })
+      return
+    }
+
+    // DETAILED slip — structure components + that month's adjustments.
     const earnings = [
       ...session.earnings,
       ...adj.filter((a) => a.amount > 0).map((a) => ({ name: a.label, amount: a.amount })),
@@ -212,6 +269,7 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
       designation: employee.designation,
       employeeId: employee.employeeId,
       monthLabel: m.monthLabel,
+      mode: 'detailed',
       earnings,
       deductions,
       netPay: net,
@@ -251,8 +309,9 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
         </div>
       )}
 
-      {/* ── 2 · Salary breakdown ───────────────────────────────────── */}
-      {session && (
+      {/* ── 2 · Salary breakdown — DETAILED mode only (the Principal
+             configured components; simple mode shows nothing invented) */}
+      {session && mode === 'detailed' && (
         <div className="rounded-xl border border-border bg-card">
           <button
             type="button"
@@ -436,7 +495,8 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
           <div className="min-w-0">
             <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Latest payment</p>
             <p className="mt-1.5 text-sm font-bold">
-              {latestConfirmed.monthLabel} · Net Pay <span className="tabular-nums">{moneyMy(latestConfirmed.amount)}</span>
+              {latestConfirmed.monthLabel} · {mode === 'simple' ? 'Paid' : 'Net Pay'}{' '}
+              <span className="tabular-nums">{moneyMy(latestConfirmed.amount)}</span>
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               Paid · {latestConfirmed.method} · confirmed {fmtDayYear(latestConfirmed.confirmedAt ?? latestConfirmed.date)}
@@ -475,7 +535,7 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold">
                       {m.monthLabel}
-                      <span className="font-normal text-muted-foreground"> · Net Pay {moneyMy(m.primary.amount)}</span>
+                      <span className="font-normal text-muted-foreground"> · {mode === 'simple' ? 'Paid' : 'Net Pay'} {moneyMy(m.primary.amount)}</span>
                     </p>
                     {!confirmed && (
                       <p className="mt-0.5 text-[10px] text-muted-foreground">{payslipHint(m.primary.status)}</p>
@@ -525,9 +585,15 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Month</TableHead>
-                  <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">Gross</TableHead>
-                  <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">Deductions</TableHead>
-                  <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">Net Pay</TableHead>
+                  {mode === 'detailed' && (
+                    <>
+                      <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">Gross</TableHead>
+                      <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">Deductions</TableHead>
+                    </>
+                  )}
+                  <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">
+                    {mode === 'simple' ? 'Amount Paid' : 'Net Pay'}
+                  </TableHead>
                   <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Status</TableHead>
                   <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Paid Date</TableHead>
                   <TableHead className="h-9 px-3 text-[10px] uppercase font-bold tracking-wider text-muted-foreground text-right">Payslip</TableHead>
@@ -536,19 +602,23 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
               <TableBody>
                 {myPayments.map((p) => {
                   // Honest per-month derivation: structure + that month's
-                  // adjustments; Net Pay is what was actually paid.
+                  // adjustments; the amount column is what was actually paid.
                   const adj = adjustments.filter((a) => a.employeeId === employeeId && a.periodKey === p.periodKey)
                   const { gross, deductions } = monthGrossDeductions(session, adj)
                   const month = payslipMonths.find((m) => m.periodKey === p.periodKey)
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="px-3 py-2.5 text-xs font-semibold">{p.monthLabel}</TableCell>
-                      <TableCell className="px-3 py-2.5 text-xs tabular-nums text-right">
-                        {session ? moneyMy(gross) : '—'}
-                      </TableCell>
-                      <TableCell className="px-3 py-2.5 text-xs tabular-nums text-right text-rose-600 dark:text-rose-400">
-                        {session ? moneyMy(deductions) : '—'}
-                      </TableCell>
+                      {mode === 'detailed' && (
+                        <>
+                          <TableCell className="px-3 py-2.5 text-xs tabular-nums text-right">
+                            {session ? moneyMy(gross) : '—'}
+                          </TableCell>
+                          <TableCell className="px-3 py-2.5 text-xs tabular-nums text-right text-rose-600 dark:text-rose-400">
+                            {session ? moneyMy(deductions) : '—'}
+                          </TableCell>
+                        </>
+                      )}
                       <TableCell className="px-3 py-2.5 text-xs tabular-nums text-right font-bold">{moneyMy(p.amount)}</TableCell>
                       <TableCell className="px-3 py-2.5"><PaymentStatusBadge status={p.status} /></TableCell>
                       <TableCell className="px-3 py-2.5 text-xs text-muted-foreground">{fmtDay(p.date)}</TableCell>

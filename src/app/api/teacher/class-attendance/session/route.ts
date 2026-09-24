@@ -12,11 +12,20 @@ interface SessionBody {
 }
 
 /**
- * POST /api/teacher/class-attendance/session — a SUBJECT teacher submits
- * her own attendance session for a class she teaches. This is SEPARATE
- * from the class-teacher baseline (viewing the prefilled baseline never
- * writes anything — only this explicit submission does). Re-submitting
- * the same (class, subject, teacher, date) updates her own session.
+ * POST /api/teacher/class-attendance/session — an authorized SUBJECT
+ * teacher takes class attendance for a class she teaches.
+ *
+ * CANONICAL ATTENDANCE IDENTITY (spec §K): the record this writes is the
+ * SAME official daily record the class teacher's baseline writes — one
+ * row per Class + Section + Date + Student (unique per student+date).
+ * There is NO separate teacher/subject-specific attendance record: a
+ * subject teacher who opens the roster sees the class teacher's saved
+ * baseline for that date (prefill) and, when she saves, updates the same
+ * canonical rows (marked-by carries her name + subject for provenance).
+ *
+ * Authorization: the teacher must actually teach the posted subject for
+ * this class (timetable ∩ ACTIVE ClassSubjectAssignment — resolved
+ * server-side; a teacher can never touch a class she isn't assigned to).
  */
 export async function POST(request: Request) {
   return withUser(
@@ -33,9 +42,6 @@ export async function POST(request: Request) {
       const teaches = subjects.find((s) => s.id === body.subjectId)
       if (!teaches) throw new Error('FORBIDDEN — you do not teach this subject for this class')
 
-      const teacher = await db.teacher.findUnique({ where: { userId: user.id } })
-      if (!teacher) throw new Error('NO_TEACHER_RECORD')
-
       const students = await db.student.findMany({
         where: { classId: body.classId, user: { status: 'ACTIVE' } },
         select: { id: true },
@@ -46,32 +52,24 @@ export async function POST(request: Request) {
         throw new Error('Every student needs a valid status')
       }
 
-      const session = await db.subjectAttendanceSession.upsert({
-        where: {
-          classId_subjectId_teacherId_date: {
-            classId: body.classId,
-            subjectId: body.subjectId,
-            teacherId: teacher.id,
-            date: day,
-          },
-        },
-        create: {
-          schoolId,
-          classId: body.classId,
-          subjectId: body.subjectId,
-          teacherId: teacher.id,
-          date: day,
-        },
-        update: {},
+      // ONE canonical record per class-day (same as the class-teacher
+      // baseline): replace the day window and write one row per student.
+      // The marked-by line keeps the honest provenance of this save.
+      const nextDay = new Date(day.getTime() + 86_400_000)
+      await db.attendance.deleteMany({
+        where: { classId: body.classId, date: { gte: day, lt: nextDay } },
       })
-
+      const markedBy = `${user.name ?? 'Subject Teacher'} · ${teaches.name}`
       for (const e of entries) {
-        await db.subjectAttendanceEntry.upsert({
-          where: {
-            sessionId_studentId: { sessionId: session.id, studentId: e.studentId },
+        await db.attendance.create({
+          data: {
+            schoolId,
+            studentId: e.studentId,
+            classId: body.classId,
+            date: day,
+            status: e.status,
+            markedBy,
           },
-          create: { sessionId: session.id, studentId: e.studentId, status: e.status },
-          update: { status: e.status },
         })
       }
 
@@ -81,7 +79,7 @@ export async function POST(request: Request) {
         late: entries.filter((e) => e.status === 'LATE').length,
         leave: entries.filter((e) => e.status === 'LEAVE').length,
       }
-      return { saved: entries.length, subjectName: teaches.name, counts }
+      return { saved: entries.length, subjectName: teaches.name, canonical: true, counts }
     },
     { roles: ['TEACHER'] }
   )

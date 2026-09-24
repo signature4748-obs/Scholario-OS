@@ -34,7 +34,7 @@ import { getActiveTenantIdSync } from './active-tenant'
 export const TENANT_SCOPED_BASES = {
   fee: 'scholario-fee-store-v1',
   schoolSettings: 'scholario_school_settings_v1',
-  salary: 'scholario-salary-v3',
+  salary: 'scholario-salary-v4',
   teachers: 'gws-teachers-lifecycle-store',
   admission: 'scholario_admission_store',
   applications: 'scholario-applications-v1',

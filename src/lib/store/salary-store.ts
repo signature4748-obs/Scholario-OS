@@ -69,12 +69,28 @@ export interface StructureComponent {
   value: number
 }
 
+/** How a salary structure pays an employee.
+ *
+ *   'simple'   — ONE fixed monthly salary (the default school workflow:
+ *                "Monthly Salary ₹25,000"). No gross/deductions/net
+ *                breakdown is computed or displayed.
+ *   'detailed' — the Principal has EXPLICITLY configured salary
+ *                components (Basic / HRA / PF / Tax …); only the
+ *                configured components are ever shown.
+ *
+ * Absence of the field (legacy persisted data) is treated as 'detailed'
+ * to preserve records created before this distinction existed. */
+export type SalaryStructureMode = 'simple' | 'detailed'
+
 export interface SalaryStructureTemplate {
   id: string
   name: string
   description: string
   applicableTo: EmployeeType | 'All'
+  /** SIMPLE mode: the monthly salary itself. DETAILED mode: the Basic Pay
+   *  base the percentage/fixed components resolve against. */
   baseAmount: number
+  mode: SalaryStructureMode
   components: StructureComponent[]
   status: StructureStatus
   createdAt: string
@@ -90,6 +106,8 @@ export interface AppliedComponent {
 export interface SessionSalary {
   structureId: string
   structureName: string
+  /** 'simple' → a single Monthly Salary; 'detailed' → component lines. */
+  mode: SalaryStructureMode
   base: number
   netBase: number
   earnings: AppliedComponent[]
@@ -383,6 +401,12 @@ export const CURRENT_SESSION = { id: '2026-27', label: 'Session 2026–27' }
 const METHODS: PaymentMethod[] = ['Bank Transfer', 'UPI', 'Cash', 'Cheque']
 
 // ─── Salary scales ───────────────────────────────────────────────────
+//
+// DEFAULT = SIMPLE MONTHLY SALARY (the school's chosen workflow):
+// every seeded structure pays one fixed monthly amount — no HRA / PF /
+// Professional Tax components are invented. The Principal can build a
+// DETAILED structure later (the UI supports it); nothing detailed is
+// seeded.
 
 const ded = (id: string, name: string, basis: 'Fixed' | 'Percentage', value: number): StructureComponent =>
   ({ id, name, type: 'Deduction', basis, value })
@@ -392,74 +416,53 @@ const earn = (id: string, name: string, basis: 'Fixed' | 'Percentage', value: nu
 const SEED_STRUCTURES: SalaryStructureTemplate[] = [
   {
     id: 'STR-01', name: 'Primary Teaching', applicableTo: 'Teaching',
-    description: 'Nursery to Class 5', baseAmount: 6000, status: 'Active', createdAt: '2026-04-01T09:00:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 10), earn('c2', 'Transport Allowance', 'Fixed', 400),
-      ded('c3', 'Provident Fund', 'Percentage', 12), ded('c4', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Nursery to Class 5 · monthly salary', baseAmount: 7500, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:00:00.000Z',
+    components: [],
   },
   {
     id: 'STR-02', name: 'Middle School Teaching', applicableTo: 'Teaching',
-    description: 'Class 6 to Class 9', baseAmount: 10000, status: 'Active', createdAt: '2026-04-01T09:05:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 15), earn('c2', 'Transport Allowance', 'Fixed', 600), earn('c3', 'Academic Allowance', 'Fixed', 500),
-      ded('c4', 'Provident Fund', 'Percentage', 12), ded('c5', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Class 6 to Class 9 · monthly salary', baseAmount: 11800, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:05:00.000Z',
+    components: [],
   },
   {
     id: 'STR-03', name: 'HOD & Senior Teaching', applicableTo: 'Teaching',
-    description: 'HODs · Class 9–12', baseAmount: 24000, status: 'Active', createdAt: '2026-04-01T09:10:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 20), earn('c2', 'Responsibility Allowance', 'Fixed', 3000), earn('c3', 'Transport Allowance', 'Fixed', 800),
-      ded('c4', 'Provident Fund', 'Percentage', 12), ded('c5', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'HODs · Class 9–12 · monthly salary', baseAmount: 26500, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:10:00.000Z',
+    components: [],
   },
   {
     id: 'STR-04', name: 'Senior Leadership', applicableTo: 'Administration',
-    description: 'Principal and leadership', baseAmount: 30000, status: 'Active', createdAt: '2026-04-01T09:15:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 20), earn('c2', 'Responsibility Allowance', 'Fixed', 4000),
-      ded('c3', 'Provident Fund', 'Percentage', 12), ded('c4', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Principal and leadership · monthly salary', baseAmount: 35000, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:15:00.000Z',
+    components: [],
   },
   {
     id: 'STR-05', name: 'Office & Administration', applicableTo: 'Administration',
-    description: 'Office and accounts staff', baseAmount: 9000, status: 'Active', createdAt: '2026-04-01T09:20:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 12), earn('c2', 'Transport Allowance', 'Fixed', 400),
-      ded('c3', 'Provident Fund', 'Percentage', 12), ded('c4', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Office and accounts staff · monthly salary', baseAmount: 12500, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:20:00.000Z',
+    components: [],
   },
   {
     id: 'STR-06', name: 'Support Staff', applicableTo: 'Support',
-    description: 'Lab and security staff', baseAmount: 7500, status: 'Active', createdAt: '2026-04-01T09:25:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 10),
-      ded('c2', 'Provident Fund', 'Percentage', 12), ded('c3', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Lab and security staff · monthly salary', baseAmount: 8400, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:25:00.000Z',
+    components: [],
   },
   {
     id: 'STR-07', name: 'Transport Staff', applicableTo: 'Transport',
-    description: 'Drivers and conductors', baseAmount: 8500, status: 'Active', createdAt: '2026-04-01T09:30:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 10), earn('c2', 'Route Allowance', 'Fixed', 600),
-      ded('c3', 'Provident Fund', 'Percentage', 12), ded('c4', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Drivers and conductors · monthly salary', baseAmount: 9600, mode: 'simple', status: 'Active', createdAt: '2026-04-01T09:30:00.000Z',
+    components: [],
   },
   {
     id: 'STR-08', name: 'Legacy 2019 Scale', applicableTo: 'All',
-    description: 'Retired scale from an earlier session', baseAmount: 4500, status: 'Archived', createdAt: '2019-04-01T09:00:00.000Z',
-    components: [
-      earn('c1', 'HRA', 'Percentage', 10),
-      ded('c2', 'Provident Fund', 'Percentage', 12), ded('c3', 'Professional Tax', 'Fixed', 200),
-    ],
+    description: 'Retired scale from an earlier session', baseAmount: 4500, mode: 'simple', status: 'Archived', createdAt: '2019-04-01T09:00:00.000Z',
+    components: [],
   },
 ]
 
-// ─── Staff placements (scale + net salary) ───────────────────────────
-// Salaries follow teaching level, subject and responsibility:
-//   Primary (Nursery–Class 5)  ₹5,000 – ₹8,000
-//   Middle school (Class 6–9)  ₹8,000 – ₹13,500
+// ─── Staff placements (scale + monthly salary) ────────────────────────
+// SIMPLE monthly salary per employee — one fixed amount, effective from
+// the start of the session (1 Apr 2026). The demo follows the school's
+// simple-salary workflow; a detailed structure is only ever shown when
+// the Principal explicitly configures one.
+//   Primary (Nursery–Class 5)  ₹6,000 – ₹8,000
+//   Middle school (Class 6–9)  ₹9,000 – ₹13,500
 //   Senior / HOD (Class 9–12)  ₹16,800 – ₹28,400
 
 interface Placement { structureId: string; net: number }
@@ -473,7 +476,7 @@ const PLACEMENTS: Record<string, Placement> = {
   'T-005': { structureId: 'STR-01', net: 6200 }, // Meera Krishnan — Teacher, Hindi, LKG (8y)
   'T-008': { structureId: 'STR-01', net: 6800 }, // Sunita Rao — Teacher, Mathematics, UKG (10y)
   'T-011': { structureId: 'STR-01', net: 7800 }, // Kavita Joshi — Senior Teacher, Science/EVS, Class 1 (15y)
-  'T-014': { structureId: 'STR-01', net: 7900 }, // Rohan Mehta — Senior Teacher, Maths/Computer, Class 2 (9y)
+  'T-014': { structureId: 'STR-03', net: 25000 }, // Rohan Mehta — Senior Maths Teacher, Grades 6–12 (spec example: ₹25,000/month from 1 Apr 2026)
   'T-017': { structureId: 'STR-01', net: 6500 }, // Amit Verma — Teacher, Physics/Maths, Class 3 (7y)
   'T-020': { structureId: 'STR-01', net: 7600 }, // Deepa Menon — Senior Teacher, English/SST, Class 4 (18y)
   'T-023': { structureId: 'STR-01', net: 6700 }, // Vikram Singh — Teacher, SST/History, Class 5 (11y)
@@ -552,6 +555,24 @@ export const SEED_EMPLOYEES = buildEmployees()
 // ─── Apply a scale ───────────────────────────────────────────────────
 
 function buildSession(template: SalaryStructureTemplate, base: number, effectiveFrom: string, exactNet?: number): SessionSalary {
+  const mode = template.mode ?? 'detailed'
+
+  // SIMPLE — one fixed Monthly Salary. The monthly amount IS the salary:
+  // no Basic/HRA/PF components are invented, nothing is derived.
+  if (mode === 'simple') {
+    const monthly = exactNet ?? base
+    return {
+      structureId: template.id,
+      structureName: template.name,
+      mode,
+      base: monthly,
+      netBase: monthly,
+      earnings: [{ name: 'Monthly Salary', type: 'Earning', amount: monthly }],
+      deductions: [],
+      effectiveFrom,
+    }
+  }
+
   const earnings: AppliedComponent[] = [
     { name: 'Basic Pay', type: 'Earning', amount: base },
     ...template.components
@@ -567,11 +588,13 @@ function buildSession(template: SalaryStructureTemplate, base: number, effective
     earnings[0] = { ...earnings[0], amount: earnings[0].amount + (exactNet - netBase) }
     netBase = exactNet
   }
-  return { structureId: template.id, structureName: template.name, base, netBase, earnings, deductions, effectiveFrom }
+  return { structureId: template.id, structureName: template.name, mode, base, netBase, earnings, deductions, effectiveFrom }
 }
 
 /** Places an employee on a scale for a target GROSS earnings total. */
 export function applyStructure(template: SalaryStructureTemplate, targetGross: number, effectiveFrom: string): SessionSalary {
+  // Simple scale — gross == net == the monthly salary.
+  if ((template.mode ?? 'detailed') === 'simple') return buildSession(template, targetGross, effectiveFrom)
   const pctEarnings = template.components.filter((c) => c.type === 'Earning' && c.basis === 'Percentage')
     .reduce((s, c) => s + c.value, 0) / 100
   const fixedEarnings = template.components.filter((c) => c.type === 'Earning' && c.basis === 'Fixed')
@@ -582,6 +605,8 @@ export function applyStructure(template: SalaryStructureTemplate, targetGross: n
 
 /** Places an employee on a scale for an exact target NET salary. */
 export function applyStructureToNet(template: SalaryStructureTemplate, targetNet: number, effectiveFrom: string): SessionSalary {
+  // Simple scale — the target net IS the monthly salary, exactly.
+  if ((template.mode ?? 'detailed') === 'simple') return buildSession(template, targetNet, effectiveFrom)
   const pctEarnings = template.components.filter((c) => c.type === 'Earning' && c.basis === 'Percentage')
     .reduce((s, c) => s + c.value, 0) / 100
   const fixedEarnings = template.components.filter((c) => c.type === 'Earning' && c.basis === 'Fixed')
@@ -1214,7 +1239,7 @@ export const useSalaryStore = create<SalaryState>()(
       }
     },
     {
-      name: 'scholario-salary-v3',
+      name: 'scholario-salary-v4',
       // SaaS-STAGE-2A — tenant-scoped: each school has its own payroll
       // dataset (structures, salaries, payments, receipts, audit).
       storage: createTenantScopedStorage(TENANT_SCOPED_BASES.salary),

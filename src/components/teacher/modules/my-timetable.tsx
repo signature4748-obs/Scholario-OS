@@ -58,8 +58,12 @@ import {
 } from './shared/hub-stat-cards'
 import { signOut } from '@/lib/signout'
 import { useLiveFeedStore } from '@/lib/store/live-feed-store'
-import { ExportIcsButton } from '@/components/shared/export-ics-button'
-import { nextOccurrenceISO, type IcsEventInput } from '@/lib/ics/builder'
+import { useCurrentUser } from '@/lib/store/current-user-store'
+import { toast } from 'sonner'
+import { FileDown, FileType2 } from 'lucide-react'
+import {
+  downloadTeacherTimetablePdf, downloadTeacherTimetableDocx,
+} from './timetable-export'
 
 // ── payload contracts ─────────────────────────────────────────────────
 
@@ -500,6 +504,8 @@ function ExamDutiesSection({
 // ── module ────────────────────────────────────────────────────────────
 
 export function MyTimetableModule() {
+  // Server identity — the teacher's own name for document exports.
+  const teacherName = useCurrentUser((s) => s.me?.name) ?? 'Teacher'
   const reduce = useReducedMotion()
   const [data, setData] = useState<TimetablePayload | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -605,29 +611,6 @@ export function MyTimetableModule() {
         .sort((a, b) => a.period - b.period),
     [cells, today],
   )
-
-  // ── calendar export events (the teacher's OWN cells, weekly) ──────
-  const icsEvents = useMemo<IcsEventInput[]>(() => {
-    const out: IcsEventInput[] = []
-    for (const c of cells) {
-      const startMin = minutesOf(c.startTime)
-      const endMin = minutesOf(c.endTime)
-      if (startMin === null || endMin === null) continue
-      const weekday = WEEKDAY_NAMES.indexOf(c.day)
-      if (weekday < 0) continue
-      out.push({
-        uid: `scholario-teacher-${c.day}-${c.period}-${c.classLabel.replace(/[^a-z0-9]+/gi, '')}@scholario`,
-        title: `${c.subjectName} · ${c.classLabel}`,
-        description: `Teaching period P${c.period}${c.room ? ` · ${c.room}` : ''}`,
-        location: c.room ?? undefined,
-        startMin,
-        endMin,
-        weekday,
-        firstDate: nextOccurrenceISO(weekday),
-      })
-    }
-    return out
-  }, [cells])
 
   // Live "Now"/"Next" — from the real client clock and the school ladder.
   const live = useMemo<LiveSlot | null>(() => {
@@ -760,14 +743,53 @@ export function MyTimetableModule() {
                 Updated · live
               </span>
             )}
-            <ExportIcsButton
-              events={icsEvents}
-              calendarName="My Teaching Timetable"
-              calendarDescription={`Weekly teaching schedule · Academic Session ${session ?? ''}`.trim()}
-              filename="my-teaching-timetable"
-              variant="toolbar"
-              label="Export .ics"
-            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => {
+                try {
+                  downloadTeacherTimetablePdf({
+                    teacherName: teacherName,
+                    session,
+                    days: schoolDays,
+                    periodTimes,
+                    cells,
+                  })
+                  toast.success('Timetable PDF downloaded', {
+                    description: 'A4 landscape · print-ready weekly grid.',
+                  })
+                } catch {
+                  toast.error('Could not generate the PDF')
+                }
+              }}
+            >
+              <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+              Export PDF
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => {
+                void downloadTeacherTimetableDocx({
+                  teacherName: teacherName,
+                  session,
+                  days: schoolDays,
+                  periodTimes,
+                  cells,
+                })
+                  .then(() => {
+                    toast.success('Timetable Word document downloaded', {
+                      description: 'Editable .docx table — open in Word / Docs.',
+                    })
+                  })
+                  .catch(() => toast.error('Could not generate the Word document'))
+              }}
+            >
+              <FileType2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Export Word
+            </Button>
           </div>
         }
       />

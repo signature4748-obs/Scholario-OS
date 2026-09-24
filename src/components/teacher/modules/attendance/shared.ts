@@ -7,7 +7,7 @@
  *   · the CLASS TEACHER owns the official daily baseline — the canonical
  *     Attendance rows students and parents see;
  *   · SUBJECT TEACHERS get that baseline prefilled, change only the
- *     exceptions, and explicitly submit their OWN per-subject session
+ *     exceptions, and save the canonical class attendance record
  *     (a separate record — viewing never writes anything).
  *
  * Every value on screen comes from /api/teacher/class-attendance*

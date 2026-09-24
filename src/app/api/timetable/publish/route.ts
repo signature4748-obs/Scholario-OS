@@ -104,6 +104,37 @@ export async function POST(req: NextRequest) {
       }
 
       // 4 — replace-all within the school (publish = the new truth).
+      //     The publish IS a Principal configuration act: every (class,
+      //     subject) it schedules becomes ACTIVE ClassSubjectAssignment
+      //     config, so a published timetable can never contain an
+      //     "unconfigured subject" cell (no orphaned rows, ever).
+      const pairs = new Set(
+        drafts.flatMap((d) => {
+          const cls = classByKey.get(d.className)
+          const subj = subjectByKey.get(d.subject)
+          return cls && subj ? [[cls.id, subj.id] as const] : []
+        })
+      )
+      let csaCreated = 0
+      for (const [classId, subjectId] of pairs) {
+        const existing = await db.classSubjectAssignment.findUnique({
+          where: { classId_subjectId: { classId, subjectId } },
+          select: { id: true, isActive: true },
+        })
+        if (!existing) {
+          await db.classSubjectAssignment.create({
+            data: { schoolId, classId, subjectId, isActive: true },
+          })
+          csaCreated += 1
+        } else if (!existing.isActive) {
+          await db.classSubjectAssignment.update({
+            where: { id: existing.id },
+            data: { isActive: true },
+          })
+          csaCreated += 1
+        }
+      }
+
       const removed = await db.timetable.deleteMany({ where: { schoolId } })
       const written = await db.timetable.createMany({
         data: drafts.map((d) => ({
@@ -134,6 +165,7 @@ export async function POST(req: NextRequest) {
         rowsReplaced: removed.count,
         classes: classByKey.size,
         subjects: subjectByKey.size,
+        subjectConfigsEnsured: csaCreated,
       }
     },
     { roles: ['PRINCIPAL'] },

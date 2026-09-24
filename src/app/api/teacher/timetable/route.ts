@@ -15,6 +15,13 @@ export const runtime = 'nodejs'
  *     applied server-side before anything is returned;
  *   · subjects/classes come from the row relations, never fabricated.
  *
+ * PRINCIPAL-CONFIG GATE (single source of truth): every returned cell is
+ * validated against the ACTIVE ClassSubjectAssignment of its class — a
+ * timetable row whose subject is NOT configured for that class by the
+ * Principal (or whose subject was deleted) can never leak into the
+ * Teacher UI. Orphaned rows are excluded server-side and counted in
+ * `excludedUnconfigured` for honest diagnostics.
+ *
  * ONE query fetches every Timetable row of the school (~78). Three things
  * derive from that single snapshot:
  *   · cells        — the teacher's own rows (name filter above);
@@ -78,9 +85,27 @@ export async function GET() {
         },
       })
 
+      // ── PRINCIPAL-CONFIG GATE ────────────────────────────────────────
+      // Only (class, subject) pairs the Principal has actually configured
+      // (ACTIVE ClassSubjectAssignment) are valid teaching entries. Rows
+      // failing this check are excluded — they never reach the teacher.
+      const activeCSA = new Set(
+        (await db.classSubjectAssignment.findMany({
+          where: { schoolId, isActive: true },
+          select: { classId: true, subjectId: true },
+        })).map((c) => `${c.classId}|${c.subjectId}`),
+      )
+      const configValid = (r: (typeof allRows)[number]) =>
+        r.subjectId !== null && activeCSA.has(`${r.classId}|${r.subjectId}`)
+      const excludedUnconfigured = allRows.filter((r) => !configValid(r)).length
+
       // ── the teacher's OWN cells (server-side name scoping) ──────────
       const ownRows = teacherName
-        ? allRows.filter((r) => (r.teacherName || '').trim().toLowerCase() === teacherName)
+        ? allRows.filter(
+            (r) =>
+              (r.teacherName || '').trim().toLowerCase() === teacherName &&
+              configValid(r),
+          )
         : []
 
       const cells = ownRows
@@ -249,6 +274,10 @@ export async function GET() {
         schoolDays,
         conflicts,
         examDuties,
+        /** School-wide timetable rows excluded by the principal-config gate
+         *  (subject not configured for the class / deleted subject). 0 in
+         *  a healthy school; honest diagnostics otherwise. */
+        excludedUnconfigured,
       }
     },
     { roles: ['TEACHER'] }

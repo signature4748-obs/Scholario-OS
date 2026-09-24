@@ -141,26 +141,33 @@ export function SalaryEmployeeDrawer() {
                   </div>
                   <div className="flex items-end justify-between mt-3">
                     <div>
-                      <p className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Net Base / month</p>
+                      <p className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                        {(state?.salary.mode ?? 'detailed') === 'simple' ? 'Monthly Salary' : 'Net Base / month'}
+                      </p>
                       <p className="text-2xl font-bold tabular-nums mt-1 leading-none">{state ? moneyMy(state.salary.netBase) : '—'}</p>
                     </div>
                     <p className="text-[10px] text-muted-foreground">from {fmtDayYear(state?.salary.effectiveFrom ?? '')}</p>
                   </div>
 
-                  <div className="mt-4 space-y-1">
-                    {state?.salary.earnings.map((c) => (
-                      <div key={`e-${c.name}`} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">+ {c.name}</span>
-                        <span className="font-medium tabular-nums">{moneyMy(c.amount)}</span>
-                      </div>
-                    ))}
-                    {state?.salary.deductions.map((c) => (
-                      <div key={`d-${c.name}`} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">− {c.name}</span>
-                        <span className="font-medium tabular-nums text-rose-600 dark:text-rose-400">{moneyMy(c.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* Component lines — DETAILED mode only. In simple mode the
+                      single Monthly Salary IS the figure above; no HRA/PF/
+                      Tax lines are invented. */}
+                  {(state?.salary.mode ?? 'detailed') === 'detailed' && (
+                    <div className="mt-4 space-y-1">
+                      {state?.salary.earnings.map((c) => (
+                        <div key={`e-${c.name}`} className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">+ {c.name}</span>
+                          <span className="font-medium tabular-nums">{moneyMy(c.amount)}</span>
+                        </div>
+                      ))}
+                      {state?.salary.deductions.map((c) => (
+                        <div key={`d-${c.name}`} className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">− {c.name}</span>
+                          <span className="font-medium tabular-nums text-rose-600 dark:text-rose-400">{moneyMy(c.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-[10px] text-muted-foreground mt-3 pt-3 border-t">{state?.salary.structureName}</p>
                 </div>
 
@@ -335,9 +342,17 @@ export function EditSalaryDialog({
   const requestSalaryChange = useSalaryStore((s) => s.requestSalaryChange)
   const allStructures = useSalaryStore((s) => s.structures)
   const structures = useMemo(() => allStructures.filter((st) => st.status === 'Active'), [allStructures])
+  const currentSalary = useSalaryStore((s) => s.salaries[employeeId]?.salary)
   const [newNet, setNewNet] = useState('')
   const [structureId, setStructureId] = useState('')
   const [note, setNote] = useState('')
+
+  // Salary model of the RESULT: the selected structure's mode, else the
+  // employee's current mode. Drives the field label — "Monthly Salary"
+  // in the simple workflow (the default), "Net" for a detailed structure.
+  const selectedStructure = structures.find((st) => st.id === structureId)
+  const effectiveMode = selectedStructure?.mode ?? currentSalary?.mode ?? 'detailed'
+  const isSimple = effectiveMode === 'simple'
 
   const effOptions = useMemo(() => {
     const cur = currentPeriodKey()
@@ -379,7 +394,9 @@ export function EditSalaryDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs" htmlFor="es-net">New Net (₹/month)</Label>
+              <Label className="text-xs" htmlFor="es-net">
+                {isSimple ? 'New Monthly Salary (₹)' : 'New Net (₹/month)'}
+              </Label>
               <div className="relative">
                 <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input id="es-net" inputMode="numeric" className="pl-7 h-9 tabular-nums" placeholder={String(currentNet)} value={newNet} onChange={(e) => setNewNet(e.target.value.replace(/[^0-9]/g, ''))} />
@@ -400,7 +417,11 @@ export function EditSalaryDialog({
             <Select value={structureId} onValueChange={setStructureId}>
               <SelectTrigger className="h-9 w-full text-xs"><SelectValue placeholder="Keep current" /></SelectTrigger>
               <SelectContent className="z-[70]">
-                {structures.map((st) => <SelectItem key={st.id} value={st.id} className="text-xs">{st.name}</SelectItem>)}
+                {structures.map((st) => (
+                  <SelectItem key={st.id} value={st.id} className="text-xs">
+                    {st.name} · {(st.mode ?? 'detailed') === 'simple' ? 'Monthly Salary' : 'Detailed'}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

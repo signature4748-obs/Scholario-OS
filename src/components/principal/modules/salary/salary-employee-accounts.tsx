@@ -51,6 +51,8 @@ function avatarTone(due: number, paid: number): string {
 
 interface AccountRow {
   employee: Employee
+  /** Simple salary model (one fixed monthly amount) — honest labels. */
+  isSimple: boolean
   grossMonthly: number
   payableCurrent: number
   paidSession: number
@@ -83,6 +85,8 @@ export function SalaryEmployeeAccountsSection() {
       const state = salaries[e.id]
       // True gross = every earning line (basic + allowances), not just basic pay.
       const grossMonthly = state ? state.salary.earnings.reduce((s, c) => s + c.amount, 0) : 0
+      // Simple mode: the single line IS the Monthly Salary — label it honestly.
+      const isSimple = state ? (state.salary.mode ?? 'detailed') === 'simple' : false
       const row = rows.find((r) => r.employee.id === e.id)
       const payableCurrent = row?.payable ?? 0
 
@@ -107,6 +111,7 @@ export function SalaryEmployeeAccountsSection() {
       return {
         employee: e,
         grossMonthly,
+        isSimple,
         payableCurrent,
         paidSession,
         pendingAmount,
@@ -163,7 +168,7 @@ export function SalaryEmployeeAccountsSection() {
       {/* Summary strip — where the session's payroll stands right now */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <AccountTile label="Employees" value={String(totals.employees)} icon={<Users className="h-3 w-3" />} />
-        <AccountTile label="Gross / Month" value={moneyMy(totals.grossMonthly)} icon={<Wallet className="h-3 w-3" />} />
+        <AccountTile label="Monthly Payout" value={moneyMy(totals.grossMonthly)} icon={<Wallet className="h-3 w-3" />} />
         <AccountTile label={`Paid · ${sessionLabel}`} value={moneyMy(totals.paidSession)} tone="emerald" icon={<CheckCircle2 className="h-3 w-3" />} />
         <AccountTile
           label="Outstanding"
@@ -306,7 +311,7 @@ function EmployeeCard({ row, index, onOpen }: { row: AccountRow; index: number; 
 
       {/* Payroll position — 2×2, mirrors the student card's stat tiles */}
       <div className="grid grid-cols-2 gap-2">
-        <CardStat label="Gross / Month" value={moneyMy(row.grossMonthly)} />
+        <CardStat label={row.isSimple ? "Monthly Salary" : "Gross / Month"} value={moneyMy(row.grossMonthly)} />
         <CardStat label="Payable" value={moneyMy(row.payableCurrent)} sub="this month" />
         <CardStat
           label="Paid"

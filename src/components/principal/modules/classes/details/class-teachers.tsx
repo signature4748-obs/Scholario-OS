@@ -31,7 +31,7 @@
  * Brief section 22 + 35 + 37: Save writes through canonical store actions;
  *   mutations propagate live to Overview + header badges.
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Pencil, Archive } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils'
 import { useStudentsStore } from '@/lib/store/students-store'
 import type { ClassRecord } from '@/lib/store/students-store'
 import { useTeachersMockStore } from '@/lib/store/teachers-mock-store'
+import { useAcademicConfigStore, resolveDbClassFor } from '@/lib/academic-config/client'
 import { SegmentedTabs } from '../../shared/segmented-tabs'
 import { EntityCard } from '../../shared/entity-card'
 import { TeacherAssignmentControl } from './teacher-assignment-control'
@@ -67,6 +68,16 @@ export function ClassTeachers({ cls }: { cls: ClassRecord }) {
   // Subscribe to teacher store — needed to filter archived teachers from picker options.
   const teachers = useTeachersMockStore((s) => s.teachers)
   const archiveTeacherAction = useTeachersMockStore((s) => s.archiveTeacher)
+
+  // ── Server link — the Class Teacher appointment is the authoritative
+  // capability gate for the Teacher's "My Class" module. When this class
+  // maps to a server class, saving a Class Teacher change ALSO writes the
+  // server record (Class.classTeacherId) — the single source of truth.
+  const academicConfig = useAcademicConfigStore((s) => s.config)
+  const fetchAcademic = useAcademicConfigStore((s) => s.fetch)
+  const academicAct = useAcademicConfigStore((s) => s.act)
+  useEffect(() => { void fetchAcademic() }, [fetchAcademic])
+  const dbClass = resolveDbClassFor(liveClass, academicConfig?.classes ?? [])
 
   const [mode, setMode] = useState<Mode>('separate')
   const [editMode, setEditMode] = useState(false)
@@ -164,10 +175,30 @@ export function ClassTeachers({ cls }: { cls: ClassRecord }) {
       return initial[key] ?? null
     }
 
-    // Class Teacher
+    // Class Teacher — write through to the SERVER record when this class
+    // is server-linked (the authoritative Class.classTeacherId that gates
+    // the Teacher's My Class capabilities), plus the legacy mock store.
     const classTeacherNext = resolveNext('class_teacher')
     if ((initial['class_teacher'] ?? null) !== (classTeacherNext ?? null)) {
       updateClassTeacher(liveClass.id, classTeacherNext)
+      if (dbClass) {
+        const teacherName = classTeacherNext
+          ? teachers.find((t) => t.id === classTeacherNext)?.name ?? null
+          : null
+        void academicAct({
+          action: 'classTeacher.set',
+          classId: dbClass.id,
+          teacherName,
+        }).then(() => {
+          toast.success('Class teacher updated on the server', {
+            description: `${dbClass.label} — the Teacher's My Class access follows this assignment.`,
+          })
+        }).catch((e: unknown) => {
+          toast.error('Server sync failed', {
+            description: e instanceof Error ? e.message : 'The class teacher was not updated on the server.',
+          })
+        })
+      }
       changeCount++
     }
 
