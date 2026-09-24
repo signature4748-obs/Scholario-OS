@@ -23,9 +23,14 @@ export const runtime = 'nodejs'
  *      registered yet);
  *   3. resolve each distinct subject → Subject row (match by name; create
  *      when missing — same honest rule);
- *   4. delete all existing Timetable rows for the school, then write the
+ *   4. STALE-SNAPSHOT GUARD — if the school already has timetable rows but
+ *      ZERO of the payload's classes exist in the DB, this is almost
+ *      certainly an unhydrated/mock snapshot trying to replace real data
+ *      (the client blocks offline publishes; this is the server-side
+ *      backstop). Refused with 409.
+ *   5. delete all existing Timetable rows for the school, then write the
  *      new set in one createMany;
- *   5. log the publication to ActivityLog (platform audit trail).
+ *   6. log the publication to ActivityLog (platform audit trail).
  *
  * Students and teachers read these rows on their next module load — the
  * Principal publishes → the whole school sees it (one data universe).
@@ -53,8 +58,11 @@ export async function POST(req: NextRequest) {
       if (drafts.length === 0) throw new Error('UNPARSEABLE_SLOTS')
 
       // 2 — resolve classes (name → row; create genuinely new classes).
+      //     Track how many payload classes ALREADY exist — the stale-snapshot
+      //     guard below needs to know.
       const classNames = [...new Set(drafts.map((d) => d.className))].filter(Boolean)
       const classByKey = new Map<string, { id: string; name: string; section: string | null }>()
+      let payloadClassesExisting = 0
       for (const name of classNames) {
         const existing = await db.class.findFirst({
           where: { schoolId, name },
@@ -62,6 +70,7 @@ export async function POST(req: NextRequest) {
         })
         if (existing) {
           classByKey.set(name, existing)
+          payloadClassesExisting += 1
         } else {
           // Name may carry its own section ("Grade 9 - A") — keep the full
           // label as the name (that's how the roster renders it) and derive
@@ -103,7 +112,19 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 4 — replace-all within the school (publish = the new truth).
+      // 4 — STALE-SNAPSHOT GUARD (data-integrity backstop): the school has
+      //     real rows, but NONE of the payload's classes match any existing
+      //     class → the snapshot was never hydrated from this school's
+      //     records. Refuse instead of wiping real schedules with a foreign
+      //     universe (e.g. the retired demo/mock classes).
+      const existingRowCount = await db.timetable.count({ where: { schoolId } })
+      if (existingRowCount > 0 && payloadClassesExisting === 0) {
+        throw new Error(
+          'STALE_SNAPSHOT_REFUSED: this school already has a timetable, but none of the submitted classes match its records. Reload the Timetable module and publish again.',
+        )
+      }
+
+      // 5 — replace-all within the school (publish = the new truth).
       //     The publish IS a Principal configuration act: every (class,
       //     subject) it schedules becomes ACTIVE ClassSubjectAssignment
       //     config, so a published timetable can never contain an

@@ -213,9 +213,13 @@ async function main() {
   })
 
   // ── 1. Classes (create any the principal has added; keep existing) ────
-  const classByName = new Map<string, { id: string; name: string; section: string }>()
+  // room is the class HOMEROOM (canonical scheme `Room {grade}0{section}`)
+  // — timetable rows always meet the class in its homeroom, so rooms can
+  // never collide across classes (one class → one room, by construction).
+  const classByName = new Map<string, { id: string; name: string; section: string; room: string }>()
   for (const cfg of CONFIG) {
     const gradeNo = cfg.name.match(/\d+/)?.[0] ?? ''
+    const homeroom = `Room ${gradeNo}0${cfg.section}`
     const existing = await db.class.findFirst({
       where: { schoolId: school.id, name: cfg.name },
     })
@@ -229,7 +233,7 @@ async function main() {
           gradeLevel: gradeNo,
           stream: cfg.stream,
           capacity: 40,
-          room: `Room ${gradeNo}0${cfg.section}`,
+          room: homeroom,
           classTeacherId: teacherOf(cfg.classTeacher).id,
         },
       }))
@@ -239,6 +243,9 @@ async function main() {
         data: {
           classTeacherId: teacherOf(cfg.classTeacher).id,
           stream: cfg.stream ?? existing.stream,
+          // Homeroom normalisation — heals legacy labels ("101", "201")
+          // so every class follows the one scheme.
+          room: homeroom,
         },
       })
     }
@@ -246,6 +253,7 @@ async function main() {
       id: row.id,
       name: row.name,
       section: row.section ?? cfg.section,
+      room: homeroom,
     })
   }
 
@@ -362,7 +370,10 @@ async function main() {
         startTime: PERIOD_TIMES.find((p) => p.period === c.period)!.start,
         endTime: PERIOD_TIMES.find((p) => p.period === c.period)!.end,
         teacherName: teacherNameByEmail.get(c.teacherEmail) ?? 'Faculty',
-        room: `Room ${200 + (c.period % 9)}`,
+        // Homeroom rule — the class stays put, teachers move. Period-indexed
+        // rooms (Room 201/202/…) double-booked every room across classes;
+        // the homeroom is the only structurally conflict-free choice.
+        room: classByName.get(cfg.name)?.room ?? null,
       })),
     })
     for (const c of cells) {

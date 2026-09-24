@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * timetable-store — canonical source of truth for the school's master timetable.
+ * timetable-store — canonical client store for the school's master timetable.
  *
  * Brief section 7 + 27: Three-tier state model:
  *   - `slots`: APPLIED working timetable (saved, may be unpublished)
@@ -21,22 +21,20 @@
  * indicators. Principal publishes → this store updates → every subscribed
  * role surface re-renders. There is NO second timetable dataset anywhere.
  *
- * Moved here from `components/principal/modules/timetable/timetable-store.ts`
- * (which now re-exports this module). Persist name unchanged
- * (`scholario-timetable-store`); persist version bumped 0 → 1 with a
- * migration that re-seeds the enriched canonical timetable for browsers
- * that still hold the older sparse seed.
+ * REAL RECORDS ONLY (spec §C/§D): the store starts EMPTY — never a mock
+ * seed. The Principal module hydrates it from the server's Timetable rows
+ * on mount (GET /api/timetable); a school with no rows stays honestly
+ * empty. Persist v2 flushes any browser that still holds the legacy
+ * INITIAL_SLOTS mock seed.
  */
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import {
-  INITIAL_SLOTS,
   type TimetableSlot,
   type TimetableFormState,
   type DayType,
 } from '@/lib/timetable/config'
 
-export { INITIAL_SLOTS }
 export type { TimetableSlot, TimetableFormState, DayType }
 
 /** Change types */
@@ -102,17 +100,22 @@ interface TimetableStoreState {
    * slots with the server's Timetable rows (the same truth students and
    * teachers read). Pending edits are discarded — the server snapshot IS
    * the last published state. Publications history is kept (display-only
-   * change chips). No-op on empty input (never wipes data on a failed
-   * fetch).
+   * change chips).
+   *
+   * Empty-input policy — the caller says what an empty array MEANS:
+   *   - `emptyOk: true`  → the server responded OK and the school simply
+   *     has no rows yet: CLEAR the store (honest empty state).
+   *   - `emptyOk` falsy  → treat empty as a failed/offline fetch: NEVER
+   *     wipe existing data on a possibly-flaky request.
    */
-  hydrateFromServer: (serverSlots: TimetableSlot[]) => void
+  hydrateFromServer: (serverSlots: TimetableSlot[], opts?: { emptyOk?: boolean }) => void
 }
 
 export const useTimetableStore = create<TimetableStoreState>()(
   persist(
     (set, get) => ({
-      slots: INITIAL_SLOTS,
-      publishedSlots: INITIAL_SLOTS,
+      slots: [],
+      publishedSlots: [],
       pendingChanges: [],
       publications: [],
       currentVersion: 1,
@@ -182,16 +185,16 @@ export const useTimetableStore = create<TimetableStoreState>()(
       },
       hasPendingPublish: () => get().pendingChanges.length > 0,
       resetToSeed: () =>
-        set({ slots: INITIAL_SLOTS, publishedSlots: INITIAL_SLOTS, pendingChanges: [], publications: [], currentVersion: 1 }),
+        set({ slots: [], publishedSlots: [], pendingChanges: [], publications: [], currentVersion: 1 }),
 
-      hydrateFromServer: (serverSlots) => {
-        if (serverSlots.length === 0) return
+      hydrateFromServer: (serverSlots, opts) => {
+        if (serverSlots.length === 0 && !opts?.emptyOk) return
         set({ slots: serverSlots, publishedSlots: serverSlots, pendingChanges: [] })
       },
     }),
     {
       name: 'scholario-timetable-store',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         slots: state.slots,
@@ -200,11 +203,13 @@ export const useTimetableStore = create<TimetableStoreState>()(
         publications: state.publications,
         currentVersion: state.currentVersion,
       }),
-      // v0 → v1: browsers persisted with the older sparse seed are re-seeded
-      // to the enriched canonical timetable (demo tenant data refresh).
+      // v0/v1 → v2: browsers persisted with the legacy mock seed
+      // (INITIAL_SLOTS demo schedule — fake classes/teachers) are flushed
+      // to the honest empty state; the module re-hydrates real server rows
+      // on mount.
       migrate: () => ({
-        slots: INITIAL_SLOTS,
-        publishedSlots: INITIAL_SLOTS,
+        slots: [],
+        publishedSlots: [],
         pendingChanges: [],
         publications: [],
         currentVersion: 1,

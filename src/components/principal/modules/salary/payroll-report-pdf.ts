@@ -175,7 +175,8 @@ export function downloadPayrollReport(input: PayrollReportInput): void {
     alternateRowStyles: { fillColor: [248, 250, 252] },
     head: [['Date', 'Employee', 'Salary Period', 'Payable', 'Paid', 'Method', 'Reference', 'Status', 'Notes']],
     body: input.payments
-      .filter((p) => p.status !== 'Reversed' || true) // reversed kept for a truthful audit trail
+      // Reversed payments are kept deliberately — a truthful audit trail
+      // must show them (with their reversal reason), not hide them.
       .map((p) => [
         fmtDate(p.date),
         p.employeeName,

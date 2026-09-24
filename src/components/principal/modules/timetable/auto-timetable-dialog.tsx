@@ -18,7 +18,7 @@ import { CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { CLASSES, DAYS, ROOMS } from './data'
+import { DAYS } from './data'
 import { countAllConflicts } from './timetable-store'
 import {
   recomputeRowTimes,
@@ -27,7 +27,6 @@ import {
 } from './time-engine'
 import { useTeacherRosterStore } from '@/lib/store/teacher-roster-store'
 import { teachers as mockTeachersForNames } from '@/lib/mock/teachers'
-import { subjects } from '@/lib/mock/school'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { TimetableSlot } from './data'
@@ -39,8 +38,17 @@ interface AutoTimetableDialogProps {
   onOpenChange: (o: boolean) => void
   onGenerate: (generatedSlots: TimetableSlot[], generatedRows: TimetableRow[]) => void
   existingSlots: TimetableSlot[]
-  /** Live class options (server-hydrated) — defaults to the static CLASSES list. */
+  /** Live class options (server-hydrated + academic configuration) — the
+   *  generator NEVER falls back to a hardcoded class list (REAL RECORDS
+   *  ONLY); empty means there is nothing to generate yet. */
   classes?: string[]
+  /** SINGLE SOURCE OF TRUTH — className → subjects the Principal configured
+   *  for the class (ACTIVE ClassSubjectAssignment). The generator only ever
+   *  schedules configured subjects; classes with no configuration fall back
+   *  to the subjects already on their published slots (real data). */
+  subjectsByClass?: Map<string, string[]>
+  /** className → class homeroom (rooms never collide across classes). */
+  homeroomByClass?: Map<string, string>
 }
 
 /** Subject → teacher mapping (Brief section 14) */
@@ -75,7 +83,7 @@ const SUBJECT_CODE_TO_NAME: Record<string, string> = {
   EVS: 'EVS',
 }
 
-export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSlots, classes = [] }: AutoTimetableDialogProps) {
+export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSlots, classes = [], subjectsByClass, homeroomByClass }: AutoTimetableDialogProps) {
   const [scope, setScope] = useState<string>('all')
   const [schoolStart, setSchoolStart] = useState('08:30 AM')
   const [schoolEnd, setSchoolEnd] = useState('02:45 PM')
@@ -87,7 +95,7 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
   // Real faculty roster (server-backed; mock fallback until it resolves).
   const roster = useTeacherRosterStore((s) => s.teachers)
   const activeTeachers = roster // every roster entry is assignable by construction
-  const classList = classes.length > 0 ? classes : CLASSES
+  const classList = classes // REAL RECORDS ONLY — no hardcoded fallback
   const targetClasses = scope === 'all' ? classList : [scope]
 
   const handleGenerate = () => {
@@ -176,6 +184,7 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
     // Brief section 13-19: Realistic generation
     const generated: TimetableSlot[] = []
     let assignedCount = 0
+    const skippedClasses: string[] = []
 
     // Track teacher load: teacherId → Set of "day-period" keys
     const teacherOccupancy = new Map<string, Set<string>>()
@@ -185,17 +194,26 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
     const classSubjectCount = new Map<string, Map<string, number>>()
 
     for (const className of targetClasses) {
+      // SINGLE SOURCE OF TRUTH — only subjects the Principal configured for
+      // this class are schedulable. Fallback (offline / unconfigured): the
+      // subjects already on this class's published slots — never a mock list.
+      const configured = subjectsByClass?.get(className)
+      const fromSlots = [...new Set(existingSlots.filter((s) => s.className === className).map((s) => s.subject))]
+      const allClassSubjects = configured && configured.length > 0 ? configured : fromSlots
+      if (allClassSubjects.length === 0) {
+        skippedClasses.push(className)
+        continue
+      }
+      const homeroom = homeroomByClass?.get(className) || existingSlots.find((s) => s.className === className)?.room || ''
+
       for (const day of DAYS) {
         for (const row of computedRows) {
           if (row.isBreak) continue
 
           const period = row.number
 
-          // Get available subjects for this class (rotate to distribute naturally)
-          const classSubjects = subjects.slice(0, 6).map((s) => s.name)
-          // Add extra subjects for variety
-          const extraSubjects = ['Hindi', 'Social Studies', 'Computer Science', 'Art & Craft', 'Physical Education']
-          const allClassSubjects = [...classSubjects, ...extraSubjects]
+          // Subjects for this class come from the pre-computed allClassSubjects
+          // (Principal configuration — see above). No mock slice, no extras.
 
           // Brief section 17: Avoid same subject in consecutive periods
           const lastSubject = generated.length > 0 ? generated[generated.length - 1]?.subject : null
@@ -234,9 +252,11 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
             if (!teacherOccupancy.has(teacher.id)) teacherOccupancy.set(teacher.id, new Set())
             teacherOccupancy.get(teacher.id)!.add(occKey)
 
-            // Room: use class's existing room
+            // Room: the class's HOMEROOM (server configuration) — rooms can
+            // never collide across classes; falls back to the class's first
+            // existing slot room.
             const existingClassSlot = generated.find((s) => s.className === className) || existingSlots.find((s) => s.className === className)
-            const room = existingClassSlot?.room || ROOMS[period % ROOMS.length]
+            const room = homeroom || existingClassSlot?.room || '—'
 
             // Brief 15: time comes from the canonical row time, NOT a separate calc.
             const timeStr = timeByPeriod.get(period) || row.time
@@ -271,9 +291,16 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
     setTimeout(() => {
       setGenerating(false)
       onGenerate(generated, computedRows)
-      toast.success('Timetable generated', {
-        description: `${assignedCount} periods assigned · ${actualConflicts} conflict${actualConflicts === 1 ? '' : 's'}`,
-      })
+      if (skippedClasses.length > 0) {
+        toast.warning('Timetable generated', {
+          description:
+            `${assignedCount} periods assigned · ${skippedClasses.length} class${skippedClasses.length === 1 ? '' : 'es'} skipped (no subjects configured)`,
+        })
+      } else {
+        toast.success('Timetable generated', {
+          description: `${assignedCount} periods assigned · ${actualConflicts} conflict${actualConflicts === 1 ? '' : 's'}`,
+        })
+      }
       onOpenChange(false)
     }, 800)
   }
@@ -295,6 +322,11 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
           {/* Classes selector */}
           <div className="space-y-1">
             <label className="text-[10px] font-semibold text-foreground uppercase tracking-wider">Classes</label>
+            {classList.length === 0 ? (
+              <p className="h-8 px-2.5 flex items-center rounded-lg border border-dashed border-border bg-muted/20 text-[10px] text-muted-foreground">
+                No classes configured — set up classes first
+              </p>
+            ) : (
             <Select value={scope} onValueChange={setScope}>
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue />
@@ -306,6 +338,7 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
                 ))}
               </SelectContent>
             </Select>
+            )}
           </div>
 
           {/* School Day Start/End (Brief section 4 + 26) */}
@@ -384,7 +417,7 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
           <div className="grid grid-cols-4 gap-2 pt-1">
             <Stat label="Classes" value={targetClasses.length} />
             <Stat label="Periods" value={numPeriods} />
-            <Stat label="Subjects" value={subjects.length} />
+            <Stat label="Subjects" value={new Set([...(subjectsByClass?.values() ?? [])].flat()).size} />
             <Stat label="Teachers" value={activeTeachers.length} />
           </div>
         </div>
@@ -397,7 +430,7 @@ export function AutoTimetableDialog({ open, onOpenChange, onGenerate, existingSl
             size="sm"
             className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
             onClick={handleGenerate}
-            disabled={generating}
+            disabled={generating || classList.length === 0}
           >
             <CalendarClock className="h-3.5 w-3.5" />
             {generating ? 'Generating…' : 'Generate timetable'}

@@ -46,17 +46,41 @@ export function ScheduleGrid({
   selectedDay, selectedClass, filteredSlots, editMode, publications, conflictedSlotIds, rows, classes,
   onEditSlot, onDuplicateSlot, onRemoveSlot, onAssignPeriod, onInsertRow, onDeleteRow, onEditRowTime,
 }: ScheduleGridProps) {
-  // Live classes from the hydrated schedule; the static CLASSES seed is
-  // only a fallback for a school with no server rows yet.
-  const visibleClasses = (
-    classes.length > 0
-      ? classes
-      : ['Class 2-A', 'Class 2-B', 'Class 9-A', 'Class 10-A', 'Class 12-Sci-A']
-  ).filter((c) => selectedClass === 'all' || selectedClass === c)
+  // Classes come ENTIRELY from the parent (live schedule ∪ academic
+  // configuration — REAL RECORDS ONLY). No hardcoded fallback: a school
+  // with no classes configured sees an honest empty state instead of a
+  // demo class list.
+  const visibleClasses = classes.filter((c) => selectedClass === 'all' || selectedClass === c)
   const daySlots = filteredSlots.filter((s) => s.day === selectedDay)
   const resolveTeacherName = (slot: TimetableSlot) => slot.teacherName || teacherNameById(slot.teacherId) || 'Assigned Faculty'
   const hasShortBreak = rows.some((r) => r.breakType === 'short')
   const hasLunchBreak = rows.some((r) => r.breakType === 'lunch')
+
+  // Honest empty state — no classes to schedule against at all.
+  if (visibleClasses.length === 0) {
+    return (
+      <>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">{selectedDay} Routine</h3>
+          </div>
+          {editMode && (
+            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Editing
+            </span>
+          )}
+        </div>
+        <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-6 text-center">
+          <p className="text-sm font-semibold text-foreground">No classes to schedule yet</p>
+          <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
+            Set up classes in <span className="font-medium text-foreground">Students &amp; Classes</span> first —
+            the timetable editor only schedules classes from the school's configuration.
+          </p>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -117,7 +141,7 @@ export function ScheduleGrid({
             onEditRowTime={onEditRowTime} onInsertRow={onInsertRow} hasShortBreak={hasShortBreak} hasLunchBreak={hasLunchBreak} />
         ) : (
           <PeriodRowMobile key={`period-${row.number}`} row={row} editMode={editMode} daySlots={daySlots} selectedDay={selectedDay}
-            selectedClass={selectedClass} publications={publications} conflictedSlotIds={conflictedSlotIds}
+            selectedClass={selectedClass} classes={visibleClasses} publications={publications} conflictedSlotIds={conflictedSlotIds}
             resolveTeacherName={resolveTeacherName} onEditSlot={onEditSlot} onRemoveSlot={onRemoveSlot}
             onAssignPeriod={onAssignPeriod} onDeleteRow={onDeleteRow} onEditRowTime={onEditRowTime}
             onInsertRow={onInsertRow} hasShortBreak={hasShortBreak} hasLunchBreak={hasLunchBreak} />
@@ -192,7 +216,7 @@ function BreakRowDesktop({ row, editMode, colCount, onDeleteRow, onEditRowTime, 
 }
 
 /* ── Mobile Period Row ── */
-function PeriodRowMobile({ row, editMode, daySlots, selectedDay, selectedClass, publications, conflictedSlotIds,
+function PeriodRowMobile({ row, editMode, daySlots, selectedDay, selectedClass, classes, publications, conflictedSlotIds,
   resolveTeacherName, onEditSlot, onRemoveSlot, onAssignPeriod, onDeleteRow, onEditRowTime, onInsertRow, hasShortBreak, hasLunchBreak }: any) {
   const periodSlots = daySlots.filter((s: TimetableSlot) => s.period === row.number)
   return (
@@ -207,10 +231,12 @@ function PeriodRowMobile({ row, editMode, daySlots, selectedDay, selectedClass, 
       </div>
       {periodSlots.length === 0 ? (
         editMode ? (
-          <button onClick={() => onAssignPeriod(selectedDay, row.number, selectedClass !== 'all' ? selectedClass : 'Class 2-A')}
-            className="w-full py-2.5 rounded-lg border border-dashed border-border/50 hover:border-primary/40 hover:bg-primary/5 flex items-center justify-center gap-1 text-muted-foreground hover:text-primary transition-all">
-            <Plus className="h-3 w-3" /><span className="text-[10px] font-medium">Assign period</span>
-          </button>
+          (selectedClass !== 'all' || (classes && classes.length > 0)) && (
+            <button onClick={() => onAssignPeriod(selectedDay, row.number, selectedClass !== 'all' ? selectedClass : classes[0])}
+              className="w-full py-2.5 rounded-lg border border-dashed border-border/50 hover:border-primary/40 hover:bg-primary/5 flex items-center justify-center gap-1 text-muted-foreground hover:text-primary transition-all">
+              <Plus className="h-3 w-3" /><span className="text-[10px] font-medium">Assign period</span>
+            </button>
+          )
         ) : <div className="w-full py-2.5 rounded-lg border border-dashed border-border/20 text-center text-[9px] text-muted-foreground/30">Empty</div>
       ) : periodSlots.map((slot: TimetableSlot) => (
         <MobileSlotCard key={slot.id} slot={slot} teacherName={resolveTeacherName(slot)} publications={publications}

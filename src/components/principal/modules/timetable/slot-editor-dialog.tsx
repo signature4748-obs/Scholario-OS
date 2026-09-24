@@ -10,10 +10,18 @@
  *   Subject
  *   Teacher
  *
- * Room is auto-derived from the class's existing room (Brief section 4).
+ * Room is auto-derived from the class's HOMEROOM (server Class.room —
+ * Brief section 4; the class stays put, teachers move).
+ *
+ * SINGLE SOURCE OF TRUTH (spec §C/§D): the subject picker offers ONLY the
+ * subjects the Principal has configured for this class (ACTIVE
+ * ClassSubjectAssignment via /api/principal/academic). No hardcoded level
+ * lists, no mock catalogs — a subject cannot be scheduled for a class it
+ * was never configured for. When the class has no configuration yet the
+ * picker says so honestly and points at Students & Classes.
  *
  * Brief section 5: When editing an existing slot, same minimal editor —
- *   Subject + Teacher (Room optional via "More" if needed).
+ *   Subject + Teacher.
  *
  * Brief section 6: Uses polished searchable selectors (same as Teachers /
  *   Students & Classes). No native select boxes for Teacher/Subject.
@@ -21,35 +29,14 @@
  * Brief section 14: Real-time conflict detection. Save disabled on conflict.
  */
 import { useMemo, useState } from 'react'
-import { Search, Check, ChevronDown, AlertTriangle, X } from 'lucide-react'
+import { Search, Check, ChevronDown, AlertTriangle, BookLock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { useTeacherRosterStore } from '@/lib/store/teacher-roster-store'
-import { subjects } from '@/lib/mock/school'
-import { SUBJECTS_BY_LEVEL } from '@/lib/store/students-store/constants'
 import { type DayType, type TimetableConflictInfo } from './data'
-
-/** Map timetable className → academic level for subject filtering */
-const CLASS_LEVELS: Record<string, string> = {
-  'Class 2-A': 'Primary', 'Class 2-B': 'Primary',
-  'Class 9-A': 'Secondary', 'Class 10-A': 'Secondary',
-  'Class 12-Sci-A': 'Senior Secondary',
-}
-
-/** Get valid subjects for a specific class (Brief section 7) */
-function getSubjectsForClass(className: string) {
-  const level = CLASS_LEVELS[className] || 'Primary'
-  const levelSubjects = SUBJECTS_BY_LEVEL[level] || []
-  // Merge with global subjects list for any extras
-  const allSubjectNames = new Set([...levelSubjects, ...subjects.map(s => s.name)])
-  return Array.from(allSubjectNames).map(name => {
-    const sub = subjects.find(s => s.name === name)
-    return { id: name, label: name, meta: sub?.code || name.substring(0, 3).toUpperCase() }
-  })
-}
 
 /** Minimal form — only what the Principal needs to choose. */
 export interface MinimalSlotForm {
@@ -74,6 +61,12 @@ interface SlotEditorDialogProps {
   form: MinimalSlotForm
   setForm: React.Dispatch<React.SetStateAction<MinimalSlotForm>>
   conflictInfo: TimetableConflictInfo
+  /** Subjects the Principal has configured for THIS class (server CSA) —
+   *  the only schedulable options. Empty = unconfigured class. */
+  subjectOptions: { id: string; label: string; meta?: string }[]
+  /** Whether the class has a server subject configuration at all (drives
+   *  the honest empty-state hint). */
+  subjectsConfigured: boolean
   onSave: () => void
 }
 
@@ -85,6 +78,8 @@ export function SlotEditorDialog({
   form,
   setForm,
   conflictInfo,
+  subjectOptions,
+  subjectsConfigured,
   onSave,
 }: SlotEditorDialogProps) {
   // Real faculty roster (server-backed; mock fallback until it resolves —
@@ -124,15 +119,40 @@ export function SlotEditorDialog({
         )}
 
         <div className="p-4 space-y-3">
-          {/* Subject — searchable select */}
-          <Field label="Subject">
-            <SearchableField
-              pickerId="slot-subject"
-              value={form.subject}
-              onChange={(v) => setForm((prev) => ({ ...prev, subject: v }))}
-              placeholder="Select subject"
-              options={getSubjectsForClass(context.className)}
-            />
+          {/* Subject — searchable select, driven by the Principal's subject
+              configuration for this class (server CSA — never a mock list). */}
+          <Field
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                Subject
+                {subjectsConfigured && (
+                  <span
+                    className="rounded-full border border-emerald-500/30 bg-emerald-500/[0.08] px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+                    title="From the subjects configured for this class in Students & Classes"
+                  >
+                    configured
+                  </span>
+                )}
+              </span>
+            }
+          >
+            {subjectOptions.length > 0 ? (
+              <SearchableField
+                pickerId="slot-subject"
+                value={form.subject}
+                onChange={(v) => setForm((prev) => ({ ...prev, subject: v }))}
+                placeholder="Select subject"
+                options={subjectOptions}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2.5 flex items-start gap-2 text-[10px] text-muted-foreground">
+                <BookLock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                <span>
+                  No subjects configured for {context.className} yet — add them in
+                  {' '}<span className="font-semibold text-foreground">Students &amp; Classes → Subjects</span>.
+                </span>
+              </div>
+            )}
           </Field>
 
           {/* Teacher — searchable select with avatar (real school roster) */}
@@ -165,9 +185,9 @@ export function SlotEditorDialog({
             />
           </Field>
 
-          {/* Room — shown as read-only context (auto-derived) */}
+          {/* Room — shown as read-only context (the class's homeroom) */}
           <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
-            <span>Room</span>
+            <span>Room · homeroom</span>
             <span className="font-medium text-foreground">{context.room}</span>
           </div>
         </div>
@@ -180,7 +200,7 @@ export function SlotEditorDialog({
             size="sm"
             className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-30 disabled:cursor-not-allowed"
             onClick={onSave}
-            disabled={conflictInfo.hasConflict || !form.subject || !form.teacherId}
+            disabled={conflictInfo.hasConflict || !form.subject || !form.teacherId || subjectOptions.length === 0}
           >
             {editingSlot ? 'Apply' : 'Add'}
           </Button>

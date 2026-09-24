@@ -30,7 +30,8 @@ import {
   type TimetableChange,
 } from './timetable-store'
 import { useTeacherRosterStore, type TeacherPick } from '@/lib/store/teacher-roster-store'
-import { buildInitialRows, CLASSES, ROOMS, type TimetableSlot as Slot } from './data'
+import { useAcademicConfigStore, type DbClassInfo } from '@/lib/academic-config/client'
+import { buildInitialRows, type TimetableSlot as Slot } from './data'
 import { serverRowsToSlots, type ServerSlot } from '@/lib/timetable/server-mapping'
 import type { TimetableRow } from './schedule-grid'
 import {
@@ -66,17 +67,76 @@ export function TimetableModule() {
   const hydrateFromServer = useTimetableStore((s) => s.hydrateFromServer)
 
   // ── SERVER HYDRATION (one universe for every role) ──
-  // On mount, replace the store seed with the server's Timetable rows —
+  // On mount, replace the store contents with the server's Timetable rows —
   // the exact truth students and teachers read — AND resolve the REAL
   // teacher roster (GET /api/teachers) so slot ids, pickers, filters and
   // conflict labels all operate on teachers who exist at the school. The
-  // mock roster remains only as the offline fallback. The principal then
-  // edits and publishes against the real school schedule; publishes sync
-  // back to the server (handlePublish), closing the loop end-to-end.
-  const [serverSynced, setServerSynced] = useState<null | boolean>(null) // null = loading
+  // principal then edits and publishes against the real school schedule;
+  // publishes sync back to the server (handlePublish), closing the loop.
+  //
+  // Tri-state lineage (REAL RECORDS ONLY — the mock seed is gone):
+  //   'server'  — fetch OK, school has rows   → hydrated (the normal case)
+  //   'empty'   — fetch OK, school has NO rows → store CLEARED, honest
+  //               empty state; the principal can build the first schedule
+  //   'offline' — fetch FAILED → keep the last-known-good local snapshot,
+  //               but PUBLISH IS BLOCKED (never write a stale/unhydrated
+  //               snapshot over the server's truth)
+  const [serverSynced, setServerSynced] = useState<null | 'server' | 'empty' | 'offline'>(null) // null = loading
   const [rosterSource, setRosterSource] = useState<'mock' | 'server'>('mock')
   const ensureRoster = useTeacherRosterStore((s) => s.ensure)
   const roster = useTeacherRosterStore((s) => s.teachers)
+  // ── PRINCIPAL CONFIG (single source of truth) ──
+  // The academic configuration (ACTIVE ClassSubjectAssignment per class +
+  // class homerooms) drives the slot editor's subject picker and every
+  // derived room — NEVER a hardcoded subject list (spec §C/§D: subjects a
+  // class teaches come from the Principal's configuration only).
+  const academicConfig = useAcademicConfigStore((s) => s.config)
+  const fetchAcademic = useAcademicConfigStore((s) => s.fetch)
+  useEffect(() => {
+    void fetchAcademic()
+  }, [fetchAcademic])
+  // className (as slots carry it, e.g. "Grade 9 - A") → configured subjects.
+  // Keyed by BOTH the raw class name and the labelOf-style variant so any
+  // naming convention resolves.
+  const subjectsByClass = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const c of (academicConfig?.classes ?? []) as DbClassInfo[]) {
+      const names = c.subjects.map((s) => s.name)
+      m.set(c.name, names)
+      if (c.section && !new RegExp(`[-–\\s]${c.section}$`, 'i').test(c.name)) {
+        m.set(`${c.name} - ${c.section}`, names)
+      }
+    }
+    return m
+  }, [academicConfig])
+  // className → homeroom (the room a class's periods meet in, by default).
+  const homeroomByClass = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of (academicConfig?.classes ?? []) as DbClassInfo[]) {
+      if (c.room) {
+        m.set(c.name, c.room)
+        if (c.section && !new RegExp(`[-–\\s]${c.section}$`, 'i').test(c.name)) {
+          m.set(`${c.name} - ${c.section}`, c.room)
+        }
+      }
+    }
+    return m
+  }, [academicConfig])
+  /** Subjects available to schedule for a class: the Principal's ACTIVE
+   *  configuration first; offline/absent config falls back to the subjects
+   *  already on this class's published slots (real data, never mock). */
+  const subjectOptionsFor = useMemo(
+    () =>
+      (className: string): { id: string; label: string; meta?: string }[] => {
+        const configured = subjectsByClass.get(className)
+        if (configured && configured.length > 0) {
+          return configured.map((name) => ({ id: name, label: name }))
+        }
+        const fromSlots = [...new Set(slots.filter((s) => s.className === className).map((s) => s.subject))]
+        return fromSlots.map((name) => ({ id: name, label: name }))
+      },
+    [subjectsByClass, slots],
+  )
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -115,13 +175,16 @@ export function TimetableModule() {
               teacherId: teacherIdFor(s.teacherName),
             }))
             hydrateFromServer(mapped)
-            setServerSynced(true)
+            setServerSynced('server')
           } else {
-            setServerSynced(false) // school has no server rows yet — seed remains
+            // Fetch OK but the school has NO timetable rows yet — clear the
+            // store (emptyOk): an honest empty schedule, never a demo seed.
+            hydrateFromServer([], { emptyOk: true })
+            setServerSynced('empty')
           }
         })
       } catch {
-        if (alive) setServerSynced(false) // offline/degraded — seed remains
+        if (alive) setServerSynced('offline') // fetch failed — keep the local snapshot; publish stays blocked
       }
     })()
     return () => {
@@ -196,18 +259,30 @@ export function TimetableModule() {
   const globalConflictCount = useMemo(() => countAllConflicts(displaySlots), [displaySlots])
   const conflictedSlotIds = useMemo(() => getConflictedSlotIds(displaySlots), [displaySlots])
 
-  // ── Dynamic class options — from the LIVE (server-hydrated) slots, never
-  //    the static seed list. Falls back to CLASSES only when the school has
-  //    no server rows (offline / empty school), so the editor still works.
+  // ── Dynamic class options — PRINCIPAL CONFIGURATION first (spec §C:
+  //    classes come from the school's records, never a hardcoded list):
+  //    live schedule classes ∪ the academic config's classes (Grade 6–12).
+  //    A school with no classes at all sees an honest empty picker — the
+  //    timetable editor never invents classes.
   const classOptions = useMemo(() => {
-    const present = [...new Set(slots.map((s) => s.className))].filter(Boolean)
-    return present.length > 0 ? present.sort() : CLASSES
-  }, [slots])
+    const present = new Set(slots.map((s) => s.className).filter(Boolean))
+    for (const c of (academicConfig?.classes ?? []) as DbClassInfo[]) {
+      if (c.section && !new RegExp(`[-–\\s]${c.section}$`, 'i').test(c.name)) {
+        present.add(`${c.name} - ${c.section}`)
+      } else {
+        present.add(c.name)
+      }
+    }
+    return [...present].sort()
+  }, [slots, academicConfig])
 
+  // Rooms likewise derive from REAL data only: rooms on the live schedule ∪
+  // class homerooms from the academic configuration.
   const roomOptions = useMemo(() => {
-    const present = [...new Set(slots.map((s) => s.room))].filter(Boolean)
-    return present.length > 0 ? present.sort() : ROOMS
-  }, [slots])
+    const present = new Set(slots.map((s) => s.room).filter(Boolean))
+    for (const r of homeroomByClass.values()) present.add(r)
+    return [...present].sort()
+  }, [slots, homeroomByClass])
   const hasPendingPublish = pendingChanges.length > 0
 
   // ── Handlers ──
@@ -384,9 +459,10 @@ export function TimetableModule() {
   const handleOpenAssign = (day: DayType, period: number, className: string) => {
     // Brief 15: Look up time from the canonical draftRows, NOT stale PERIODS.
     const row = draftRows.find((r) => r.number === period)
-    // Auto-derive room: use the class's existing room from any slot, or 'Auto'
+    // Room = the class's HOMEROOM from the server configuration (the class
+    // stays put, teachers move). Falls back to any slot of the class.
     const existingClassSlot = draftSlots.find((s) => s.className === className)
-    const room = existingClassSlot?.room || 'Auto'
+    const room = homeroomByClass.get(className) || existingClassSlot?.room || '—'
     setEditorContext({
       day, period,
       periodName: row?.name || `Period ${period}`,
@@ -459,6 +535,19 @@ export function TimetableModule() {
       toast.error('Resolve conflicts before publishing')
       return
     }
+    // PUBLISH GUARD (REAL RECORDS ONLY): publishing is only safe when the
+    // working snapshot came from the server ('server') or the school is
+    // genuinely empty ('empty' — first schedule). An offline/unhydrated
+    // snapshot must never replace the server's rows.
+    if (serverSynced !== 'server' && serverSynced !== 'empty') {
+      toast.error('Cannot publish — school records did not load', {
+        description:
+          serverSynced === 'offline'
+            ? 'The server was unreachable when this page loaded. Reload the module, then publish again.'
+            : 'Still syncing with school records — try again in a moment.',
+      })
+      return
+    }
     const version = publish('Dr. Ananya Iyer')
     if (!version) return
     setPublishOpen(false)
@@ -527,7 +616,7 @@ export function TimetableModule() {
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
           <p className="text-xs text-muted-foreground">School-wide master schedule</p>
           {/* Data lineage — honest signal of the one data universe */}
-          {serverSynced === true && (
+          {serverSynced === 'server' && (
             <span
               className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/[0.07] px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
               title="Loaded from the school's server records — the same data students and teachers see"
@@ -549,10 +638,19 @@ export function TimetableModule() {
               Faculty roster · {roster.length} live
             </span>
           )}
-          {serverSynced === false && (
+          {serverSynced === 'empty' && (
             <span
               className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/[0.07] px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
-              title="Server records were unreachable — showing the local snapshot. Publishes retry the server sync."
+              title="The school has no timetable on record yet — enter Edit mode to build the first schedule"
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+              No timetable on record
+            </span>
+          )}
+          {serverSynced === 'offline' && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/[0.07] px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+              title="Server records were unreachable — showing the local snapshot. Publishing is disabled until the module reloads with a live connection."
             >
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
               Local snapshot (server unreachable)
@@ -643,6 +741,21 @@ export function TimetableModule() {
         </div>
       </div>
 
+      {/* Honest empty state — a school with no timetable rows yet (REAL
+          RECORDS ONLY: never a demo schedule). The ladder still renders as
+          an editing scaffold once the principal enters Edit mode. */}
+      {serverSynced === 'empty' && !editMode && slots.length === 0 && (
+        <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-6 text-center">
+          <CalendarClock className="mx-auto h-6 w-6 text-muted-foreground/60" aria-hidden />
+          <p className="mt-2 text-sm font-semibold text-foreground">No timetable on record</p>
+          <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
+            This school has no published schedule yet. Classes and subjects come from your
+            configuration in <span className="font-medium text-foreground">Students &amp; Classes</span> —
+            enter Edit mode to build the first schedule, then publish it to every role.
+          </p>
+        </div>
+      )}
+
       {/* Pending publish banner */}
       {hasPendingPublish && !editMode && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 flex items-center justify-between gap-2">
@@ -706,6 +819,8 @@ export function TimetableModule() {
         form={minimalForm}
         setForm={setMinimalForm}
         conflictInfo={conflictInfo}
+        subjectOptions={subjectOptionsFor(editorContext.className)}
+        subjectsConfigured={(subjectsByClass.get(editorContext.className)?.length ?? 0) > 0}
         onSave={handleSaveSlot}
       />
 
@@ -754,8 +869,16 @@ export function TimetableModule() {
         onOpenChange={setAutoOpen}
         existingSlots={draftSlots}
         classes={classOptions}
+        subjectsByClass={subjectsByClass}
+        homeroomByClass={homeroomByClass}
         onGenerate={(generated, generatedRows) => {
-          setDraftSlots(generated)
+          // Scoped-merge semantics: the generator replaces ONLY the classes
+          // it generated for; every other class's slots stay in the draft.
+          // (A single-class generate must never silently wipe the rest of
+          // the school — Apply would then publish a one-class timetable.)
+          const generatedClasses = new Set(generated.map((s) => s.className))
+          const kept = draftSlots.filter((s) => !generatedClasses.has(s.className))
+          setDraftSlots([...kept, ...generated])
           setDraftRows(generatedRows)
           setHasUnsavedChanges(true)
         }}

@@ -27,9 +27,11 @@ interface FiltersBarProps {
   setSelectedRoom: (v: string) => void
   selectedDay: DayType
   setSelectedDay: (d: DayType) => void
-  /** Live class options (server-hydrated) — defaults to the static CLASSES list. */
+  /** Live class options (server-hydrated + academic configuration). Empty
+   *  when the school has no classes — the picker then shows only "All
+   *  Classes" (REAL RECORDS ONLY: no hardcoded demo list). */
   classes?: string[]
-  /** Live room options (server-hydrated) — defaults to the static ROOMS list. */
+  /** Live room options (live schedule + class homerooms). */
   rooms?: string[]
 }
 
@@ -57,7 +59,7 @@ export function FiltersBar({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Classes</SelectItem>
-            {(classes.length > 0 ? classes : ['Class 2-A', 'Class 2-B', 'Class 9-A', 'Class 10-A', 'Class 12-Sci-A']).map((c) => (
+            {classes.map((c) => (
               <SelectItem key={c} value={c}>{c}</SelectItem>
             ))}
           </SelectContent>
@@ -83,11 +85,7 @@ export function FiltersBar({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Rooms</SelectItem>
-            {(rooms.length > 0 ? rooms : [
-              'Room 102', 'Room 103', 'Room 301', 'Room 304',
-              'Physics Lab', 'Chemistry Lab', 'Computer Lab 1',
-              'Sports Complex', 'Library Hall',
-            ]).map((r) => (
+            {rooms.map((r) => (
               <SelectItem key={r} value={r}>{r}</SelectItem>
             ))}
           </SelectContent>
