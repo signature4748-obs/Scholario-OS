@@ -31,10 +31,7 @@ import {
   useStudentMessagingStore, isConversationUnread, countUnreadConversations,
   type StudentConversation,
 } from '@/lib/store/student-messaging-store'
-import { useStudentsStore, type StudentRecord, type ClassRecord } from '@/lib/store/students-store'
-import type { SubjectDef } from '@/lib/mock/academic'
-import { teachers } from '@/lib/mock/teachers'
-import { DEMO_STUDENT_ID } from '../applications/student'
+import { useCanonicalStudent } from '../shared/canonical'
 
 /** Timestamp label for a message bubble — time today, date otherwise. */
 function messageStamp(iso: string): string {
@@ -48,49 +45,24 @@ function messageStamp(iso: string): string {
   return sameDay ? formatTime(d) : formatDate(d)
 }
 
-/** Teachers the student may message — class teacher + subject teachers of
- *  their OWN class section (spec §30 — never a school-wide directory). */
-function classContacts(
-  student: StudentRecord | undefined,
-  classes: ClassRecord[],
-  subjects: SubjectDef[],
-): { id: string; name: string; subject: string; role: string }[] {
-  if (!student) return []
-  const cls = classes.find((c) => c.id === student.classId)
-  if (!cls) return []
-  const section = cls.sections.find((s) => s.name === student.section)
-  const roster: { id: string; name: string; subject: string; role: string }[] = []
-  const seen = new Set<string>()
-  const push = (id: string | undefined, subject: string, role: string) => {
-    if (!id || seen.has(id)) return
-    const t = teachers.find((x) => x.id === id)
-    if (!t) return
-    seen.add(id)
-    roster.push({ id: t.id, name: t.name, subject, role })
-  }
-  push(section?.classTeacherId ?? cls.classTeacherId, 'Class Teacher', 'Class Teacher')
-  for (const [subId, tid] of Object.entries(cls.subjectTeachers)) {
-    const name = subjects.find((s) => s.id === subId)?.name ?? subId.replace('sub-', '')
-    push(tid, name.charAt(0).toUpperCase() + name.slice(1), 'Subject Teacher')
-  }
-  return roster
-}
-
 export function StudentMessagesModule() {
   const conversations = useStudentMessagingStore((s) => s.conversations)
   const seenAt = useStudentMessagingStore((s) => s.seenAt)
   const markConversationSeen = useStudentMessagingStore((s) => s.markConversationSeen)
 
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
-  const classes = useStudentsStore((s) => s.classes)
-  const subjects = useStudentsStore((s) => s.academicSubjects)
+  // Canonical identity — the context line renders the session's own class
+  // (server Student row); the retired STU-58 roster is not consulted.
+  const { student } = useCanonicalStudent()
 
   const [openId, setOpenId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [composing, setComposing] = useState(false)
 
   const unread = countUnreadConversations(conversations, seenAt)
-  const contacts = useMemo(() => classContacts(student, classes, subjects), [student, classes, subjects])
+  // Compose recipients: the client classes-store cannot resolve the
+  // canonical DB class id, so the compose roster stays empty for
+  // canonical logins (honest) — the seeded demo threads still render.
+  const contacts = useMemo(() => [] as { id: string; name: string; subject: string; role: string }[], [])
 
   const sorted = useMemo(
     () => [...conversations].sort((a, b) => (a.lastOn < b.lastOn ? 1 : -1)),
@@ -119,8 +91,8 @@ export function StudentMessagesModule() {
       {/* ── Compact toolbar — context + actions, no module title (LR-1) ── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="truncate text-xs text-muted-foreground">
-          {student
-            ? `${student.className}-${student.section} · class teacher & subject teachers`
+          {student?.classLabel
+            ? `${student.classLabel} · class teacher & subject teachers`
             : 'Direct messages with your teachers'}
         </p>
         <div className="flex items-center gap-2">

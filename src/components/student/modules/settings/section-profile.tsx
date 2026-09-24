@@ -16,8 +16,7 @@ import { User, Camera, Trash2, Upload, Info } from 'lucide-react'
 import { Avatar } from '@/components/shared/avatar'
 import { Button } from '@/components/ui/button'
 import { useCurrentUser } from '@/lib/store/current-user-store'
-import { useStudentsStore } from '@/lib/store/students-store'
-import { DEMO_STUDENT_ID } from '../applications/student'
+import { useCanonicalStudent } from '../shared/canonical'
 import { useAvatarUpload } from './hooks'
 import { SectionCard, InfoRow, ManagedBadge } from './primitives'
 
@@ -25,7 +24,9 @@ const ACCEPTED = 'image/jpeg,image/png,image/webp'
 const MAX_BYTES = 5 * 1024 * 1024
 
 export function ProfileSection() {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // Canonical identity — the server session (me.student) is the only
+  // student-record source; no client roster fallback.
+  const { student, resolving } = useCanonicalStudent()
   const me = useCurrentUser((s) => s.me)
   const { avatarUrl, upload, remove, uploading, removing } = useAvatarUpload()
 
@@ -60,7 +61,7 @@ export function ProfileSection() {
     setPreview(null)
   }
 
-  const name = student?.name ?? me?.name ?? 'Student'
+  const name = me?.name ?? 'Student'
 
   return (
     <SectionCard icon={User} title="Profile" caption="Your photo and official student information">
@@ -86,7 +87,7 @@ export function ProfileSection() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">{name}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {student ? `${student.className}-${student.section} · Roll ${student.rollNo}` : me?.email}
+            {resolving ? '·' : student?.classLabel ? `${student.classLabel}${student.rollNo ? ` · Roll ${student.rollNo}` : ''}` : (me?.email ?? '')}
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <input
@@ -150,12 +151,12 @@ export function ProfileSection() {
           <ManagedBadge />
         </div>
         <div className="divide-y divide-border/60">
-          <InfoRow label="Full name" value={student?.name ?? '—'} managed />
+          <InfoRow label="Full name" value={me?.name ?? '—'} managed />
           <InfoRow label="Admission number" value={student?.admissionNo ?? '—'} managed />
-          <InfoRow label="Class & section" value={student ? `${student.className} — ${student.section}` : '—'} managed />
+          <InfoRow label="Class & section" value={student?.classLabel ?? '—'} managed />
           <InfoRow label="Roll number" value={student?.rollNo ?? '—'} managed />
-          <InfoRow label="Date of birth" value={student?.dob ?? '—'} managed />
-          <InfoRow label="House" value={student?.houseName ?? '—'} managed />
+          <InfoRow label="Date of birth" value={student?.dob ? student.dob.slice(0, 10) : '—'} managed />
+          <InfoRow label="Blood group" value={student?.bloodGroup ?? '—'} managed />
           <InfoRow label="Guardian" value={student?.guardianName ?? '—'} managed />
         </div>
         <p className="mt-4 flex items-start gap-2 text-[11px] text-muted-foreground leading-relaxed">

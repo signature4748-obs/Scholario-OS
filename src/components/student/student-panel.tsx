@@ -7,8 +7,7 @@ import {
   ClipboardList, ShieldCheck, Crown, MessageCircle, Settings, ScrollText,
 } from 'lucide-react'
 import { AppShell, type NavGroup } from '@/components/shell/app-shell'
-import dynamic from 'next/dynamic'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { lazyModule } from '@/components/shared/lazy-module'
 import { useUnreadStudentNotificationCount } from './modules/notifications'
 import { StudentSubscriptionActivation } from './StudentSubscriptionActivation'
 import { getStudentSubscription } from '@/lib/platform-subscription'
@@ -16,17 +15,17 @@ import { useStudentsStore } from '@/lib/store/students-store'
 import { useStudentMessagingStore, countUnreadConversations } from '@/lib/store/student-messaging-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
-import { useTransportAssignment } from '@/lib/store/transport-store'
+import { useMyServerTransport, useCanonicalStudent } from './modules/shared/canonical'
 import { hydrateNotifPrefsFromServer } from '@/lib/store/student-notif-prefs-store'
 import { useServerNotices } from '@/lib/store/server-notices-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 
 // Every module is a separate lazily-loaded chunk: navigating compiles just
 // that module (small memory spikes) instead of one giant student bundle.
+// Chunk-resilient lazy loader: import retry + per-module error boundary
+// (stabilization §22/§29 — a failed chunk must never blank the app).
 const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
-  dynamic(() => loader().then((m) => m[pick] as React.ComponentType<any>), {
-    loading: ModuleLoading,
-  })
+  lazyModule(loader, pick)
 
 const StudentDashboard = lazy(() => import('./modules/dashboard'), 'StudentDashboard')
 const ProfileModule = lazy(() => import('./modules/profile'), 'ProfileModule')
@@ -189,9 +188,11 @@ export function StudentPanel() {
   const [active, setActive] = useState('dashboard')
   // Deep-link tab target for the consolidated modules (see LEGACY_TAB).
   const [pendingTab, setPendingTab] = useState<string | null>(null)
-  // Canonical demo student — one roster backs every role (see students-store v2).
-  const studentId = 'STU-58'
-  const studentName = 'Aarav Sharma'
+  // Canonical identity — the SERVER session decides who this student is
+  // (user → Student row → classId/roll/admission). The client-side demo
+  // roster id (STU-58) is retired; positions gate on the canonical id.
+  const { student } = useCanonicalStudent()
+  const studentId = student?.studentId ?? null
 
   // SS-1 — one server fetch on mount hydrates the student's persisted
   // preferences (notification channels + learning reminders) into the
@@ -208,21 +209,20 @@ export function StudentPanel() {
   // Live nav badges — ALL derived from real stores/data, zero constants.
   const unreadNotifs = useUnreadStudentNotificationCount()
   const unreadMsgs = useStudentMessagingStore((s) => countUnreadConversations(s.conversations, s.seenAt))
-  // SD-3 — server-resolved identity (name + enrollment) for the shell
-  // surfaces; falls back to the client roster while /api/auth/me loads.
+  // Session display name (User.name) for the subscription gate + shell.
   const me = useCurrentUser((s) => s.me)
+  const studentName = me?.name || 'Student'
 
-  // Class Captain / Monitor: the nav entry appears ONLY while the student
-  // holds an ACTIVE position in the LIVE academic session — resolved
-  // through filterActivePositions (the canonical session-scoped activity
-  // resolver), never hardcoded. Ending the assignment (or moving to a new
-  // session) removes it instantly.
+  // Class Captain / Monitor: the nav entry appears ONLY while THIS
+  // student (canonical session id) holds an ACTIVE position in the LIVE
+  // academic session — resolved through filterActivePositions (the
+  // session-scoped activity resolver), never hardcoded. Ending the
+  // assignment (or moving to a new session) removes it instantly.
   // (Raw array + useMemo — zustand v5 selectors must return stable refs.)
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === studentId))
   const allPositions = useStudentsStore((s) => s.studentPositions)
   const sessionId = useAcademicSession().id
   const activePositions = useMemo(
-    () => filterActivePositions(allPositions, studentId, sessionId),
+    () => (studentId ? filterActivePositions(allPositions, studentId, sessionId) : []),
     [allPositions, studentId, sessionId],
   )
   const myClassGroup: NavGroup[] =
@@ -241,11 +241,11 @@ export function StudentPanel() {
         ]
       : []
 
-  // RB-1 — Transport is an opt-in service: students without a transport
-  // assignment (no roster opt-in, no assigned route) never see the
-  // Transport entry — not in the sidebar and not in ⌘K search (the palette
-  // is nav-derived). The demo student HAS transport, so the demo shows it.
-  const hasTransport = useTransportAssignment(studentId)
+  // RB-1 — Transport is an opt-in service: students without a server
+  // route assignment (Student.routeId → Route) never see the Transport
+  // entry — not in the sidebar and not in ⌘K search (the palette is
+  // nav-derived). The assignment comes from /api/student/transport.
+  const { assigned: hasTransport } = useMyServerTransport()
 
   const groups: NavGroup[] = [
     // Home first, then the (conditional) Class Leadership responsibility —
@@ -274,7 +274,7 @@ export function StudentPanel() {
     setActive(LEGACY_MODULE[rawKey] ?? rawKey)
   }
 
-  const [subRecord, setSubRecord] = useState(() => getStudentSubscription(studentId))
+  const [subRecord, setSubRecord] = useState(() => getStudentSubscription(studentId ?? ''))
   const [forceFirstLoginFlow, setForceFirstLoginFlow] = useState(false)
 
   const isSubActive = subRecord.isActive && !forceFirstLoginFlow
@@ -282,10 +282,10 @@ export function StudentPanel() {
   if (!isSubActive) {
     return (
       <StudentSubscriptionActivation
-        studentId={studentId}
+        studentId={studentId ?? ''}
         studentName={studentName}
         onActivated={() => {
-          setSubRecord(getStudentSubscription(studentId))
+          setSubRecord(getStudentSubscription(studentId ?? ''))
           setForceFirstLoginFlow(false)
         }}
       />
@@ -298,7 +298,7 @@ export function StudentPanel() {
       activeKey={active}
       onNavigate={navigate}
       role="student"
-      roleLabel={me?.student?.classLabel ? `Student · ${me.student.classLabel}` : student ? `Student · ${student.className}-${student.section}` : 'Student'}
+      roleLabel={student?.classLabel ? `Student · ${student.classLabel}` : 'Student'}
     >
       {active === 'dashboard' ? (
         <StudentDashboard onNavigate={navigate} />

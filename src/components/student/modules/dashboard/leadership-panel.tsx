@@ -24,23 +24,27 @@ import { useClassResponsibilityStore } from '@/lib/store/class-responsibility-st
 import { POSITION_DEFS, hasCapability, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
 import { formatDate } from '@/lib/format'
-import { DEMO_STUDENT_ID } from '../applications/student'
+import { useCanonicalStudent } from '../shared/canonical'
 import { dueLabel } from './data'
 
 export function LeadershipPanel({ onNavigate }: { onNavigate: (key: string) => void }) {
-  // ── Active appointment (session-scoped resolver) ───────────────────
+  // ── Canonical identity — appointments are scoped to the session's own
+  //    student id (server Student row). The retired STU-58 demo key no
+  //    longer grants leadership. (renders null when none) ──────────
+  const { student } = useCanonicalStudent()
+  const studentId = student?.studentId ?? null
   const allPositions = useStudentsStore((s) => s.studentPositions)
   const sessionId = useAcademicSession().id
   const positions = useMemo(
-    () => filterActivePositions(allPositions, DEMO_STUDENT_ID, sessionId),
-    [allPositions, sessionId],
+    () => (studentId ? filterActivePositions(allPositions, studentId, sessionId) : []),
+    [allPositions, studentId, sessionId],
   )
 
-  // ── Staff-assigned responsibility tasks (PHASE 16) ─────────────────
+  // ── Staff-assigned responsibility tasks (PHASE 16) ─────────────
   const tasks = useClassResponsibilityStore((s) => s.responsibilityTasks)
   const myTasks = useMemo(
-    () => tasks.filter((t) => t.studentId === DEMO_STUDENT_ID).slice(0, 3),
-    [tasks],
+    () => (studentId ? tasks.filter((t) => t.studentId === studentId).slice(0, 3) : []),
+    [tasks, studentId],
   )
 
   if (positions.length === 0) return null

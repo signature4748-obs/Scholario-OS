@@ -9,12 +9,11 @@ import { DEFAULT_PAYMENT_MODES } from '@/lib/store/fee-store-data'
 /**
  * Student Fees module data — presentation metadata ONLY.
  *
- * EVERY financial figure in this module is derived at runtime from the
- * canonical fee engine (`computeAccount` over the ONE fee ledger): the
- * balance, the structure breakdown, concessions, late fees and receipts.
- * Nothing monetary is hardcoded here — the old fabricated breakdown
- * (₹ amounts + per-head "paid" splits that didn't tie to any ledger) is
- * gone.
+ * EVERY financial figure in this module comes from the CANONICAL server
+ * fee ledger (GET /api/student/fees — the same Fee + FeeTransaction rows
+ * the Principal's Fee Management and the Teacher's Fee Collection modules
+ * read). Nothing monetary is hardcoded here — the old client-side demo
+ * fee universe (fee-store seeded for STU-58) is retired from this module.
  */
 
 /** Online payment rails offered in the checkout — DERIVED from the
@@ -63,10 +62,12 @@ export const paymentMethods: StudentPaymentMethod[] = DEFAULT_PAYMENT_MODES
 export type PayStage = 'amount' | 'review' | 'gateway' | 'verifying' | 'success' | 'failed'
 
 export interface PaymentStudentInfo {
+  /** Canonical display name from the server session (/api/auth/me). */
   name: string
-  admissionNo: string
-  className: string
-  section: string
+  admissionNo: string | null
+  /** Composed class label ("Grade 9 - A") from the canonical student
+   *  identity — already carries the section, never re-suffixed. */
+  classLabel: string | null
 }
 
 // ─── Server payment API contract (see src/app/api/student/payments/*) ────

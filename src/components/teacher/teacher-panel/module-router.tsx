@@ -1,14 +1,12 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { lazyModule } from '@/components/shared/lazy-module'
 
 // Every module is a separate lazily-loaded chunk: navigating compiles just
 // that module (small memory spikes) instead of one giant teacher bundle.
+// Chunk-resilient: import retry + per-module error boundary (§22/§29).
 const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
-  dynamic(() => loader().then((m) => m[pick] as React.ComponentType<any>), {
-    loading: ModuleLoading,
-  })
+  lazyModule(loader, pick)
 
 const TeacherDashboard = lazy(() => import('../modules/dashboard'), 'TeacherDashboard')
 const PersonalAttendance = lazy(() => import('../modules/personal-attendance'), 'PersonalAttendance')

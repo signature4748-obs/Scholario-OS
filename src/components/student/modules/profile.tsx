@@ -1,49 +1,50 @@
 'use client'
 
 /**
- * ProfileModule — the STUDENT's own profile, SIMPLIFIED.
+ * ProfileModule — the STUDENT's own profile, canonical-data edition.
  *
  * Product principle (final simplification pass): a student needs
  * "Who am I? · How am I doing? · Where are my important records?" —
  * NOT a mirrored copy of the Principal's administrative record.
  *
- * Structure:
- *   1. Identity card (avatar, name, Active, Class · Roll · House,
- *      View School ID) — flat institutional card, no decorative banner
- *   2. ONE academic snapshot — every figure from the canonical stores
- *      (attendance / results / fee ledger — never hardcoded roster
- *      academics fields)
- *   3. Three tabs: Personal · Parents · Records
- *   4. A compact "My Responsibility" strip (only while a Captain/Monitor
- *      position is ACTIVE — permission-driven, never hardcoded)
+ * DATA SOURCES (stabilization §8/§10 — ONE canonical student record):
+ *   · Identity: /api/auth/me → me.student (the DB Student row). The
+ *     retired client-side demo roster (STU-58 · Class 2-A) is no longer
+ *     consulted anywhere — unknown fields render '—', never fabricated.
+ *   · Attendance: /api/student/attendance (the rows staff write).
+ *   · Results: /api/student/results (declared Exam + Result rows).
+ *   · Fees: /api/student/fees (the Fee/FeeTransaction ledger).
+ *   · Transport: /api/student/transport (the Route/Vehicle rows).
  *
- * The module renders NO big "My Profile" title — the shell header +
- * sidebar already say where you are (one WHERE-AM-I, never two).
+ * Structure:
+ *   1. Identity card (avatar, name, Active, Class · Roll, View School ID)
+ *   2. ONE academic snapshot (live canonical figures)
+ *   3. Three tabs: Personal · Parents · Records
+ *   4. A compact "My Responsibility" strip (only while a position is
+ *      ACTIVE for THIS student — canonical session-scoped resolver)
  */
 
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  User, Phone, Mail, Calendar, Droplet, Crown, GraduationCap,
+  User, Phone, Calendar, Droplet, Crown, GraduationCap,
   Activity, TrendingUp, IndianRupee, IdCard, Award, Bus,
-  ChevronRight, ClipboardList, ShieldCheck,
+  ChevronRight, ClipboardList, ShieldCheck, Users,
 } from 'lucide-react'
 import { GlassCard, StatusBadge, GradientAvatar } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useStudentsStore } from '@/lib/store/students-store'
-import type { StudentRecord } from '@/lib/store/students-store'
 import { computeStats } from '@/lib/store/student-attendance-store'
 import { useMyServerAttendance } from '@/hooks/use-my-attendance'
-import { useFeeStore } from '@/lib/store/fee-store'
-import { useCertificatesStore } from '@/lib/store/certificates-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession, ACTIVE_SESSION_ID, formatSessionLabel } from '@/lib/academic-session'
-import { useMyResults, fmtPct } from '@/lib/store/student-results-store'
-import { DEMO_STUDENT_ID } from './applications/student'
-import { useEnrollmentIdentity, type EnrollmentIdentity } from './shared/enrollment'
+import { useStudentsStore } from '@/lib/store/students-store'
+import { useCurrentUser } from '@/lib/store/current-user-store'
 import { formatDate } from '@/lib/format'
 import { StudentIdCardDialog } from '@/components/student/shell/student-id-card'
+import {
+  useCanonicalStudent, useMyServerFees, useMyServerResults, useMyServerTransport,
+} from './shared/canonical'
 
 const TABS = [
   { key: 'personal', label: 'Personal' },
@@ -56,70 +57,46 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
   const [activeTab, setActiveTab] = useState<TabKey>('personal')
   const [idOpen, setIdOpen] = useState(false)
 
-  // ── Canonical identity (one roster, every role — STU-B) ──────────────
-  const student = useStudentsStore((st) => st.students.find((x) => x.id === DEMO_STUDENT_ID))
-  const allPositions = useStudentsStore((st) => st.studentPositions)
-
-  // STU-RES — the ONE canonical results store (same source as the Results
-  // module + dashboard). Overall + rank derive from the LATEST PUBLISHED
-  // assessment — never from stale roster academics fields. Rank hides
-  // automatically when the school's privacy policy disables it.
-  const results = useMyResults()
-  const latestResult = results.latest
-
-  // Live fee figures — the ONE fee ledger (same derivation as the Fees
-  // module: Success transactions for this student).
-  const allTxns = useFeeStore((s) => s.transactions)
-  const feePaid = useMemo(
-    () => allTxns.filter((t) => t.studentId === DEMO_STUDENT_ID && t.status === 'Success')
-      .reduce((sum, t) => sum + t.amount, 0),
-    [allTxns],
-  )
+  // ── Canonical identity — server session truth ────────────────────────
+  const { student, resolving } = useCanonicalStudent()
+  const me = useCurrentUser((s) => s.me)
+  const displayName = me?.name || 'Student'
+  const initials =
+    displayName === 'Student'
+      ? '·'
+      : displayName.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
 
   // STU-ATT — attendance derives LIVE from the server's canonical
-  // attendance records (the same rows Teacher/Principal write via
-  // /api/student/attendance), so a correction anywhere updates the
-  // profile snapshot — it can never disagree with the Attendance module.
+  // attendance records (the same rows Teacher/Principal write).
   const { records: myAttendance, loading: attendanceLoading } = useMyServerAttendance()
-  const attendancePct = useMemo(
-    () => computeStats(myAttendance).percent,
-    [myAttendance],
-  )
+  const attendancePct = useMemo(() => computeStats(myAttendance).percent, [myAttendance])
 
-  // Certificates — the same store My Certificates reads (raw array +
-  // useMemo — zustand v5 selectors must return stable refs).
-  const allDocs = useCertificatesStore((s) => s.documents)
-  const myDocs = useMemo(
-    () => allDocs.filter((d) => d.studentId === DEMO_STUDENT_ID || d.admissionNo === 'DSO2024058'),
-    [allDocs],
-  )
+  // STU-RES — declared exam history from the server's Result rows.
+  const { latest: latestExam, loading: resultsLoading } = useMyServerResults()
+
+  // Live fee figures — the ONE server fee ledger (same derivation as the
+  // Fees module: outstanding = billed − verified paid).
+  const { ledger, loading: feesLoading } = useMyServerFees()
+  const feeStatus =
+    ledger == null ? '—'
+    : ledger.totals.outstanding <= 0 && ledger.totals.billed > 0 ? 'Paid'
+    : ledger.totals.paid > 0 ? 'Partial'
+    : ledger.totals.billed > 0 ? 'Pending'
+    : '—'
+
+  // Transport — the student's own route assignment (server).
+  const { assigned: hasTransport, route: transportRoute } = useMyServerTransport()
 
   // Positions held by THIS student — only ACTIVE ones in the live session
-  // surface (RB-1 canonical resolver; raw array + useMemo keeps zustand v5
-  // selectors on stable refs).
+  // surface (RB-1 canonical resolver, keyed to the canonical student id).
   const sessionId = useAcademicSession().id
+  const allPositions = useStudentsStore((st) => st.studentPositions)
   const positions = useMemo(
-    () => filterActivePositions(allPositions, DEMO_STUDENT_ID, sessionId),
-    [allPositions, sessionId],
+    () => (student ? filterActivePositions(allPositions, student.studentId, sessionId) : []),
+    [allPositions, student, sessionId],
   )
 
-  // SD-3b — server-first identity (session truth): class, roll, admission
-  // number and personal particulars come from /api/auth/me; the seed
-  // record only fills the gaps, so this profile can never disagree with
-  // the sidebar / dashboard / ID card.
-  const identity = useEnrollmentIdentity({
-    className: 'Class 2',
-    section: 'A',
-    rollNo: student?.rollNo ?? '18',
-    admissionNo: student?.admissionNo ?? 'DSO2024058',
-    dob: student?.dob,
-    gender: student?.gender,
-    bloodGroup: student?.bloodGroup,
-    guardianName: student?.guardianName,
-    guardianPhone: student?.guardianPhone,
-  })
-
-  if (!student) {
+  if (resolving) {
     return (
       <div className="flex items-center justify-center py-24">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-label="Loading profile" />
@@ -127,9 +104,18 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
     )
   }
 
-  const s = student
-  const feePending = Math.max(0, s.feeTotal - feePaid)
-  const feeStatus = feePending === 0 ? 'Paid' : feePaid > 0 ? 'Partial' : 'Pending'
+  if (!student) {
+    return (
+      <GlassCard className="p-6 text-center">
+        <p className="text-sm font-semibold">Student record unavailable</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Your account is not linked to a student record. Please contact the school office.
+        </p>
+      </GlassCard>
+    )
+  }
+
+  const s = student // alias for readability below
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-4xl">
@@ -143,7 +129,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
             className="relative shrink-0 mx-auto sm:mx-0"
           >
             <div className="flex h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem] items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-xl sm:text-2xl font-extrabold shadow-premium-lg ring-1 ring-emerald-500/25">
-              {s.avatar}
+              {initials}
             </div>
             <span
               className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white border-[3px] border-background"
@@ -156,7 +142,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
 
           <div className="flex-1 min-w-0 text-center sm:text-left">
             <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
-              <h2 className="font-display text-xl sm:text-2xl font-extrabold tracking-tight truncate">{s.name}</h2>
+              <h2 className="font-display text-xl sm:text-2xl font-extrabold tracking-tight truncate">{displayName}</h2>
               <StatusBadge status="Active" variant="success" dot />
               {positions.map((p) => (
                 <span
@@ -169,10 +155,10 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
               ))}
             </div>
             <p className="text-sm text-muted-foreground mt-1.5">
-              {identity.classLabel} · Roll #{identity.rollNo} · {s.houseName} House
+              {s.classLabel ?? '—'}{s.rollNo ? ` · Roll #${s.rollNo}` : ''}
             </p>
             <p className="text-[11px] text-muted-foreground/80 mt-0.5">
-              Admission No {identity.admissionNo} · {formatSessionLabel(ACTIVE_SESSION_ID)}
+              {s.admissionNo ? `Admission No ${s.admissionNo} · ` : ''}{formatSessionLabel(ACTIVE_SESSION_ID)}
             </p>
           </div>
 
@@ -205,10 +191,10 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
             color="text-emerald-600 dark:text-emerald-400"
             bg="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
           />
-          {latestResult ? (
+          {latestExam ? (
             <SnapshotStat
               label="Last Exam"
-              value={`${fmtPct(latestResult.totals.pct)}% · ${latestResult.grade}`}
+              value={`${latestExam.pct != null ? latestExam.pct : '—'}%`}
               icon={<GraduationCap className="h-4 w-4" />}
               color="text-violet-600 dark:text-violet-400"
               bg="bg-violet-500/10 text-violet-600 dark:text-violet-400"
@@ -216,16 +202,16 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
           ) : (
             <SnapshotStat
               label="Last Exam"
-              value="Awaited"
+              value={resultsLoading ? '…' : 'Awaited'}
               icon={<GraduationCap className="h-4 w-4" />}
               color="text-muted-foreground"
               bg="bg-muted text-muted-foreground"
             />
           )}
-          {latestResult?.rank != null ? (
+          {latestExam?.rank ? (
             <SnapshotStat
               label="Class Rank"
-              value={`#${latestResult.rank}`}
+              value={`#${latestExam.rank.position}`}
               icon={<TrendingUp className="h-4 w-4" />}
               color="text-amber-600 dark:text-amber-400"
               bg="bg-amber-500/10 text-amber-600 dark:text-amber-400"
@@ -241,7 +227,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
           )}
           <SnapshotStat
             label="Fees"
-            value={feeStatus}
+            value={feesLoading ? '…' : feeStatus}
             icon={<IndianRupee className="h-4 w-4" />}
             color={feeStatus === 'Paid' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
             bg={feeStatus === 'Paid' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}
@@ -277,12 +263,14 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
       >
-        {activeTab === 'personal' && <PersonalTab student={s} identity={identity} />}
-        {activeTab === 'parents' && <ParentsTab student={s} identity={identity} />}
+        {activeTab === 'personal' && <PersonalTab student={s} />}
+        {activeTab === 'parents' && <ParentsTab student={s} />}
         {activeTab === 'records' && (
           <RecordsTab
-            student={s}
-            certCount={myDocs.length}
+            latestExam={latestExam}
+            resultsLoading={resultsLoading}
+            hasTransport={hasTransport}
+            transportRouteName={transportRoute?.name ?? null}
             onNavigate={onNavigate}
           />
         )}
@@ -297,7 +285,7 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">
-                {POSITION_DEFS[positions[0].key]?.title ?? 'Class Monitor'} · {identity.classLabel}
+                {POSITION_DEFS[positions[0].key]?.title ?? 'Class Monitor'} · {s.classLabel ?? 'My Class'}
               </p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 Since {formatDate(positions[0].assignedOn)} · appointed by {positions[0].assignedByName}
@@ -316,10 +304,13 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
       )}
 
       {/* ── School ID — school-configured institutional card (§27–28) ── */}
-      <StudentIdCardDialog open={idOpen} onOpenChange={setIdOpen} student={s} enrollment={identity} />
+      <StudentIdCardDialog open={idOpen} onOpenChange={setIdOpen} student={s} displayName={displayName} active={me?.status !== 'SUSPENDED'} />
     </div>
   )
 }
+
+/** Display name comes from the session user (me.name) — the Student row
+ *  itself carries no name column. */
 
 // ══════════════════════════════════════════════════════════════════════
 // Building blocks
@@ -365,19 +356,26 @@ function InfoRow({ icon, label, value, accent }: {
 }
 
 /** ── Personal: only the genuinely useful personal information ────────── */
-function PersonalTab({ student: s, identity }: { student: StudentRecord; identity: EnrollmentIdentity }) {
+function PersonalTab({ student: s }: { student: ReturnType<typeof useCanonicalStudent>['student'] }) {
+  if (!s) return null
   const rows = [
-    { label: 'Date of Birth', value: identity.dob ? formatDate(identity.dob) : '—', icon: <Calendar className="h-4 w-4" />, accent: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
-    { label: 'Gender', value: identity.gender ?? '—', icon: <User className="h-4 w-4" />, accent: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
-    { label: 'Blood Group', value: identity.bloodGroup ?? '—', icon: <Droplet className="h-4 w-4" />, accent: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+    { label: 'Date of Birth', value: s.dob ? formatDate(s.dob) : '—', icon: <Calendar className="h-4 w-4" />, accent: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+    { label: 'Gender', value: s.gender ? s.gender.charAt(0).toUpperCase() + s.gender.slice(1).toLowerCase() : '—', icon: <User className="h-4 w-4" />, accent: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
+    { label: 'Blood Group', value: s.bloodGroup ?? '—', icon: <Droplet className="h-4 w-4" />, accent: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+    { label: 'Admission No', value: s.admissionNo ?? '—', icon: <ClipboardList className="h-4 w-4" />, accent: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
   ]
   return (
     <GlassCard className="p-4 sm:p-5">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {rows.map((r) => (
           <InfoRow key={r.label} icon={r.icon} label={r.label} value={r.value} accent={r.accent} />
         ))}
       </div>
+      {s.address && (
+        <div className="mt-2.5">
+          <InfoRow icon={<Users className="h-4 w-4" />} label="Address" value={s.address} accent="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" />
+        </div>
+      )}
       <p className="text-[11px] text-muted-foreground mt-3.5 flex items-center gap-1.5">
         <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
         These details are school-managed — ask the school office for corrections.
@@ -386,29 +384,21 @@ function PersonalTab({ student: s, identity }: { student: StudentRecord; identit
   )
 }
 
-/** ── Parents & Guardian: polished, privacy-respecting ────────────────── */
-function ParentsTab({ student: s, identity }: { student: StudentRecord; identity: EnrollmentIdentity }) {
-  // Server guardian first (session truth); the seed parents fill the rest.
-  const guardianName = identity.guardianName ?? s.fatherName
+/** ── Parents & Guardian: server guardian particulars only ───────────── */
+function ParentsTab({ student: s }: { student: ReturnType<typeof useCanonicalStudent>['student'] }) {
+  if (!s) return null
+  const guardianName = s.guardianName ?? '—'
   return (
     <GlassCard className="p-4 sm:p-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
           <GradientAvatar name={guardianName} size="lg" gradient="from-violet-400 to-purple-500" />
           <div className="min-w-0">
-            <p className="text-[11px] text-muted-foreground">Father</p>
+            <p className="text-[11px] text-muted-foreground">Guardian</p>
             <p className="text-sm font-semibold truncate">{guardianName}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
-          <GradientAvatar name={s.motherName} size="lg" gradient="from-rose-400 to-pink-500" />
-          <div className="min-w-0">
-            <p className="text-[11px] text-muted-foreground">Mother</p>
-            <p className="text-sm font-semibold truncate">{s.motherName}</p>
-          </div>
-        </div>
-        <InfoRow icon={<Phone className="h-4 w-4" />} label="Guardian Phone" value={identity.guardianPhone ?? s.guardianPhone} accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" />
-        <InfoRow icon={<Mail className="h-4 w-4" />} label="Guardian Email" value={s.guardianEmail} accent="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" />
+        <InfoRow icon={<Phone className="h-4 w-4" />} label="Guardian Phone" value={s.guardianPhone ?? '—'} accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" />
       </div>
       <p className="text-[11px] text-muted-foreground mt-3.5 flex items-center gap-1.5">
         <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
@@ -419,9 +409,11 @@ function ParentsTab({ student: s, identity }: { student: StudentRecord; identity
 }
 
 /** ── Records: only rows whose data actually exists; each deep-links ──── */
-function RecordsTab({ student: s, certCount, onNavigate }: {
-  student: StudentRecord
-  certCount: number
+function RecordsTab({ latestExam, resultsLoading, hasTransport, transportRouteName, onNavigate }: {
+  latestExam: { examName: string; pct: number | null; rank: { position: number; assessedCount: number } | null } | null
+  resultsLoading: boolean
+  hasTransport: boolean
+  transportRouteName: string | null
   onNavigate?: (key: string) => void
 }) {
   const rows: {
@@ -432,40 +424,40 @@ function RecordsTab({ student: s, certCount, onNavigate }: {
     value: string
   }[] = []
 
-  // Latest published result (canonical results store — same source as
-  // the Results module; rank only when the school's policy allows it)
-  const results = useMyResults()
-  const latest = results.latest
-  if (latest) {
+  // Latest declared result (the same server source as the Results module)
+  if (latestExam) {
     rows.push({
       key: 'results',
       icon: <ClipboardList className="h-4 w-4" />,
       iconClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
       title: 'Academic Records',
-      value: `${latest.grade} · ${fmtPct(latest.totals.pct)}%${latest.rank != null ? ` · Rank #${latest.rank}` : ''} · ${latest.assessment.name}`,
+      value: `${latestExam.pct != null ? `${latestExam.pct}%` : 'Declared'}${latestExam.rank ? ` · Rank #${latestExam.rank.position}` : ''} · ${latestExam.examName}`,
     })
+  } else if (!resultsLoading) {
+    // no declared results yet — nothing to link (honest absence)
   }
 
-  // Certificates — only if issued
-  if (certCount > 0) {
-    rows.push({
-      key: 'my-certificates',
-      icon: <Award className="h-4 w-4" />,
-      iconClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      title: 'Certificates',
-      value: `${certCount} issued`,
-    })
-  }
-
-  // Transport — only if the student actually opted in
-  if (s.transportRoute) {
+  // Transport — only if the student has a route assignment
+  if (hasTransport && transportRouteName) {
     rows.push({
       key: 'bus',
       icon: <Bus className="h-4 w-4" />,
       iconClass: 'bg-lime-500/10 text-lime-700 dark:text-lime-400',
       title: 'Transport',
-      value: s.transportRoute,
+      value: transportRouteName,
     })
+  }
+
+  if (rows.length === 0) {
+    return (
+      <GlassCard className="p-6 text-center">
+        <Award className="h-8 w-8 mx-auto text-muted-foreground/50" />
+        <p className="text-sm font-semibold mt-2">No records yet</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Results, certificates and transport records will appear here as the school publishes them.
+        </p>
+      </GlassCard>
+    )
   }
 
   return (

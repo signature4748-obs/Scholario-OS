@@ -3,46 +3,64 @@
 /**
  * Student-side helpers for the Applications & Forms module.
  *
- * IDENTITY MODEL (one canonical record — since the roster unification):
- *   The demo student IS the canonical students-store record STU-58
- *   (Aarav Sharma, Class 2-A, DSO2024058). Submissions and payments use
- *   this record — the fee store validates canonical ids, and payment
- *   derivation joins on `studentId`.
+ * IDENTITY MODEL (canonical — stabilization §8):
+ *   The authenticated student is resolved SERVER-side (/api/auth/me →
+ *   me.student: the DB Student row). The retired client-side demo roster
+ *   key (STU-58 · Class 2-A · DSO2024058) is no longer used for identity,
+ *   submissions, payments or eligibility — every read is scoped to the
+ *   session's own student record.
  */
 
 import { useMemo } from 'react'
-import { useStudentsStore, type StudentRecord } from '@/lib/store/students-store'
+import type { StudentRecord } from '@/lib/store/students-store'
 import {
   useApplicationsStore,
   type ApplicationAuditEvent,
   type CombinedSubmissionStatus,
   type StudentSubmissionIdentity,
 } from '@/lib/store/applications-store'
+import { useCurrentUser } from '@/lib/store/current-user-store'
+import { useCanonicalStudent } from '../shared/canonical'
 
-export const DEMO_STUDENT_ID = 'STU-58'
-
-/** Canonical identity for the demo student. */
+/** Canonical identity for the logged-in student. */
 export interface StudentIdentityPair {
   /** Canonical record — display, submissions, payments and eligibility. */
   canonical: StudentRecord
 }
 
-/** Reactive hook resolving the canonical identity. */
+/**
+ * Reactive hook resolving the canonical identity from the server session
+ * (me.student mapped into the StudentRecord shape the applications module
+ * consumes). Null while unresolved or when the account has no student
+ * record — callers render their honest unavailable state.
+ */
 export function useDemoStudent(): StudentIdentityPair | null {
-  const students = useStudentsStore((s) => s.students)
+  const { student, resolving } = useCanonicalStudent()
+  const name = useCurrentUser((s) => s.me?.name)
   return useMemo(() => {
-    const canonical = students.find((s) => s.id === DEMO_STUDENT_ID && s.status === 'Active')
-    if (!canonical) return null
+    if (resolving || !student) return null
+    // Session-scoped canonical record. Only identity-bearing fields are
+    // populated; roster-only extras (fees/attendance/academics snapshots)
+    // are not fabricated here.
+    const canonical: StudentRecord = {
+      id: student.studentId,
+      name: name ?? 'Student',
+      avatar: (name ?? 'S').split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase(),
+      admissionNo: student.admissionNo ?? '—',
+      rollNo: student.rollNo ?? '—',
+      classId: student.classId ?? '—',
+      className: student.className ?? '—',
+      section: student.section ?? '—',
+      dob: student.dob ?? '',
+      gender: student.gender ? student.gender.charAt(0) + student.gender.slice(1).toLowerCase() : '',
+      bloodGroup: student.bloodGroup ?? '',
+      guardianName: student.guardianName ?? '',
+      guardianPhone: student.guardianPhone ?? '',
+      address: student.address ?? '',
+      status: 'Active',
+    } as unknown as StudentRecord
     return { canonical }
-  }, [students])
-}
-
-/** Resolve the canonical identity for the demo student (non-reactive). */
-export function resolveCanonicalStudent(students: StudentRecord[]): StudentRecord | undefined {
-  return (
-    students.find((s) => s.id === DEMO_STUDENT_ID && s.status === 'Active') ??
-    students.find((s) => s.status === 'Active' && s.className.startsWith('Class 2'))
-  )
+  }, [student, resolving, name])
 }
 
 /**

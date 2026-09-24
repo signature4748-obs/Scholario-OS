@@ -23,10 +23,9 @@
 import { ChevronLeft, ChevronRight, X, Search } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import { useStudentsStore } from '@/lib/store/students-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
+import { useCanonicalStudent } from '../modules/shared/canonical'
 import { APP_VERSION } from '@/lib/app-version'
-import { DEMO_STUDENT_ID } from '../modules/applications/student'
 import type { NavGroup } from '@/components/shell/app-shell/types'
 
 interface StudentSidebarProps {
@@ -55,20 +54,21 @@ export function StudentSidebar({
   void cmdOpen
 
   // Personal workspace identity — the SERVER enrollment context
-  // (user → student → class, resolved by /api/auth/me) is the truth;
-  // the client roster is only a hydrating fallback. SS-1: shows the
-  // student's real profile photo (server identity) when one is set,
-  // initials otherwise.
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // (user → student → class, resolved by /api/auth/me) is the ONLY truth.
+  // While the session resolves we render quiet placeholders — never a
+  // client-side demo roster (the STU-58 overlay is retired).
   const me = useCurrentUser((s) => s.me)
-  const initials = student?.avatar ?? '·'
+  const { student, resolving } = useCanonicalStudent()
   const avatarUrl = useCurrentUser((s) => s.me?.avatarUrl)
-  const displayName = me?.name || student?.name || 'My Profile'
-  const identityTitle = me?.student?.classLabel
-    ? `${displayName} · ${me.student.classLabel}`
-    : student
-      ? `${student.name} · ${student.className}-${student.section}`
-      : 'My Profile'
+  const displayName = me?.name || 'Student'
+  const initials =
+    displayName === 'Student' ? '·' : displayName.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
+  const identityTitle = student?.classLabel ? `${displayName} · ${student.classLabel}` : displayName
+  const identityLine = resolving
+    ? '·'
+    : student?.classLabel
+      ? `${student.classLabel}${student.rollNo ? ` · Roll ${student.rollNo}` : ''}`
+      : ''
 
   return (
     <motion.aside
@@ -146,7 +146,7 @@ export function StudentSidebar({
               )}
             >
               {avatarUrl ? (
-                <img src={avatarUrl} alt={student?.name ?? 'My profile photo'} className="h-full w-full object-cover" />
+                <img src={avatarUrl} alt={`${displayName} profile photo`} className="h-full w-full object-cover" />
               ) : (
                 initials
               )}
@@ -163,11 +163,7 @@ export function StudentSidebar({
                 {displayName}
               </span>
               <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                {me?.student?.classLabel
-                  ? `${me.student.classLabel}${me.student.rollNo ? ` · Roll ${me.student.rollNo}` : ''}`
-                  : student
-                    ? `${student.className}-${student.section}${student.rollNo ? ` · Roll ${student.rollNo}` : ''}`
-                    : ''}
+                {identityLine || 'Student workspace'}
               </span>
             </span>
           )}

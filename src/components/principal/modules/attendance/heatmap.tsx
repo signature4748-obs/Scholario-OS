@@ -1,17 +1,17 @@
 'use client'
 
 /**
- * AttendanceHeatmap — Brief PART 6-8 (Phase 5).
+ * AttendanceHeatmap — month calendar with REAL rates only.
  *
- * Brief PART 6: Month navigation arrows ACTUALLY WORK — clicking ← loads
- *   the previous month's attendance heatmap; → loads the next month.
- * Brief PART 7: When month changes, ALL of the following update:
- *   month title, calendar dates, weekday alignment, attendance colors,
- *   attendance percentages, selected day, selected-day summary.
- * Brief PART 8: Clicking a day shows the selected-day summary; switching
- *   months clears the selected day if it's no longer valid.
- * Brief PART 9-13: Holidays + weekends come from the school calendar.
- * Brief PART 35: Heatmap distinguishes Working day / Holiday / Weekend.
+ * Calendar geometry (weekends, declared holidays, weekday alignment) is
+ * real; attendance colors appear ONLY on days that have Attendance rows
+ * (the snapshot's weekTrend — the 7 most recent recorded days). Every
+ * other working day renders as an honest neutral "no record" cell —
+ * no fabricated rates, ever.
+ *
+ * Clicking a working day shows the selected-day summary (real rate +
+ * recorded count, or the honest no-record state). "View full attendance"
+ * jumps to History with that date pre-selected.
  */
 
 import { useState, useMemo, useEffect } from 'react'
@@ -25,13 +25,20 @@ import {
   HOLIDAY_CELL_COLOR,
   formatMonthLabel,
   formatMonthLabelCompact,
+  type TrendPoint,
 } from './data'
 import { CalendarLegend, SelectedDayPanel } from './shared'
 
 type HeatmapProps = {
+  /** Real per-day aggregates (from the snapshot's weekTrend). */
+  weekTrend: TrendPoint[]
+  /** The canonical "today" (snapshot date) — bounds future days. */
+  todayStr: string
+  /** The currently selected snapshot date — the default month follows it. */
+  selectedDate: string
   selectedDay: number | null
   setSelectedDay: (d: number | null) => void
-  /** Callback fired when user clicks "View full attendance →" (Brief §19). */
+  /** Callback fired when user clicks "View full attendance →". */
   onViewFullAttendance?: (dateStr: string) => void
 }
 
@@ -40,22 +47,45 @@ interface MonthState {
   month: number
 }
 
-export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAttendance }: HeatmapProps) {
+export function AttendanceHeatmap({
+  weekTrend, todayStr, selectedDate, selectedDay, setSelectedDay, onViewFullAttendance,
+}: HeatmapProps) {
   const reduce = useReducedMotion()
-  // Brief PART 6: month navigation state. Default = December 2025.
-  const [monthState, setMonthState] = useState<MonthState>({ year: 2025, month: 12 })
+
+  // Default month = the selected date's month (follows the date picker).
+  const initial = useMemo<MonthState>(() => {
+    const [y, m] = (selectedDate || todayStr || '').split('-').map(Number)
+    return { year: y || 2026, month: m || 9 }
+  }, [selectedDate, todayStr])
+  const [monthState, setMonthState] = useState<MonthState>(initial)
   const { year, month } = monthState
 
-  // Brief PART 7: rebuild the calendar for the current month.
-  const calendar = useMemo(() => buildMonthCalendar(year, month), [year, month])
+  // When the selected date's month changes (date picker / History jump),
+  // follow it so the heatmap always opens on the relevant month.
+  useEffect(() => {
+    setMonthState((prev) => {
+      if (prev.year === initial.year && prev.month === initial.month) return prev
+      return initial
+    })
+  }, [initial])
 
-  // Brief PART 8: when month changes, clear the selected day if it's no
-  // longer valid (i.e., not in the current month).
+  // REAL per-day rates — only days present in weekTrend get a color.
+  const rateByDate = useMemo(() => {
+    const map = new Map<string, { rate: number; recorded: number }>()
+    for (const t of weekTrend) map.set(t.date, { rate: t.rate, recorded: t.recorded })
+    return map
+  }, [weekTrend])
+
+  const calendar = useMemo(
+    () => buildMonthCalendar(year, month, rateByDate, todayStr),
+    [year, month, rateByDate, todayStr],
+  )
+
+  // When month changes, clear the selected day if it's no longer valid.
   useEffect(() => {
     setSelectedDay(null)
   }, [year, month, setSelectedDay])
 
-  // Brief PART 6: month navigation handlers.
   const goToPreviousMonth = () => {
     setMonthState((prev) => {
       let m = prev.month - 1
@@ -79,15 +109,11 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
     })
   }
 
-  // Brief PART 8: find the selected cell's ISO date string for the
-  // selected-day panel.
   const selectedCell = selectedDay !== null
     ? calendar.find((c) => c.day === selectedDay)
     : null
   const selectedDateStr = selectedCell?.dateStr ?? ''
 
-  // Brief PART 19: pass the date string (not just the day number) to the
-  // "View full attendance" callback so History can pre-fill correctly.
   const handleViewFullAttendance = () => {
     if (onViewFullAttendance && selectedDateStr) {
       onViewFullAttendance(selectedDateStr)
@@ -103,11 +129,10 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
             {formatMonthLabel(year, month)} — Attendance Heatmap
           </h3>
           <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-            Tap a day to view details · color intensity reflects attendance rate
+            Real rates shown only for days with attendance rows · tap a day for details
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Brief PART 6: previous month arrow — actually works */}
           <Button
             size="icon"
             variant="ghost"
@@ -120,7 +145,6 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
           <span className="text-xs font-semibold font-mono tabular-nums">
             {formatMonthLabelCompact(year, month)}
           </span>
-          {/* Brief PART 6: next month arrow — actually works */}
           <Button
             size="icon"
             variant="ghost"
@@ -133,7 +157,7 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
         </div>
       </div>
 
-      {/* Brief PART 7: calendar grid rebuilt for the selected month */}
+      {/* Calendar grid — recorded days colored by REAL rate */}
       <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
           <div
@@ -148,8 +172,10 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
             return <div key={`empty-${idx}`} className="h-8 sm:h-9" />
           }
           const isSelected = selectedDay === cell.day
-          // Brief PART 35: distinguish Working day / Holiday / Weekend
-          const isInteractive = !cell.isWeekend && !cell.isHoliday && cell.rate !== null
+          const isRecorded = cell.rate !== null
+          // Working days (incl. no-record days) are selectable; weekends +
+          // holidays are not.
+          const isInteractive = !cell.isWeekend && !cell.isHoliday
           return (
             <motion.button
               key={cell.dateStr || `day-${cell.day}`}
@@ -160,25 +186,33 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
               whileTap={isInteractive && !reduce ? { scale: 0.96 } : undefined}
               onClick={() => isInteractive && setSelectedDay(cell.day)}
               aria-label={
-                isInteractive
-                  ? `${cell.dateStr}, ${cell.rate}% attendance`
+                isRecorded
+                  ? `${cell.dateStr}, ${cell.rate}% attendance, ${cell.recorded} recorded`
                   : cell.isHoliday
                   ? `${cell.dateStr}, holiday${cell.holiday ? ` (${cell.holiday.name})` : ''}`
                   : cell.isWeekend
                   ? `${cell.dateStr}, weekend`
-                  : cell.rate === null
-                  ? `${cell.dateStr}, upcoming (no attendance yet)`
-                  : `${cell.dateStr}`
+                  : cell.isFuture
+                  ? `${cell.dateStr}, upcoming`
+                  : `${cell.dateStr}, no attendance recorded`
               }
               aria-pressed={isSelected}
               className={`h-8 sm:h-9 rounded-md border flex items-center justify-center text-[10px] sm:text-[11px] font-semibold tabular-nums transition-all ${
                 cell.isHoliday
                   ? HOLIDAY_CELL_COLOR
-                  : rateColor(cell.rate)
+                  : isRecorded
+                  ? rateColor(cell.rate)
+                  : 'bg-muted/40 border-border text-muted-foreground'
               } ${isSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''} ${
                 isInteractive ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'
               }`}
-              title={cell.isHoliday && cell.holiday ? cell.holiday.name : undefined}
+              title={
+                isRecorded
+                  ? `${cell.recorded} recorded · ${cell.rate}%`
+                  : cell.isHoliday && cell.holiday
+                  ? cell.holiday.name
+                  : undefined
+              }
             >
               <span>{cell.day}</span>
             </motion.button>
@@ -188,12 +222,17 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
 
       <CalendarLegend />
 
-      {/* Brief PART 8: selected day details — clears when month changes */}
+      {/* Selected day details — real data only */}
       {selectedDay !== null && selectedCell && (
         <SelectedDayPanel
           selectedDay={selectedDay}
           dateStr={selectedDateStr}
           holiday={selectedCell.holiday}
+          dayRecord={
+            selectedCell.rate !== null
+              ? { rate: selectedCell.rate, recorded: selectedCell.recorded }
+              : null
+          }
           onViewFullAttendance={handleViewFullAttendance}
         />
       )}

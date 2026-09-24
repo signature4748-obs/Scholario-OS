@@ -1,40 +1,35 @@
 'use client'
 
 /**
- * ResultsModule — Student "My Results" (SECOND-GENERATION redesign).
+ * ResultsModule — Student "My Results".
  *
- * An academic narrative, not a dashboard stack (§6/§35):
+ * An academic narrative, not a dashboard stack:
  *
- *   My Results · Your academic performance · [AY 2026–27] [Class 2-A]
- *   ↓ assessment selector
- *   ↓ latest result hero (colour zones, distinct metrics)
+ *   My Results · [AY 2026–27] [Grade 9 - A]
+ *   ↓ assessment selector (server exams)
+ *   ↓ selected result hero (colour zones, distinct metrics)
  *   ↓ subject performance (rows on the page, Timetable colour system)
  *   ↓ performance trend (interactive points)
  *   ↓ academic insights (derived strip — what actually changed)
  *   ↓ teacher's feedback + result history (the timeline)
- *   ↓ official report card + class standings (secondary, permitted)
+ *   ↓ official report card
  *
- * Context is established ONCE (§5/§32 — non-negotiable): class, section
- * and academic year appear exactly here as quiet chips and nowhere else;
- * the sidebar already carries the student's identity. Every number
- * derives from the canonical `student-results-store` through the
- * school's configured scale and privacy policy. Sections with
- * insufficient data collapse entirely (§44).
+ * THE MARKS UNIVERSE IS THE SERVER'S (20-results stabilization): every
+ * number derives from /api/student/results — the SAME Exam + Result
+ * rows the Principal declares and the Class Teacher's marks entry
+ * writes — via useMyServerResults(). Identity is canonical: the class
+ * chips / report card read useCanonicalStudent() + the session display
+ * name; there are NO client-side seeded marks and NO hardcoded fallback
+ * identities. Sections with insufficient data collapse entirely; one
+ * declared exam degrades the trend honestly.
  */
 
 import { useMemo, useState } from 'react'
-import { Award, CalendarRange, Users } from 'lucide-react'
+import { AlertTriangle, Award, CalendarRange, RefreshCw, Users } from 'lucide-react'
 import { GlassCard, PageTransition } from '@/components/shared/ui'
-import {
-  useMyResults,
-  useStudentResultsStore,
-  resultFor,
-  totalsOf,
-  gradeFor,
-  pctOf,
-  type GradeBand,
-  type SubjectMark,
-} from '@/lib/store/student-results-store'
+import { useMyServerResults, useCanonicalStudent, type MyResultSubject } from '../shared/canonical'
+import { useCurrentUser } from '@/lib/store/current-user-store'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { useAcademicSession } from '@/lib/academic-session'
 import { AssessmentSelector } from './assessment-selector'
 import { Hero } from './hero'
@@ -43,10 +38,17 @@ import { Trend } from './trend'
 import { Insights, type SubjectMovement } from './insights'
 import { Remark } from './remark'
 import { History } from './history'
-import { ClassStandings } from './class-standings'
 import { ReportCard } from './report-card'
+import {
+  DEFAULT_GRADE_SCALE,
+  gradeForPct,
+  pctOfSubject,
+  totalsOfExam,
+  trendPointsOf,
+  type GradeBand,
+} from './derive'
 
-/* ── Scope chips — the page's ONE context line (LR-1: no big title) ── */
+/* ── Scope chips — the page's ONE context line ── */
 
 function ScopeChips({ sessionLabel, classLabel }: { sessionLabel: string; classLabel: string }) {
   return (
@@ -67,22 +69,21 @@ function ScopeChips({ sessionLabel, classLabel }: { sessionLabel: string; classL
   )
 }
 
-/* ── Insight derivations — selected assessment, its own previous ──── */
+/* ── Insight derivations — selected exam vs its own previous ──────── */
 
 interface SelectedInsights {
   strongest: { subject: string; pct: number } | null
   needsAttention: { subject: string; pct: number } | null
   mostImproved: { subject: string; delta: number } | null
   movement: SubjectMovement[]
-  overallDelta: number | null
 }
 
-/** Strongest / focus / improvement — computed from what's on screen. */
-function insightsOf(subjects: SubjectMark[], previous: SubjectMark[] | null): SelectedInsights {
+/** Strongest / focus / improvement — computed from the server's own rows. */
+function insightsOf(subjects: MyResultSubject[], previous: MyResultSubject[] | null): SelectedInsights {
   if (subjects.length === 0) {
-    return { strongest: null, needsAttention: null, mostImproved: null, movement: [], overallDelta: null }
+    return { strongest: null, needsAttention: null, mostImproved: null, movement: [] }
   }
-  const rows = subjects.map((s) => ({ subject: s.subject, pct: pctOf(s.obtained, s.maxMarks) }))
+  const rows = subjects.map((s) => ({ subject: s.subject, pct: pctOfSubject(s) }))
   const sorted = [...rows].sort((a, b) => b.pct - a.pct)
   const strongest = sorted[0] ?? null
   const needsAttention = sorted.length > 1 ? sorted[sorted.length - 1] : null
@@ -95,7 +96,7 @@ function insightsOf(subjects: SubjectMark[], previous: SubjectMark[] | null): Se
       .filter((s) => prevBy.has(s.subject))
       .map((s) => {
         const p = prevBy.get(s.subject)!
-        return { subject: s.subject, from: pctOf(p.obtained, p.maxMarks), to: pctOf(s.obtained, s.maxMarks) }
+        return { subject: s.subject, from: pctOfSubject(p), to: pctOfSubject(s) }
       })
     for (const m of movement) {
       const delta = m.to - m.from
@@ -104,76 +105,144 @@ function insightsOf(subjects: SubjectMark[], previous: SubjectMark[] | null): Se
     if (mostImproved && mostImproved.delta <= 0) mostImproved = null
   }
 
-  return { strongest, needsAttention, mostImproved, movement, overallDelta: null }
+  return { strongest, needsAttention, mostImproved, movement }
 }
 
-export function ResultsModule() {
-  const ctx = useMyResults()
-  const session = useAcademicSession()
-  const results = useStudentResultsStore((s) => s.results)
-  const gradeScale = ctx.gradeScale as GradeBand[]
+/* ── Module shell — retry remounts the fetch ───────────────────────── */
 
-  // Selection — the LATEST published result opens by default; the
-  // selector/history deep-switch without any page round-trip.
+export function ResultsModule() {
+  const [retryKey, setRetryKey] = useState(0)
+  // A key change remounts the content → useMyServerResults refetches.
+  return <ResultsContent key={retryKey} onRetry={() => setRetryKey((k) => k + 1)} />
+}
+
+function ResultsContent({ onRetry }: { onRetry: () => void }) {
+  // ── Canonical marks — the server's declared exams ──
+  const { exams, upcoming, loading, error } = useMyServerResults()
+
+  // ── Canonical identity — session display name + enrollment ──
+  const { student, resolving } = useCanonicalStudent()
+  const sessionName = useCurrentUser((s) => s.me?.name) ?? null
+  const session = useAcademicSession()
+
+  // ── School-configured grade scale + report-card composition ──
+  const resultsConfig = useSchoolSettingsStore((s) => s.results)
+  const gradeScale: GradeBand[] =
+    resultsConfig?.gradeScale?.length ? resultsConfig.gradeScale : DEFAULT_GRADE_SCALE
+  const reportCardConfig = resultsConfig?.reportCard ?? {
+    includeAttendance: true,
+    includePrincipalRemark: true,
+    includeSealNote: true,
+  }
+  const gradeFor = useMemo(() => (pct: number) => gradeForPct(pct, gradeScale), [gradeScale])
+
+  // Selection — the LATEST declared exam opens by default; the selector
+  // / history deep-switch without any page round-trip.
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const effectiveId = selectedId ?? ctx.latest?.assessment.id ?? null
+  const effectiveId = selectedId ?? exams[0]?.examId ?? null
 
   const selectedIdx = useMemo(
-    () => ctx.published.findIndex((a) => a.id === effectiveId),
-    [ctx.published, effectiveId],
+    () => exams.findIndex((e) => e.examId === effectiveId),
+    [exams, effectiveId],
   )
-  const selected = selectedIdx >= 0 ? ctx.published[selectedIdx] : null
-  const selectedResult = useMemo(
-    () => (selected ? resultFor(results, selected.id) : null),
-    [results, selected],
-  )
+  const selected = selectedIdx >= 0 ? exams[selectedIdx] : null
+  // exams arrive latest-declared-first → the previous declared exam of
+  // exams[i] is exams[i + 1].
+  const previous = selectedIdx >= 0 && selectedIdx + 1 < exams.length ? exams[selectedIdx + 1] : null
 
-  const selectedTotals = selectedResult ? totalsOf(selectedResult) : null
-  const selectedStandings = useMemo(
-    () => (selected ? ctx.standings.get(selected.id) ?? [] : []),
-    [ctx.standings, selected],
-  )
-  const myStanding = selectedStandings.find((s) => s.isMe) ?? null
+  const totals = selected ? totalsOfExam(selected) : null
+  const grade = totals ? gradeFor(totals.pct) : null
 
-  const previous = selectedIdx > 0 ? ctx.published[selectedIdx - 1] : null
-  const previousResult = useMemo(
-    () => (previous ? resultFor(results, previous.id) : null),
-    [results, previous],
-  )
-  const previousTotals = previousResult ? totalsOf(previousResult) : null
-
-  // Overall movement — selected vs its own previous published result.
+  // Overall movement — selected vs its own previous declared exam.
   const overallDelta =
-    selectedTotals && previousTotals ? selectedTotals.pct - previousTotals.pct : null
+    selected && previous && totals
+      ? totals.pct - totalsOfExam(previous).pct
+      : null
 
-  // Snapshot-style insights about the SELECTED result (coherent scope).
+  // Snapshot-style insights about the SELECTED exam (coherent scope).
   const insights = useMemo(
-    () => insightsOf(selectedResult?.subjects ?? [], previousResult?.subjects ?? null),
-    [selectedResult, previousResult],
+    () => insightsOf(selected?.subjects ?? [], previous?.subjects ?? null),
+    [selected, previous],
   )
 
+  // Trend — one point per declared exam, chronological.
+  const trendPoints = useMemo(() => trendPointsOf(exams, gradeScale), [exams, gradeScale])
+
+  // Real subject remarks only (never fabricated feedback).
+  const subjectRemarks = useMemo(
+    () =>
+      (selected?.subjects ?? [])
+        .filter((s) => s.remarks)
+        .map((s) => ({ subject: s.subject, text: s.remarks! })),
+    [selected],
+  )
+
+  // Canonical identity — '…' while the session resolves, '—' when the
+  // school has not recorded the particular. NO fabricated fallbacks.
   const identity = {
-    name: ctx.student?.name ?? 'Aarav Sharma',
-    admissionNo: ctx.student?.admissionNo ?? 'DSO2024058',
-    classSection: `${ctx.className}-${ctx.section}`,
-    rollNo: ctx.student?.rollNo ?? '18',
+    name: sessionName ?? (resolving ? '…' : '—'),
+    admissionNo: student?.admissionNo ?? (resolving ? '…' : '—'),
+    classSection: student?.classLabel ?? (resolving ? '…' : '—'),
+    rollNo: student?.rollNo ?? (resolving ? '…' : '—'),
+  }
+  const classLabel = identity.classSection
+
+  /* ── ERROR STATE — honest, retryable ── */
+  if (error) {
+    return (
+      <PageTransition>
+        <GlassCard hover={false} className="on-card px-6 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
+            <AlertTriangle className="h-6 w-6" aria-hidden />
+          </div>
+          <p className="text-sm font-semibold">Results unavailable</p>
+          <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">{error}</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground shadow-2xs transition-all hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Try again
+          </button>
+        </GlassCard>
+      </PageTransition>
+    )
   }
 
-  /* ── EMPTY STATE — nothing published for this session yet (§44) ── */
-  if (!ctx.latest || !selected || !selectedResult || !selectedTotals) {
+  /* ── LOADING STATE — first fetch, no data yet ── */
+  if (loading) {
+    return (
+      <PageTransition>
+        <div className="space-y-6" aria-busy="true" aria-label="Loading results">
+          <div className="h-7 w-64 animate-pulse rounded-full bg-muted/50" />
+          <div className="h-10 animate-pulse rounded-xl bg-muted/40" />
+          <div className="h-44 animate-pulse rounded-2xl bg-muted/50" style={{ animationDelay: '90ms' }} />
+          <div className="space-y-2.5">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-14 animate-pulse rounded-xl bg-muted/30" style={{ animationDelay: `${120 + i * 60}ms` }} />
+            ))}
+          </div>
+          <div className="h-56 animate-pulse rounded-2xl bg-muted/40" style={{ animationDelay: '380ms' }} />
+        </div>
+      </PageTransition>
+    )
+  }
+
+  /* ── EMPTY STATE — nothing declared for this student yet ── */
+  if (!selected || !totals || grade == null) {
     return (
       <PageTransition>
         <div className="space-y-6 sm:space-y-7">
-          <ScopeChips sessionLabel={session.label} classLabel={`${ctx.className}-${ctx.section}`} />
+          <ScopeChips sessionLabel={session.label} classLabel={classLabel} />
           <GlassCard hover={false} className="on-card px-6 py-16 text-center">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Award className="h-6 w-6" aria-hidden />
             </div>
-            <p className="text-sm font-semibold">No published results yet</p>
+            <p className="text-sm font-semibold">No results declared yet</p>
             <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">
-              {ctx.upcoming.length > 0
-                ? `${ctx.upcoming[0].name} is next — your results appear here automatically once the school publishes them.`
-                : 'Your results appear here automatically once the school publishes them.'}
+              {upcoming
+                ? `${upcoming.examName} is next — your results appear here automatically once the school declares them.`
+                : 'Your results appear here automatically once the school declares them.'}
             </p>
           </GlassCard>
         </div>
@@ -184,41 +253,35 @@ export function ResultsModule() {
   return (
     <PageTransition>
       <div className="space-y-6 sm:space-y-7">
-        {/* LR-1 — no module title: the sidebar + top bar already say
-            "Results". The session + class chips below are the page's one
-            scope line (§5/§32); nothing repeats them. */}
-        <ScopeChips sessionLabel={session.label} classLabel={`${ctx.className}-${ctx.section}`} />
+        {/* No module title: the sidebar + top bar already say "Results".
+            The session + class chips below are the page's one scope line. */}
+        <ScopeChips sessionLabel={session.label} classLabel={classLabel} />
 
         {/* The one prominent control — which result am I reading? */}
         <AssessmentSelector
-          published={ctx.published}
-          upcoming={ctx.upcoming}
-          selectedId={selected.id}
+          exams={exams}
+          upcoming={upcoming}
+          selectedId={selected.examId}
           onSelect={setSelectedId}
         />
 
         {/* 1 — the selected result at a glance */}
         <Hero
-          assessment={selected}
-          totals={selectedTotals}
-          grade={gradeFor(selectedTotals.pct, gradeScale)}
-          rank={ctx.showRank ? (myStanding?.rank ?? null) : null}
-          classSize={selectedStandings.length}
-          isLatest={selected.id === ctx.latest.assessment.id}
-          delta={ctx.showComparison ? overallDelta : null}
-          previousName={previous?.name ?? null}
+          exam={selected}
+          totals={totals}
+          grade={grade}
+          isLatest={selected.examId === exams[0]?.examId}
+          delta={overallDelta}
+          previousName={previous?.examName ?? null}
         />
 
-        {/* 2 — the core: subject-wise performance (remounts per assessment
-            so an expanded subject never carries over between results) */}
-        <SubjectPerformance
-          key={selected.id}
-          subjects={selectedResult.subjects}
-          gradeFor={(pct) => gradeFor(pct, gradeScale)}
-        />
+        {/* 2 — the core: subject-wise performance (remounts per exam so
+            an expanded subject never carries over between results) */}
+        <SubjectPerformance key={selected.examId} subjects={selected.subjects} />
 
-        {/* 3 — the real trend, interactive point by point */}
-        <Trend points={ctx.trend} />
+        {/* 3 — the real trend, interactive point by point (one declared
+            exam ⇒ the section explains itself, no invented history) */}
+        <Trend points={trendPoints} />
 
         {/* 4 — what actually changed (derived, respectful) */}
         <Insights
@@ -227,46 +290,40 @@ export function ResultsModule() {
             needsAttention: insights.needsAttention,
             mostImproved: insights.mostImproved,
           }}
-          overallDelta={ctx.showComparison ? overallDelta : null}
-          previousName={previous?.name ?? null}
-          classPosition={ctx.showRank && myStanding ? { rank: myStanding.rank, classSize: selectedStandings.length } : null}
-          movement={ctx.showComparison ? insights.movement : []}
+          overallDelta={overallDelta}
+          previousName={previous?.examName ?? null}
+          classPosition={
+            selected.rank != null
+              ? { rank: selected.rank.position, classSize: selected.rank.assessedCount }
+              : null
+          }
+          movement={insights.movement}
         />
 
         {/* 5 — the human voice + the academic timeline */}
         <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
           <div className="lg:col-span-1">
-            <Remark remark={selectedResult.remark} />
+            <Remark remarks={subjectRemarks} />
           </div>
           <div className="lg:col-span-2">
             <History
-              published={ctx.published}
-              upcoming={ctx.upcoming}
-              results={results}
-              gradeScale={gradeScale}
-              selectedId={selected.id}
+              exams={exams}
+              upcoming={upcoming}
+              gradeFor={gradeFor}
+              selectedId={selected.examId}
               onSelect={setSelectedId}
             />
           </div>
         </div>
 
-        {/* 6 — the official document + standings (secondary, permitted) */}
-        <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <ReportCard
-              assessment={selected}
-              result={selectedResult}
-              gradeScale={gradeScale}
-              standings={selectedStandings}
-              showRank={ctx.showRank}
-              reportCardConfig={ctx.reportCard}
-              identity={identity}
-            />
-          </div>
-          <div className="lg:col-span-1">
-            {ctx.showClassTop && <ClassStandings standings={selectedStandings} />}
-          </div>
-        </div>
+        {/* 6 — the official document (canonical identity + server marks) */}
+        <ReportCard
+          exam={selected}
+          totals={totals}
+          grade={grade}
+          reportCardConfig={reportCardConfig}
+          identity={identity}
+        />
       </div>
     </PageTransition>
   )

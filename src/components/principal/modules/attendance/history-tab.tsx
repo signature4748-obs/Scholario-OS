@@ -1,214 +1,262 @@
 'use client'
 
 /**
- * AttendanceHistoryTab — Brief PART 26-33 + PART 43-45 (Phase 5).
+ * AttendanceHistoryTab — canonical day-level attendance records.
  *
- * Brief PART 26: Export lives HERE only (not in Overview or Staff tab).
- * Brief PART 27: Exports are MONTHLY reports (not arbitrary date range).
- * Brief PART 28: Student/Class attendance export — class-wise monthly report.
- * Brief PART 29: Staff attendance export — SEPARATE monthly report.
- * Brief PART 30: Month selector + two export actions.
- * Brief PART 31: Replace arbitrary date-range with month selection.
- * Brief PART 33: History view (browse records) is separate from Monthly Export.
- * Brief PART 43: Export shows "Generating..." → "✓ Report ready" feedback.
- * Brief PART 44: Professional report names.
- * Brief PART 45: Reports respect school calendar (no holiday counted as absent).
+ * A date picker (the module's shared date) + the shared class filter +
+ * a status filter + search narrow the REAL `sections` rosters for the
+ * selected day: one row per student with an attendance record that day,
+ * each carrying their canonical status. Row click → the student's
+ * canonical history drill (?studentId=).
+ *
+ * Exports:
+ *   - CSV  — exactly the rows the table renders
+ *   - PDF  — Excel-style attendance register (rosters + statuses for the
+ *            day, scoped to All Classes or one class)
+ *
+ * The legacy `attendanceHistory` mock (December 2025 classes) is gone.
+ * Staff attendance export is gone too — no canonical staff attendance
+ * data exists (see the Staff tab's honest empty state).
  */
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { motion, useReducedMotion, AnimatePresence } from 'framer-motion'
-import { Search, ArrowLeft, Download, Eye, FileText, Users, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
-import { PageTransition } from '@/components/shared/ui'
+import { Search, Download, Eye, FileText, ChevronDown, CheckCircle2, Loader2, CalendarOff, AlertCircle, RotateCw } from 'lucide-react'
+import { PageTransition, GlassCard } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { DatePicker } from '@/components/ui/date-picker'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  attendanceHistory,
-  classSections,
-  getHistoryForDateClass,
-  type AttendanceHistoryRecord,
-} from '@/lib/mock/attendance'
-import { formatNumber } from '@/lib/format'
+import { Skeleton } from '@/components/ui/skeleton'
+import { downloadCSVFile, safeFileName } from '@/lib/download-file'
+import { toCsv } from '@/lib/csv'
 import { toast } from 'sonner'
-import { ATTENDANCE_PALETTE } from './attendance-charts'
-import { generateStudentMonthlyPDF, generateStaffMonthlyPDF } from './monthly-report-pdf'
+import {
+  formatDateLabel,
+  type AttendanceSnapshot,
+} from './data'
+import { StatusBadge, STATUS_ORDER } from './attendance-status'
+import { StudentDrillDialog } from './shared'
+import { generateAttendanceRegisterPDF } from './monthly-report-pdf'
 
-const STATUS_VARIANT: Record<AttendanceHistoryRecord['status'], {
-  cls: string; dot: string
-}> = {
-  'Excellent':       { cls: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20', dot: 'bg-emerald-500' },
-  'Good':            { cls: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20', dot: 'bg-sky-500' },
-  'Needs Attention': { cls: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20', dot: 'bg-rose-500' },
+interface HistoryRow {
+  classId: string
+  classLabel: string
+  studentId: string
+  rollNo: string
+  name: string
+  status: 'present' | 'late' | 'absent' | 'leave'
 }
-
-/** Build the month picker options (last 12 months from Dec 2025). */
-function buildMonthOptions(): { value: string; label: string; year: number; month: number }[] {
-  const options: { value: string; label: string; year: number; month: number }[] = []
-  const baseYear = 2025
-  const baseMonth = 12  // December 2025
-  for (let i = 0; i < 12; i++) {
-    let y = baseYear
-    let m = baseMonth - i
-    while (m < 1) {
-      m += 12
-      y -= 1
-    }
-    const date = new Date(y, m - 1, 1)
-    const value = `${y}-${String(m).padStart(2, '0')}`
-    const label = date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-    options.push({ value, label, year: y, month: m })
-  }
-  return options
-}
-
-const MONTH_OPTIONS = buildMonthOptions()
 
 interface AttendanceHistoryTabProps {
-  /** When navigated from heatmap, pre-set date + class. */
-  initialDate?: string
-  initialClassId?: string
+  snapshot: AttendanceSnapshot | null
+  loading: boolean
+  error: string | null
+  reload: () => void
+  /** null = follows the server "today" */
+  selectedDate: string | null
+  onDateChange: (date: string) => void
+  classFilter: string
+  setClassFilter: (v: string) => void
 }
 
-type ExportKind = 'student' | 'staff' | null
+type ExportKind = 'pdf' | null
 
-export function AttendanceHistoryTab({ initialDate, initialClassId }: AttendanceHistoryTabProps) {
+export function AttendanceHistoryTab({
+  snapshot, loading, error, reload, selectedDate, onDateChange, classFilter, setClassFilter,
+}: AttendanceHistoryTabProps) {
   const reduce = useReducedMotion()
-  // Brief PART 31: single month selector (replaces arbitrary date range).
-  const [selectedMonth, setSelectedMonth] = useState<string>('2025-12')
-  const [classFilter, setClassFilter] = useState<string>(initialClassId ?? 'all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
-  const [viewRecord, setViewRecord] = useState<AttendanceHistoryRecord | null>(null)
-  // Brief PART 43: export loading + success state.
+  const [viewStudent, setViewStudent] = useState<HistoryRow | null>(null)
   const [exporting, setExporting] = useState<ExportKind>(null)
-  const [exported, setExported] = useState<{ kind: ExportKind; label: string } | null>(null)
+  const [exported, setExported] = useState<{ label: string } | null>(null)
 
-  // Apply incoming initial props (e.g. from heatmap CTA — pre-fill month).
-  useEffect(() => {
-    if (initialDate) {
-      // Brief PART 8: pre-fill the month from the date string
-      const month = initialDate.substring(0, 7)  // "2025-12"
-      setSelectedMonth(month)
-    }
-    if (initialClassId) {
-      setClassFilter(initialClassId)
-    }
-  }, [initialDate, initialClassId])
+  const effectiveDate = selectedDate ?? snapshot?.date ?? null
+  const classOptions = snapshot?.byClass ?? []
 
-  // Brief PART 32: filter records for the selected month (VIEW filter —
-  // separate from the monthly EXPORT, which is always the full month).
+  // Real rows: students WITH an attendance record on the selected day.
+  const rows = useMemo<HistoryRow[]>(() => {
+    if (!snapshot) return []
+    const out: HistoryRow[] = []
+    for (const section of snapshot.sections) {
+      if (classFilter !== 'all' && section.classId !== classFilter) continue
+      for (const s of section.roster) {
+        if (s.status !== 'PRESENT' && s.status !== 'LATE' && s.status !== 'ABSENT' && s.status !== 'LEAVE') continue
+        const status = s.status === 'PRESENT' ? 'present'
+          : s.status === 'LATE' ? 'late'
+          : s.status === 'ABSENT' ? 'absent'
+          : 'leave'
+        out.push({
+          classId: section.classId,
+          classLabel: section.classLabel,
+          studentId: s.studentId,
+          rollNo: s.rollNo,
+          name: s.name,
+          status,
+        })
+      }
+    }
+    return out.sort((a, b) =>
+      a.classLabel.localeCompare(b.classLabel)
+      || a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }),
+    )
+  }, [snapshot, classFilter])
+
   const filtered = useMemo(() => {
-    const [year, month] = selectedMonth.split('-').map(Number)
-    return attendanceHistory.filter((r) => {
-      const rMonth = r.date.substring(0, 7)  // "2025-12"
-      if (rMonth !== selectedMonth) return false
-      if (classFilter !== 'all' && r.classId !== classFilter) return false
+    const q = search.trim().toLowerCase()
+    return rows.filter((r) => {
       if (statusFilter !== 'all' && r.status !== statusFilter) return false
-      if (search) {
-        const q = search.toLowerCase()
-        if (!r.className.toLowerCase().includes(q) && !r.date.includes(q)) return false
+      if (q) {
+        const hay = `${r.name} ${r.rollNo} ${r.classLabel}`.toLowerCase()
+        if (!hay.includes(q)) return false
       }
       return true
     })
-  }, [selectedMonth, classFilter, statusFilter, search])
+  }, [rows, statusFilter, search])
 
-  // Brief PART 30: Get the selected month label for export naming.
-  const selectedMonthLabel = useMemo(() => {
-    const opt = MONTH_OPTIONS.find((o) => o.value === selectedMonth)
-    return opt ? opt.label : selectedMonth
-  }, [selectedMonth])
+  // Real day summary (class-filtered)
+  const daySummary = useMemo(() => {
+    if (!snapshot) return null
+    const scoped = snapshot.byClass.filter((c) => classFilter === 'all' || c.classId === classFilter)
+    const present = scoped.reduce((s, c) => s + c.present, 0)
+    const absent = scoped.reduce((s, c) => s + c.absent, 0)
+    const late = scoped.reduce((s, c) => s + c.late, 0)
+    const leave = scoped.reduce((s, c) => s + c.leave, 0)
+    const recorded = scoped.reduce((s, c) => s + c.recorded, 0)
+    const rate = recorded > 0 ? Math.round(((present + late) / recorded) * 1000) / 10 : 0
+    return { present, absent, late, leave, recorded, rate }
+  }, [snapshot, classFilter])
 
-  // Brief PART 43-44: Export Student Attendance → REAL PDF (Brief PART 14-20).
-  // Brief PART 11 + 36: accepts a classId ('all' or specific) for class-wise export.
-  const handleExportStudent = (classId: string = 'all') => {
-    if (exporting) return
-    setExporting('student')
+  const latestRecorded = snapshot && snapshot.weekTrend.length > 0
+    ? snapshot.weekTrend[snapshot.weekTrend.length - 1]
+    : null
+
+  // ── CSV export: exactly the rendered rows ──
+  const handleExportCsv = () => {
+    if (!effectiveDate) return
+    const csvRows = filtered.map((r) => [
+      effectiveDate,
+      r.classLabel,
+      r.rollNo,
+      r.name,
+      r.status.charAt(0).toUpperCase() + r.status.slice(1),
+    ])
+    const filename = safeFileName(
+      `attendance-history-${effectiveDate}${classFilter === 'all' ? '' : `-${classFilter.slice(-6)}`}`,
+      'csv',
+    )
+    downloadCSVFile(
+      toCsv(['Date', 'Class', 'Roll No', 'Student', 'Status'], csvRows),
+      filename,
+    )
+    toast.success('Attendance history exported', {
+      description: `${filename} · ${csvRows.length} record${csvRows.length === 1 ? '' : 's'} · ${formatDateLabel(effectiveDate)}`,
+    })
+  }
+
+  // ── PDF export: Excel-style attendance register (real rosters) ──
+  const handleExportPdf = async (classId: string = 'all') => {
+    if (exporting || !snapshot || !effectiveDate) return
+    setExporting('pdf')
     setExported(null)
     try {
-      const { filename } = generateStudentMonthlyPDF(selectedMonth, classId)
-      setExporting(null)
-      const cls = classSections.find((c) => c.id === classId)
+      const { filename } = await generateAttendanceRegisterPDF({
+        date: effectiveDate,
+        classId,
+        sections: snapshot.sections,
+        byClass: snapshot.byClass,
+        monthTrend: snapshot.monthTrend,
+      })
+      const cls = snapshot.byClass.find((c) => c.classId === classId)
       const label = cls
-        ? `${selectedMonthLabel} — ${cls.name} Attendance Report`
-        : `${selectedMonthLabel} — Class Attendance Report`
-      setExported({ kind: 'student', label })
-      toast.success('Class Attendance Report generated', {
+        ? `Attendance Register · ${formatDateLabel(effectiveDate)} · ${cls.classLabel}`
+        : `Attendance Register · ${formatDateLabel(effectiveDate)} · All Classes`
+      setExported({ label })
+      toast.success('Attendance register generated', {
         description: `${filename} · ${label}`,
       })
-    } catch (err) {
-      setExporting(null)
+    } catch {
       toast.error('Unable to generate report', {
         description: 'Please try again.',
       })
+    } finally {
+      setExporting(null)
     }
   }
 
-  // Brief PART 43-44: Export Staff Attendance → REAL PDF (Brief PART 14-20).
-  // Brief PART 29: completely separate from student report.
-  const handleExportStaff = () => {
-    if (exporting) return
-    setExporting('staff')
-    setExported(null)
-    try {
-      const { filename } = generateStaffMonthlyPDF(selectedMonth)
-      setExporting(null)
-      const label = `${selectedMonthLabel} — Teachers & Employees Attendance Report`
-      setExported({ kind: 'staff', label })
-      toast.success('Staff Attendance Report generated', {
-        description: `${filename} · ${label}`,
-      })
-    } catch (err) {
-      setExporting(null)
-      toast.error('Unable to generate report', {
-        description: 'Please try again.',
-      })
-    }
+  if (loading && !snapshot) {
+    return (
+      <PageTransition className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-8 w-36 rounded-lg" />
+          <Skeleton className="h-8 w-36 rounded-lg" />
+          <Skeleton className="h-8 w-32 rounded-lg" />
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
+      </PageTransition>
+    )
   }
 
-  // Brief PART 30: Find selected month option object
-  const selectedMonthOption = MONTH_OPTIONS.find((o) => o.value === selectedMonth)
+  if (error && !snapshot) {
+    return (
+      <PageTransition className="space-y-4">
+        <GlassCard className="p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">Unable to load attendance history</p>
+              <p className="text-xs text-muted-foreground mt-1">{error}</p>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 mt-3 rounded-lg" onClick={reload}>
+                <RotateCw className="h-3.5 w-3.5" /> Try again
+              </Button>
+            </div>
+          </div>
+        </GlassCard>
+      </PageTransition>
+    )
+  }
+
+  if (!snapshot || !effectiveDate) return null
+
+  const scopeLabel = classFilter === 'all'
+    ? 'All Classes'
+    : classOptions.find((c) => c.classId === classFilter)?.classLabel ?? ''
 
   return (
     <PageTransition className="space-y-4">
-      {/* Brief PART 14: Filters row — separated from actions */}
+      {/* Filters row — date + class + status + search (same h-8 rhythm) */}
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger size="sm" className="w-[170px] text-xs rounded-lg">
-            <SelectValue placeholder="Select month" />
-          </SelectTrigger>
-          <SelectContent>
-            {MONTH_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <DatePicker
+          value={effectiveDate}
+          onChange={onDateChange}
+          maxDate={snapshot.date}
+          compact
+        />
 
         <Select value={classFilter} onValueChange={setClassFilter}>
-          <SelectTrigger size="sm" className="w-[150px] text-xs rounded-lg">
+          <SelectTrigger size="sm" className="w-[160px] text-xs rounded-lg">
             <SelectValue placeholder="All Classes" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Classes</SelectItem>
-            {classSections.map((c) => (
-              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            {classOptions.map((c) => (
+              <SelectItem key={c.classId} value={c.classId}>{c.classLabel}</SelectItem>
             ))}
           </SelectContent>
         </Select>
 
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger size="sm" className="w-[140px] text-xs rounded-lg">
+          <SelectTrigger size="sm" className="w-[130px] text-xs rounded-lg">
             <SelectValue placeholder="All Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="Excellent">Excellent</SelectItem>
-            <SelectItem value="Good">Good</SelectItem>
-            <SelectItem value="Needs Attention">Needs Attention</SelectItem>
+            {STATUS_ORDER.map((s) => (
+              <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -217,66 +265,57 @@ export function AttendanceHistoryTab({ initialDate, initialClassId }: Attendance
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search…"
+            placeholder="Search student…"
             className="h-8 pl-8 pr-3 text-xs w-[160px] rounded-lg"
           />
         </div>
-      </div>
 
-      {/* Brief PART 14 + 15: Actions row — right-aligned, premium export dropdown */}
-      <div className="flex items-center justify-end gap-2">
-        {/* Brief PART 11 + 15: Export Student dropdown — All Classes + individual classes */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1.5 rounded-lg"
-              disabled={exporting !== null}
-            >
-              {exporting === 'student' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FileText className="h-3.5 w-3.5" />
-              )}
-              {exporting === 'student' ? 'Generating...' : 'Export Student'}
-              <ChevronDown className="h-3 w-3 ml-0.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Monthly PDF · {selectedMonthLabel}
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => handleExportStudent('all')} className="text-xs gap-2">
-              <FileText className="h-3.5 w-3.5" /> All Classes
-            </DropdownMenuItem>
-            {classSections.map((c) => (
-              <DropdownMenuItem key={c.id} onClick={() => handleExportStudent(c.id)} className="text-xs gap-2">
-                <FileText className="h-3.5 w-3.5" /> {c.name}
+        <div className="flex items-center gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 rounded-lg"
+            onClick={handleExportCsv}
+          >
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 rounded-lg"
+                disabled={exporting !== null}
+              >
+                {exporting === 'pdf' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                {exporting === 'pdf' ? 'Generating...' : 'Export PDF'}
+                <ChevronDown className="h-3 w-3 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Attendance Register · {formatDateLabel(effectiveDate)}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleExportPdf('all')} className="text-xs gap-2">
+                <FileText className="h-3.5 w-3.5" /> All Classes
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Brief PART 16: Export Staff — separate, no class selection */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs gap-1.5 rounded-lg"
-          onClick={handleExportStaff}
-          disabled={exporting !== null}
-        >
-          {exporting === 'staff' ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Users className="h-3.5 w-3.5" />
-          )}
-          {exporting === 'staff' ? 'Generating...' : 'Export Staff'}
-        </Button>
+              {classOptions.map((c) => (
+                <DropdownMenuItem key={c.classId} onClick={() => handleExportPdf(c.classId)} className="text-xs gap-2">
+                  <FileText className="h-3.5 w-3.5" /> {c.classLabel}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {/* Brief PART 43: Export success feedback */}
+      {/* Export success feedback */}
       <AnimatePresence mode="wait">
         {exported && (
           <motion.div
@@ -295,87 +334,110 @@ export function AttendanceHistoryTab({ initialDate, initialClassId }: Attendance
         )}
       </AnimatePresence>
 
-      {/* Brief PART 32: History table — VIEW records (separate from export) */}
-      <div className="rounded-xl border border-border overflow-hidden bg-card">
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-muted shadow-[0_1px_0_0_hsl(var(--border))]">
-            <TableRow className="border-b border-border hover:bg-transparent">
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5">Date</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5">Class</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right">Total</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right">Present</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right">Absent</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right">Late</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right">Leave</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 w-24">Rate</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5">Status</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right">View</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <AnimatePresence mode="popLayout">
-              {filtered.slice(0, 100).map((r, i) => (
-                <motion.tr
-                  key={`${r.date}-${r.classId}`}
-                  layout
-                  initial={reduce ? false : { opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ delay: Math.min(i * 0.01, 0.2), duration: 0.25 }}
-                  className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors text-xs cursor-pointer"
-                  onClick={() => setViewRecord(r)}
-                >
-                  <TableCell className="py-2.5 font-mono tabular-nums">{formatDate(r.date)}</TableCell>
-                  <TableCell className="py-2.5 font-medium text-foreground">{r.className}</TableCell>
-                  <TableCell className="py-2.5 font-mono tabular-nums text-muted-foreground text-right">{r.total}</TableCell>
-                  <TableCell className="py-2.5 font-mono tabular-nums text-emerald-600 dark:text-emerald-400 text-right">{r.present}</TableCell>
-                  <TableCell className="py-2.5 font-mono tabular-nums text-rose-600 dark:text-rose-400 text-right">{r.absent}</TableCell>
-                  <TableCell className="py-2.5 font-mono tabular-nums text-amber-600 dark:text-amber-400 text-right">{r.late}</TableCell>
-                  <TableCell className="py-2.5 font-mono tabular-nums text-sky-600 dark:text-sky-400 text-right">{r.leave}</TableCell>
-                  <TableCell className="py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1 rounded-full bg-muted/60 overflow-hidden">
-                        <motion.div
-                          initial={reduce ? false : { width: 0 }}
-                          animate={{ width: `${r.rate}%` }}
-                          transition={{ duration: 0.5, delay: Math.min(i * 0.01, 0.2) + 0.1 }}
-                          className="h-full rounded-full"
-                          style={{
-                            background: r.rate >= 95 ? ATTENDANCE_PALETTE.present
-                              : r.rate >= 90 ? ATTENDANCE_PALETTE.late
-                              : ATTENDANCE_PALETTE.absent,
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] font-semibold tabular-nums w-9 text-right">{r.rate}%</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="py-2.5">
-                    <StatusBadge status={r.status} />
-                  </TableCell>
-                  <TableCell className="py-2.5 text-right">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setViewRecord(r) }}
-                      className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
-                      title="View details"
-                      aria-label="View details"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </button>
-                  </TableCell>
-                </motion.tr>
-              ))}
-            </AnimatePresence>
-            {filtered.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center text-xs text-muted-foreground py-8">
-                  No attendance records found for {selectedMonthLabel}.
-                </TableCell>
-              </TableRow>
+      {/* Real day summary strip */}
+      {daySummary && daySummary.recorded > 0 && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground">{formatDateLabel(effectiveDate)}</span>
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          {scopeLabel}
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span className="font-semibold tabular-nums text-foreground">{daySummary.recorded}</span> recorded
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{daySummary.present}</span> present
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span className="font-semibold text-amber-600 dark:text-amber-400 tabular-nums">{daySummary.late}</span> late
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">{daySummary.absent}</span> absent
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span className="font-semibold text-sky-600 dark:text-sky-400 tabular-nums">{daySummary.leave}</span> leave
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span className="font-semibold tabular-nums text-foreground">{daySummary.rate}%</span> rate
+        </p>
+      )}
+
+      {/* Records table — real rows for the selected day */}
+      {rows.length === 0 ? (
+        <GlassCard className="p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-muted/60 border border-border flex items-center justify-center shrink-0">
+              <CalendarOff className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">
+                No attendance recorded for {formatDateLabel(effectiveDate)}
+                {classFilter !== 'all' ? ` — ${scopeLabel}` : ''}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Try another date{latestRecorded ? ` — the most recent recorded day is ${formatDateLabel(latestRecorded.date)}` : ''}.
+              </p>
+            </div>
+            {latestRecorded && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs rounded-lg shrink-0"
+                onClick={() => onDateChange(latestRecorded.date)}
+              >
+                Go to {formatDateLabel(latestRecorded.date)}
+              </Button>
             )}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </GlassCard>
+      ) : (
+        <div className="rounded-xl border border-border overflow-hidden bg-card">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted shadow-[0_1px_0_0_hsl(var(--border))]">
+              <TableRow className="border-b border-border hover:bg-transparent">
+                <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5">Class</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 w-16">Roll</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5">Student</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 w-28">Status</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground py-2.5 text-right w-16">View</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <AnimatePresence mode="popLayout">
+                {filtered.map((r, i) => (
+                  <motion.tr
+                    key={`${r.classId}-${r.studentId}`}
+                    layout
+                    initial={reduce ? false : { opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: Math.min(i * 0.01, 0.2), duration: 0.25 }}
+                    className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors text-xs cursor-pointer"
+                    onClick={() => setViewStudent(r)}
+                  >
+                    <TableCell className="py-2.5 font-medium text-foreground">{r.classLabel}</TableCell>
+                    <TableCell className="py-2.5 font-mono tabular-nums text-muted-foreground">{r.rollNo}</TableCell>
+                    <TableCell className="py-2.5 font-medium text-foreground">{r.name}</TableCell>
+                    <TableCell className="py-2.5">
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+                    <TableCell className="py-2.5 text-right">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setViewStudent(r) }}
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+                        title="View student history"
+                        aria-label={`View ${r.name} attendance history`}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    </TableCell>
+                  </motion.tr>
+                ))}
+              </AnimatePresence>
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-xs text-muted-foreground py-8">
+                    No records match the current filters.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {filtered.length > 100 && (
         <p className="text-[10px] text-muted-foreground text-center">
@@ -383,103 +445,17 @@ export function AttendanceHistoryTab({ initialDate, initialClassId }: Attendance
         </p>
       )}
 
-      {/* Brief PART 32: Detail dialog */}
-      <HistoryDetailDialog
-        record={viewRecord}
-        onClose={() => setViewRecord(null)}
+      {/* Per-student canonical history drill */}
+      <StudentDrillDialog
+        student={viewStudent ? {
+          studentId: viewStudent.studentId,
+          name: viewStudent.name,
+          rollNo: viewStudent.rollNo,
+          classLabel: viewStudent.classLabel,
+        } : null}
+        date={effectiveDate}
+        onClose={() => setViewStudent(null)}
       />
     </PageTransition>
-  )
-}
-
-function formatDate(isoDate: string): string {
-  const [y, m, d] = isoDate.split('-').map(Number)
-  if (!y || !m || !d) return isoDate
-  const date = new Date(y, m - 1, d)
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-}
-
-function StatusBadge({ status }: { status: AttendanceHistoryRecord['status'] }) {
-  const v = STATUS_VARIANT[status]
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${v.cls}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${v.dot}`} />
-      {status}
-    </span>
-  )
-}
-
-function HistoryDetailDialog({
-  record, onClose,
-}: {
-  record: AttendanceHistoryRecord | null
-  onClose: () => void
-}) {
-  const displayRecord = useMemo(() => {
-    if (!record) return null
-    if (record.classId !== 'all') return record
-    return getHistoryForDateClass(record.date, 'all')
-  }, [record])
-
-  if (!displayRecord) return null
-
-  const [y, m, d] = displayRecord.date.split('-').map(Number)
-  const dateLabel = new Date(y, m - 1, d).toLocaleDateString('en-IN', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-
-  return (
-    <Dialog open={!!record} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md p-0 gap-0">
-        <DialogHeader className="px-4 pt-4 pb-3 border-b border-border">
-          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
-            Attendance Detail
-          </DialogTitle>
-          <DialogDescription className="text-[10px]">
-            {dateLabel} · {displayRecord.className}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="p-4 space-y-3">
-          {/* Summary block */}
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[9px] uppercase tracking-wider font-semibold text-primary">Attendance Rate</p>
-                <p className="font-display text-2xl font-bold tabular-nums text-primary">{displayRecord.rate}%</p>
-              </div>
-              <StatusBadge status={displayRecord.status} />
-            </div>
-          </div>
-
-          {/* Stats grid */}
-          <div className="grid grid-cols-2 gap-2">
-            <DetailStat label="Total Students" value={displayRecord.total} color="text-foreground" />
-            <DetailStat label="Present" value={displayRecord.present} color="text-emerald-600 dark:text-emerald-400" />
-            <DetailStat label="Late" value={displayRecord.late} color="text-amber-600 dark:text-amber-400" />
-            <DetailStat label="Absent" value={displayRecord.absent} color="text-rose-600 dark:text-rose-400" />
-            <DetailStat label="Leave" value={displayRecord.leave} color="text-sky-600 dark:text-sky-400" />
-            <DetailStat label="Class Teacher" value={classSections.find((c) => c.id === displayRecord.classId)?.teacher ?? '—'} color="text-foreground" />
-          </div>
-        </div>
-
-        <DialogFooter className="px-4 py-3 border-t border-border">
-          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={onClose}>
-            <ArrowLeft className="h-3.5 w-3.5" /> Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function DetailStat({ label, value, color }: { label: string; value: number | string; color: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-2.5">
-      <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">{label}</p>
-      <p className={`font-display text-base font-bold tabular-nums truncate ${color}`}>
-        {typeof value === 'number' ? formatNumber(value) : value}
-      </p>
-    </div>
   )
 }

@@ -2,14 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Loader2, Wallet, ShieldCheck, CheckCircle2, XCircle, Download, Lock, ArrowLeft, IndianRupee } from 'lucide-react'
+import { Loader2, Wallet, ShieldCheck, CheckCircle2, XCircle, Lock, ArrowLeft, IndianRupee } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { formatINR } from '@/lib/format'
-import { useFeeStore, type FeeTransaction } from '@/lib/store/fee-store'
-import { downloadReceiptA5 } from '@/components/principal/modules/fees/fee-receipt-a5'
 import { paymentMethods, MODE_FROM_FORM_ID, type PayStage, type PaymentStudentInfo, type PaymentConfigResponse, type PaymentOrderResponse, type PaymentVerifyResponse } from './data'
 
 /**
@@ -23,9 +20,12 @@ import { paymentMethods, MODE_FROM_FORM_ID, type PayStage, type PaymentStudentIn
  *   3. /api/student/payments/verify re-checks the signature SERVER-SIDE
  *      (HMAC over orderId|paymentId with a server-held secret) before
  *      anything is marked paid. A forged client payload fails here.
- *   4. Only AFTER the server says SUCCESS does this UI mirror the
- *      payment into the local fee ledger (with the server receipt +
- *      gateway payment id) and show the official receipt.
+ *   4. Only AFTER the server says SUCCESS does this UI show the official
+ *      receipt — the payment is recorded by the SERVER (FeeTransaction →
+ *      SUCCESS + the student's Fee row updated). There is NO local fee
+ *      ledger to mirror into any more: the canonical ledger comes from
+ *      /api/student/fees, so after success the caller's `onPaid`
+ *      refresh re-fetches it.
  *
  * Stages: amount → review → gateway (checkout sheet) → verifying →
  * success (official receipt) | failed.
@@ -34,12 +34,15 @@ import { paymentMethods, MODE_FROM_FORM_ID, type PayStage, type PaymentStudentIn
 interface PaymentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  studentId: string
   student: PaymentStudentInfo
+  /** Outstanding balance from the canonical server ledger. */
   balanceDue: number
-  /** Primary core fee head the payment is applied against (order note). */
+  /** Primary fee head the payment is applied against (order note). */
   primaryHead: string
   config: PaymentConfigResponse | null
+  /** Called once after a SERVER-VERIFIED payment so the caller can
+   *  re-fetch the canonical fee ledger. */
+  onPaid?: () => void | Promise<void>
 }
 
 interface RazorpayCheckoutResponse {
@@ -48,16 +51,13 @@ interface RazorpayCheckoutResponse {
   razorpay_signature: string
 }
 
-export function PaymentDialog({ open, onOpenChange, studentId, student, balanceDue, primaryHead, config }: PaymentDialogProps) {
+export function PaymentDialog({ open, onOpenChange, student, balanceDue, primaryHead, config, onPaid }: PaymentDialogProps) {
   const [stage, setStage] = useState<PayStage>('amount')
   const [amountInput, setAmountInput] = useState('')
   const [method, setMethod] = useState(paymentMethods[0]?.id ?? 'upi')
   const [error, setError] = useState<string | null>(null)
   const [order, setOrder] = useState<PaymentOrderResponse | null>(null)
   const [verified, setVerified] = useState<PaymentVerifyResponse | null>(null)
-  const [mirroredTxn, setMirroredTxn] = useState<FeeTransaction | null>(null)
-  const recordPayment = useFeeStore((s) => s.recordPayment)
-  const receiptSettings = useFeeStore((s) => s.receiptSettings)
   const razorpayRef = useRef<any>(null)
   void razorpayRef
 
@@ -66,8 +66,8 @@ export function PaymentDialog({ open, onOpenChange, studentId, student, balanceD
 
   // Reset ONLY on the false→true open transition. balanceDue intentionally
   // excluded from the guard: a successful payment changes it MID-dialog,
-  // and that must never wipe the success/receipt stage (the mirrored
-  // payment already happened server-side).
+  // and that must never wipe the success/receipt stage (the payment
+  // already happened server-side).
   const wasOpen = useRef(false)
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -77,7 +77,6 @@ export function PaymentDialog({ open, onOpenChange, studentId, student, balanceD
       setError(null)
       setOrder(null)
       setVerified(null)
-      setMirroredTxn(null)
     }
     wasOpen.current = open
   }, [open, balanceDue])
@@ -197,36 +196,11 @@ export function PaymentDialog({ open, onOpenChange, studentId, student, balanceD
       : (j?.error ?? 'Verification failed.'))
     const v: PaymentVerifyResponse = j.data
     setVerified(v)
-
-    // Mirror the SERVER-VERIFIED payment into the ONE fee ledger — with
-    // the server receipt + gateway ids. The gateway confirmation makes
-    // this Success automatically (never held for manual verification).
-    const payMode = (MODE_FROM_FORM_ID[method] ?? 'UPI') as 'UPI' | 'Card' | 'Net Banking'
-    const result = recordPayment({
-      studentId,
-      amount: v.amount,
-      mode: payMode,
-      feeHead: primaryHead,
-      purpose: `Online fee payment via ${providerLabel} (${payMode})`,
-      collectedBy: student.name,
-      collectorRole: 'self',
-      gateway: config?.provider === 'razorpay' ? 'razorpay' : 'razorpay',
-      gatewayPaymentId: v.gatewayPaymentId,
-      gatewayOrderId: confirmation.orderId,
-      paymentSource: 'gateway',
-      receiptNo: v.receiptNo,
-    })
-    if (result.success && result.transaction) {
-      setMirroredTxn(result.transaction)
-      setStage('success')
-    } else {
-      // Server verified the money; the local mirror hit a guard (e.g.
-      // duplicate relay). Success is still the truth — surface the
-      // server receipt.
-      setMirroredTxn(null)
-      setStage('success')
-      if (result.error) toast.info('Already recorded', { description: result.error })
-    }
+    // The SERVER has recorded the payment (FeeTransaction → SUCCESS, the
+    // student's Fee row updated, receipt minted). Success is the truth —
+    // surface it, then re-fetch the canonical ledger for the caller.
+    setStage('success')
+    void onPaid?.()
   }
 
   const stageLabel: Record<PayStage, string> = {
@@ -292,8 +266,8 @@ export function PaymentDialog({ open, onOpenChange, studentId, student, balanceD
                 </div>
               )}
               <div className="rounded-xl border border-border bg-muted/25 p-3 text-[11px] text-muted-foreground leading-relaxed">
-                Paid to <span className="font-semibold text-foreground">{student.name}</span> · {student.className}-{student.section} ·
-                receipt issued by the school on verification.
+                Paid to <span className="font-semibold text-foreground">{student.name}</span> · {student.classLabel ?? '—'}
+                {student.admissionNo ? ` · ${student.admissionNo}` : ''} · receipt issued by the school on verification.
               </div>
               <Button className="w-full h-11" disabled={!amountValid} onClick={() => setStage('review')}>
                 Continue <ArrowLeft className="h-3.5 w-3.5 rotate-180" />
@@ -308,7 +282,7 @@ export function PaymentDialog({ open, onOpenChange, studentId, student, balanceD
                 <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">You will pay</p>
                 <p className="font-display text-3xl font-extrabold tabular-nums mt-0.5">{formatINR(amountNum)}</p>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Applied to your fee account{balanceDue - amountNum > 0 ? ` · ${formatINR(balanceDue - amountNum)} will remain` : ' · clears your balance'}
+                  Applied to {primaryHead}{balanceDue - amountNum > 0 ? ` · ${formatINR(balanceDue - amountNum)} will remain` : ' · clears your balance'}
                 </p>
               </div>
 
@@ -425,25 +399,11 @@ export function PaymentDialog({ open, onOpenChange, studentId, student, balanceD
               </div>
               <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                 <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                The school office has been notified. Your receipt is available immediately.
+                The school office has been notified. Your fee balance updates automatically.
               </p>
-              <div className="flex gap-2">
-                {mirroredTxn && (
-                  <Button
-                    variant="outline"
-                    className="flex-1 h-10 gap-2"
-                    onClick={() => {
-                      downloadReceiptA5(mirroredTxn, receiptSettings)
-                      toast.success('Receipt downloaded', { description: `${mirroredTxn.receiptNo}.html` })
-                    }}
-                  >
-                    <Download className="h-3.5 w-3.5" /> Receipt
-                  </Button>
-                )}
-                <Button className="flex-1 h-10" onClick={() => onOpenChange(false)}>
-                  Done
-                </Button>
-              </div>
+              <Button className="w-full h-10" onClick={() => onOpenChange(false)}>
+                Done
+              </Button>
             </motion.div>
           )}
 

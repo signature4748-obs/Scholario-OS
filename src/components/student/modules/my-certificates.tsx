@@ -21,8 +21,7 @@ import type { GeneratedDocument } from '@/lib/store/certificates-store'
 import { school } from '@/lib/mock/school'
 import { formatDate } from '@/lib/format'
 import { toast } from 'sonner'
-
-const STUDENT_ID = 'STU-58'
+import { useCanonicalStudent } from './shared/canonical'
 
 function statusVariant(status: string): 'success' | 'primary' | 'neutral' {
   if (status === 'Issued' || status === 'Downloaded' || status === 'Printed') return 'success'
@@ -72,12 +71,18 @@ function docHtml(doc: GeneratedDocument): string {
 export function MyCertificatesModule() {
   const documents = useCertificatesStore((s) => s.documents)
   const [previewDoc, setPreviewDoc] = useState<GeneratedDocument | null>(null)
+  // Canonical identity — documents are scoped to the authenticated
+  // student's own ids (server studentId + admissionNo). The retired
+  // STU-58/DSO2024058 demo keys are gone.
+  const { student, resolving } = useCanonicalStudent()
 
   const mine = useMemo(
-    () => documents
-      .filter((d) => d.studentId === STUDENT_ID || d.admissionNo === 'DSO2024058')
-      .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
-    [documents],
+    () => student
+      ? documents
+          .filter((d) => d.studentId === student.studentId || (student.admissionNo != null && d.admissionNo === student.admissionNo))
+          .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))
+      : [],
+    [documents, student],
   )
 
   function handleDownload(doc: GeneratedDocument) {
@@ -104,7 +109,11 @@ export function MyCertificatesModule() {
       </div>
 
       <GlassCard className="p-3 sm:p-4 lg:p-5">
-        {mine.length === 0 ? (
+        {resolving ? (
+          <div className="flex items-center justify-center py-10">
+            <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-label="Loading certificates" />
+          </div>
+        ) : mine.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/40 text-muted-foreground/60 mb-3">
               <Award className="h-6 w-6" />

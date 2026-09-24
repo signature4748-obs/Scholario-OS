@@ -73,12 +73,16 @@ export const getStudentSubscription = (studentId: string): StudentSubscriptionRe
     return subscriptionStore[studentId]
   }
 
-  // Default record for new/unsubbed student
+  // Default record for students without a seeded platform-license record.
+  // Stabilization §8: the canonical student id (DB Student row) never
+  // matches the retired STU-58 demo seed, so the activation wall must NOT
+  // gate real logins — unknown students default to ACTIVE. Platform
+  // license records remain for explicitly seeded ids only.
   return {
     studentId,
     studentName: 'New Enrolled Student',
     schoolName: 'Demo School of Scholario',
-    isActive: false, // Default inactive to trigger activation workflow
+    isActive: true,
     planName: 'Scholario Annual Student Platform License',
     amountPaid: globalPlatformConfig.payableAmount,
   }

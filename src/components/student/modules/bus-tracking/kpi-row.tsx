@@ -1,26 +1,51 @@
 'use client'
 
-import { Clock, Gauge, MapPin, CheckCircle2 } from 'lucide-react'
+import { IndianRupee, Clock, Flag, MapPin } from 'lucide-react'
 import { KpiCard } from '@/components/shared/kpi-card'
-import { myBusRoute, myBusStops, busStats } from '@/lib/mock/bus-tracking'
+import { formatINR } from '@/lib/format'
+import type { MyTransportRoute } from '../shared/canonical'
+import { formatServiceTime } from './format'
 
-interface Props {
-  eta: number
-  speed: number
-  stopsToGo: number
-  currentStopIdx: number
-  /** Trip context (T4-A) — keeps the ETA schedule label honest per trip. */
-  trip: 'pickup' | 'drop'
-}
-
-export function KpiRow({ eta, speed, stopsToGo, currentStopIdx, trip }: Props) {
-  const scheduleTime = trip === 'pickup' ? myBusRoute.pickupTime : myBusRoute.dropTime
+/**
+ * KpiRow — the route's recorded facts only (fare, service window, stop
+ * count). The old ETA / live-speed / on-time-rate tiles were simulation
+ * artifacts with no GPS feed behind them and are gone.
+ */
+export function KpiRow({ route }: { route: MyTransportRoute }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-      <KpiCard label="Arriving In" value={Math.ceil(eta)} suffix=" min" icon={<Clock className="h-5 w-5" />} accent="violet" trendLabel={`at ${scheduleTime}`} delay={0} />
-      <KpiCard label="Current Speed" value={Math.round(speed)} suffix=" km/h" icon={<Gauge className="h-5 w-5" />} accent="cyan" trendLabel="within limit" delay={0.05} />
-      <KpiCard label="Stops to Go" value={Math.max(0, stopsToGo)} icon={<MapPin className="h-5 w-5" />} accent="amber" trendLabel={`stop ${currentStopIdx + 2} of ${myBusStops.length}`} delay={0.1} />
-      <KpiCard label="On-Time Rate" value={busStats.onTimeRate} suffix="%" icon={<CheckCircle2 className="h-5 w-5" />} accent="emerald" trendLabel="this month" delay={0.15} />
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <KpiCard
+        label="Route Fare"
+        value={route.fare != null ? formatINR(route.fare) : '—'}
+        icon={<IndianRupee className="h-5 w-5" />}
+        accent="amber"
+        trendLabel="set by the school"
+        delay={0}
+      />
+      <KpiCard
+        label="Service Starts"
+        value={formatServiceTime(route.startTime)}
+        icon={<Clock className="h-5 w-5" />}
+        accent="emerald"
+        trendLabel="scheduled"
+        delay={0.05}
+      />
+      <KpiCard
+        label="Service Ends"
+        value={formatServiceTime(route.endTime)}
+        icon={<Flag className="h-5 w-5" />}
+        accent="cyan"
+        trendLabel="scheduled"
+        delay={0.1}
+      />
+      <KpiCard
+        label="Stops on Route"
+        value={route.stops.length}
+        icon={<MapPin className="h-5 w-5" />}
+        accent="violet"
+        trendLabel="in service order"
+        delay={0.15}
+      />
     </div>
   )
 }

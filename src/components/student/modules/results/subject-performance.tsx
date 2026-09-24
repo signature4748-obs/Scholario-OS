@@ -1,38 +1,38 @@
 'use client'
 
 /**
- * results/subject-performance — the core of Results (§9/§10, gen 2).
+ * results/subject-performance — the core of Results.
  *
- * One of the strongest sections of the page: elegant expandable subject
- * rows that sit DIRECTLY ON THE PAGE (§34 — no card-inside-card border
- * fatigue). Hierarchy comes from spacing, hairline dividers and the
- * subject's own colour identity:
+ * Elegant expandable subject rows that sit DIRECTLY ON THE PAGE (no
+ * card-inside-card border fatigue). Hierarchy comes from spacing,
+ * hairline dividers and the subject's own colour identity:
  *   · each subject carries its canonical Timetable colour (one visual
  *     identity system across modules — Mathematics violet here AND in
  *     the timetable, never a local copy)
  *   · a proportional performance bar with the grade's tone
- *   · expansion reveals ONLY the components the school actually
- *     configured — single-paper subjects say so, factually
+ *   · expansion reveals the subject's remarks when the school entered
+ *     any — single-paper subjects say so, factually
  *
- * Responsive: the row reflows comfortably at iPad widths; the bar never
- * shrinks to invisibility; touch targets stay generous.
+ * Data: the SERVER's subject rows (marks / totalMarks / grade exactly
+ * as declared). Responsive: the row reflows comfortably at iPad widths;
+ * the bar never shrinks to invisibility; touch targets stay generous.
  */
 
 import { useState } from 'react'
-import { ChevronDown, FileCheck2, Layers } from 'lucide-react'
+import { ChevronDown, FileCheck2, MessageSquareQuote } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import { fmtPct, pctOf, type SubjectMark } from '@/lib/store/student-results-store'
+import type { MyResultSubject } from '../shared/canonical'
+import { fmtPct, pctOfSubject } from './derive'
 import { subjectColor } from '../timetable/subject-colors'
 import { gradeTone } from './grade-tone'
 import { SectionLabel } from '../../shell/page-header'
 
 interface SubjectPerformanceProps {
-  subjects: SubjectMark[]
-  gradeFor: (pct: number) => string
+  subjects: MyResultSubject[]
 }
 
-export function SubjectPerformance({ subjects, gradeFor }: SubjectPerformanceProps) {
+export function SubjectPerformance({ subjects }: SubjectPerformanceProps) {
   const [open, setOpen] = useState<string | null>(null)
 
   return (
@@ -43,11 +43,10 @@ export function SubjectPerformance({ subjects, gradeFor }: SubjectPerformancePro
       <div className="mt-2 divide-y divide-border/70">
         {subjects.map((s) => {
           const color = subjectColor(s.subject)
-          const pct = pctOf(s.obtained, s.maxMarks)
-          const grade = gradeFor(pct)
+          const pct = pctOfSubject(s)
+          const grade = s.grade || '—'
           const tone = gradeTone(grade)
           const isOpen = open === s.subject
-          const hasComponents = (s.components?.length ?? 0) > 0
           return (
             <div key={s.subject} className={cn('transition-colors', isOpen && 'bg-muted/25')}>
               <button
@@ -67,10 +66,10 @@ export function SubjectPerformance({ subjects, gradeFor }: SubjectPerformancePro
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="truncate text-sm font-semibold text-foreground">{s.subject}</span>
-                    {hasComponents && (
+                    {s.remarks && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground/80">
-                        <Layers className="h-2.5 w-2.5" aria-hidden />
-                        {s.components!.length} components
+                        <MessageSquareQuote className="h-2.5 w-2.5" aria-hidden />
+                        Remark
                       </span>
                     )}
                   </span>
@@ -86,8 +85,8 @@ export function SubjectPerformance({ subjects, gradeFor }: SubjectPerformancePro
                 </span>
 
                 <span className="hidden shrink-0 text-right sm:block">
-                  <span className="block text-sm font-bold tabular-nums text-foreground">{s.obtained}</span>
-                  <span className="block text-[11px] tabular-nums text-muted-foreground">of {s.maxMarks}</span>
+                  <span className="block text-sm font-bold tabular-nums text-foreground">{s.marks}</span>
+                  <span className="block text-[11px] tabular-nums text-muted-foreground">of {s.totalMarks}</span>
                 </span>
 
                 <span
@@ -114,34 +113,19 @@ export function SubjectPerformance({ subjects, gradeFor }: SubjectPerformancePro
                   >
                     <div className="px-3 pb-4 pt-0.5 sm:px-4 sm:pl-[4.25rem]">
                       <p className="mb-3 text-[11px] tabular-nums text-muted-foreground">
-                        <span className="text-sm font-bold text-foreground">{s.obtained}</span> / {s.maxMarks} ·{' '}
+                        <span className="text-sm font-bold text-foreground">{s.marks}</span> / {s.totalMarks} ·{' '}
                         {fmtPct(pct)}% · Grade {grade}
                       </p>
 
-                      {hasComponents ? (
-                        <div className="space-y-2.5">
-                          {s.components!.map((c) => {
-                            const cpct = pctOf(c.obtained, c.max)
-                            return (
-                              <div key={c.name} className="flex items-center gap-3">
-                                <span className="w-24 shrink-0 truncate text-xs font-medium text-foreground/80">{c.name}</span>
-                                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
-                                  <span
-                                    className={cn('block h-full rounded-full bg-gradient-to-r', color.gradient)}
-                                    style={{ width: `${Math.max(2, Math.min(100, cpct))}%` }}
-                                  />
-                                </span>
-                                <span className="shrink-0 text-[11px] font-semibold tabular-nums text-foreground/80">
-                                  {c.obtained}/{c.max}
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
+                      {s.remarks ? (
+                        <p className="flex items-start gap-2 rounded-r-lg border-l-2 border-violet-500/50 bg-violet-500/[0.045] px-3 py-2 text-xs leading-relaxed text-foreground/85 dark:bg-violet-500/[0.07]">
+                          <MessageSquareQuote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-500/70" aria-hidden />
+                          {s.remarks}
+                        </p>
                       ) : (
                         <p className="flex items-center gap-2 text-xs text-muted-foreground">
                           <FileCheck2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
-                          Single written paper · {s.maxMarks} marks
+                          Single written paper · {s.totalMarks} marks
                         </p>
                       )}
                     </div>

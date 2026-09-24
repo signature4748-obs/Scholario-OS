@@ -8,10 +8,12 @@
  *
  * Clear responsibilities, no duplicated pages:
  *   Overview      — Insights (KPIs, trend, dues, recent payments, mode mix)
- *   Payments      — OPERATIONS: Collect Fee + cash verification queue
+ *                  [canonical: useCanonicalFees → /api/fees + transactions]
+ *   Payments      — OPERATIONS: verification workspace + Collect Fee
  *   Transactions  — The complete authoritative payment history (ledger)
- *   Student Accts — Per-student fee accounts
- *   Fee Structures— Configured fee rules
+ *                  [canonical: /api/fees/transactions]
+ *   Student Accts — Per-student fee accounts [canonical: /api/fees]
+ *   Fee Structures— Configured fee rules [client structures store]
  *   Settings      — Configuration
  *
  * LAYOUT: follows the Academics canonical pattern (Attendance/Salary
@@ -178,12 +180,12 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
             transition={{ duration: 0.2 }}
             className="max-w-7xl mx-auto"
           >
-            {tab === 'overview' && <FeesOverviewSection data={data} onNavigate={setTab} />}
-            {tab === 'accounts' && <FeesStudentAccountsSection data={data} onCollect={(id) => openCollect(id)} focusStudent={feeFocusStudent} />}
+            {tab === 'overview' && <FeesOverviewSection onNavigate={setTab} />}
+            {tab === 'accounts' && <FeesStudentAccountsSection onCollect={(id) => openCollect(id)} focusStudent={feeFocusStudent} />}
             {tab === 'structures' && <FeesStructuresSection data={data} onNavigate={onNavigate} />}
             {tab === 'payments' && <PaymentsSection data={data} onCollect={() => openCollect()} onOpenTransactions={() => setTab('transactions')} />}
             {tab === 'outreach' && <FeesDefaultersSection />}
-            {tab === 'transactions' && <FeesTransactionsSection data={data} />}
+            {tab === 'transactions' && <FeesTransactionsSection />}
             {tab === 'settings' && <FeesSettingsSection />}
           </motion.div>
         </AnimatePresence>

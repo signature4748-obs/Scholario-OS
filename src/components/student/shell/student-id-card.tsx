@@ -29,9 +29,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
-import type { StudentRecord } from '@/lib/store/students-store'
 import { ACTIVE_SESSION_ID, normalizeSessionId, formatSessionLabel } from '@/lib/academic-session'
-import type { EnrollmentIdentity } from '@/components/student/modules/shared/enrollment'
+import type { CanonicalStudent } from '@/components/student/modules/shared/canonical'
 
 /* ── School-configured themes (the card's institutional accent) ───────── */
 
@@ -57,17 +56,18 @@ const CARD_THEMES: Record<string, CardTheme> = {
 /* ── The card ───────────────────────────────────────────────────────────── */
 
 export interface StudentIdCardProps {
-  student: StudentRecord
+  /** Canonical identity — the DB Student row via /api/auth/me. No
+   *  client-side demo roster; unknown fields simply don't print. */
+  student: CanonicalStudent
+  /** Session display name (User.name — the Student row has no name). */
+  displayName: string
+  /** Session account status (User.status === 'ACTIVE'). */
+  active?: boolean
   /** Root adds the print hook class (see globals.css @media print). */
   className?: string
-  /** SD-3b — server-first enrollment overrides (session truth). When
-   *  present, class/roll/admission/dob/blood render from the DB session
-   *  instead of the seed record, keeping the card consistent with the
-   *  sidebar and profile. */
-  enrollment?: Pick<EnrollmentIdentity, 'classLabel' | 'rollNo' | 'admissionNo' | 'dob' | 'bloodGroup'>
 }
 
-export function StudentIdCard({ student, className, enrollment }: StudentIdCardProps) {
+export function StudentIdCard({ student, displayName, active = true, className }: StudentIdCardProps) {
   const school = useSchoolSettingsStore((s) => s.general)
   const idCard = useSchoolSettingsStore((s) => s.idCard)
   const rawSession = useSchoolSettingsStore((s) => s.academics?.currentSession)
@@ -77,20 +77,24 @@ export function StudentIdCard({ student, className, enrollment }: StudentIdCardP
   const sessionLabel = formatSessionLabel(sessionId)
   // Session "2026-2027" → card valid through 31 Mar of the END year.
   const validTill = `31 Mar ${sessionId.slice(5)}`
-  const isActive = student.status === 'Active'
+  const isActive = active
+  const initials =
+    displayName
+      .split(/\s+/)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || '·'
 
   // Configured particulars — each prints ONLY when the school enabled it
-  // (and only when the data genuinely exists on the record).
-  // Identity-bearing values prefer the SERVER enrollment (SD-3b).
-  const fields: { label: string; value: string; mono?: boolean }[] = [
-    { label: 'Class · Section', value: enrollment?.classLabel ?? `${student.className} · ${student.section}` },
-    { label: 'Roll No', value: enrollment?.rollNo ?? student.rollNo, mono: true },
-  ]
-  if (idCard?.showAdmissionNo) fields.push({ label: 'Admission No', value: enrollment?.admissionNo ?? student.admissionNo, mono: true })
-  if (idCard?.showHouse && student.houseName) fields.push({ label: 'House', value: student.houseName })
-  if (idCard?.showDob) fields.push({ label: 'Date of Birth', value: enrollment?.dob ?? student.dob, mono: true })
-  if (idCard?.showBloodGroup) fields.push({ label: 'Blood Group', value: enrollment?.bloodGroup ?? student.bloodGroup })
-  fields.push({ label: 'Student ID', value: student.id, mono: true })
+  // (and only when the canonical record genuinely carries the value).
+  const fields: { label: string; value: string; mono?: boolean }[] = []
+  if (student.classLabel) fields.push({ label: 'Class · Section', value: student.classLabel })
+  if (student.rollNo) fields.push({ label: 'Roll No', value: student.rollNo, mono: true })
+  if (idCard?.showAdmissionNo && student.admissionNo) fields.push({ label: 'Admission No', value: student.admissionNo, mono: true })
+  if (idCard?.showDob && student.dob) fields.push({ label: 'Date of Birth', value: student.dob.slice(0, 10), mono: true })
+  if (idCard?.showBloodGroup && student.bloodGroup) fields.push({ label: 'Blood Group', value: student.bloodGroup })
+  if (student.admissionNo) fields.push({ label: 'Student ID', value: student.admissionNo, mono: true })
 
   return (
     <div
@@ -122,7 +126,7 @@ export function StudentIdCard({ student, className, enrollment }: StudentIdCardP
             )}
           >
             <span className={cn('h-1.5 w-1.5 rounded-full', isActive ? 'bg-emerald-300' : 'bg-white/60')} aria-hidden />
-            {isActive ? 'Active' : student.status}
+            {isActive ? 'Active' : 'Inactive'}
           </span>
         </div>
         {school.affiliation && (
@@ -141,12 +145,12 @@ export function StudentIdCard({ student, className, enrollment }: StudentIdCardP
             )}
             aria-label="Student photograph placeholder"
           >
-            {student.avatar}
+            {initials}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-display text-lg font-bold leading-tight text-foreground">{student.name}</p>
+            <p className="font-display text-lg font-bold leading-tight text-foreground">{displayName}</p>
             <p className="mt-1 text-xs font-medium text-muted-foreground">
-              {enrollment ? `${enrollment.classLabel} · Roll ${enrollment.rollNo}` : `${student.className}-${student.section} · Roll ${student.rollNo}`}
+              {student.classLabel ?? '—'}{student.rollNo ? ` · Roll ${student.rollNo}` : ''}
             </p>
             <p className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground/80">
               <ShieldCheck className={cn('h-3 w-3', theme.text)} aria-hidden />
@@ -205,12 +209,14 @@ export function StudentIdCard({ student, className, enrollment }: StudentIdCardP
 interface StudentIdCardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  student: StudentRecord
-  /** SD-3b — passed through to the card (session truth overrides). */
-  enrollment?: StudentIdCardProps['enrollment']
+  /** Canonical identity — the DB Student row via /api/auth/me. */
+  student: CanonicalStudent
+  /** Session display name (User.name). */
+  displayName: string
+  active?: boolean
 }
 
-export function StudentIdCardDialog({ open, onOpenChange, student, enrollment }: StudentIdCardDialogProps) {
+export function StudentIdCardDialog({ open, onOpenChange, student, displayName, active }: StudentIdCardDialogProps) {
   // Print ONLY the card (physical proportions) — toggles a body class the
   // print stylesheet in globals.css resolves; cleanup after the dialog.
   const printCard = () => {
@@ -234,7 +240,7 @@ export function StudentIdCardDialog({ open, onOpenChange, student, enrollment }:
           Your {`school's`} configured student identity card — print it exactly as designed by your school.
         </DialogDescription>
 
-        <StudentIdCard student={student} enrollment={enrollment} className="mx-auto" />
+        <StudentIdCard student={student} displayName={displayName} active={active} className="mx-auto" />
 
         <div className="mt-3 flex gap-2 print:hidden">
           <Button size="sm" className="flex-1 gap-2" onClick={printCard}>

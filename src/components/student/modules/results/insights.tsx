@@ -20,7 +20,7 @@ import { useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, ChevronDown, Focus, Minus, TrendingUp, Trophy } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import { fmtPct } from '@/lib/store/student-results-store'
+import { fmtPct } from './derive'
 import { subjectColor } from '../timetable/subject-colors'
 import { SectionLabel } from '../../shell/page-header'
 

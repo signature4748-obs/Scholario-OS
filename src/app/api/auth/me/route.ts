@@ -43,12 +43,14 @@ export async function GET() {
  *  client roster). Returns null when the account has no student record.
  *  Carries every identity-bearing particular the student-facing surfaces
  *  (profile, ID card, headers) display — so they can never disagree with
- *  the session/DB truth. */
+ *  the session/DB truth. Includes the canonical DB ids (studentId/classId)
+ *  so client modules can scope every read to THIS record instead of any
+ *  client-side demo roster. */
 async function getStudentContext(user: { id: string; schoolId: string | null }) {
   const { db } = await import('@/lib/db')
   const row = await db.user.findUnique({
     where: { id: user.id },
-    include: { student: { include: { class: { select: { name: true, section: true } } } } },
+    include: { student: { include: { class: { select: { id: true, name: true, section: true } } } } },
   })
   const student = row?.student
   if (!student) return null
@@ -61,6 +63,10 @@ async function getStudentContext(user: { id: string; schoolId: string | null }) 
       : `${cls.name}${cls.section ? ` - ${cls.section}` : ''}`
     : null
   return {
+    studentId: student.id,
+    classId: cls?.id ?? null,
+    className: cls?.name ?? null,
+    section: cls?.section ?? null,
     classLabel,
     rollNo: student.rollNo,
     admissionNo: student.admissionNo,

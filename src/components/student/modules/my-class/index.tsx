@@ -27,8 +27,8 @@ import { teachers } from '@/lib/mock/teachers'
 import { useDismissOnEscape } from '@/hooks/use-dismiss-on-escape'
 import { formatDate, formatRelativeTime } from '@/lib/format'
 import { toast } from 'sonner'
-import { DEMO_STUDENT_ID } from '../applications/student'
 import { useCurrentUser } from '@/lib/store/current-user-store'
+import { useCanonicalStudent } from '../shared/canonical'
 
 const CAPABILITY_META: Record<StudentCapability, { label: string; icon: typeof Crown }> = {
   'post-class-updates': { label: 'Class updates', icon: Megaphone },
@@ -63,15 +63,21 @@ function allowedTeachers(classId: string, section: string): { id: string; name: 
 }
 
 export function MyClassModule() {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // Canonical identity — positions/updates/issues/tasks/requests are
+  // scoped to the session's own student id (server Student row). The
+  // retired STU-58 demo key no longer grants anything.
+  const { student: canonical, resolving } = useCanonicalStudent()
+  const studentId = canonical?.studentId ?? null
+  const studentClassId = canonical?.classId ?? null
+  const studentSection = canonical?.section ?? null
   // Raw array + useMemo — zustand v5 selectors must return stable refs.
   // RB-1 — activity resolves ONLY through the canonical session-scoped
   // resolver; a position from an earlier session is history, not authority.
   const allPositions = useStudentsStore((s) => s.studentPositions)
   const sessionId = useAcademicSession().id
   const positions = useMemo(
-    () => filterActivePositions(allPositions, DEMO_STUDENT_ID, sessionId),
-    [allPositions, sessionId],
+    () => (studentId ? filterActivePositions(allPositions, studentId, sessionId) : []),
+    [allPositions, studentId, sessionId],
   )
 
   const updates = useClassResponsibilityStore((s2) => s2.classUpdates)
@@ -82,23 +88,23 @@ export function MyClassModule() {
   const [dialog, setDialog] = useState<'update' | 'issue' | 'meeting' | null>(null)
 
   const caps = allCapabilities(positions)
-  const myUpdates = useMemo(() => updates.filter((u) => u.studentId === DEMO_STUDENT_ID), [updates])
+  const myUpdates = useMemo(() => (studentId ? updates.filter((u) => u.studentId === studentId) : []), [updates, studentId])
   const noticeBoard = useMemo(
     () =>
-      student
-        ? updates.filter((u) => u.classId === student.classId && u.section === student.section && u.status === 'approved')
+      studentClassId && studentSection
+        ? updates.filter((u) => u.classId === studentClassId && u.section === studentSection && u.status === 'approved')
         : [],
-    [updates, student],
+    [updates, studentClassId, studentSection],
   )
-  const myIssues = useMemo(() => issues.filter((i) => i.studentId === DEMO_STUDENT_ID), [issues])
-  const myTasks = useMemo(() => tasks.filter((t) => t.studentId === DEMO_STUDENT_ID), [tasks])
-  const myRequests = useMemo(() => requests.filter((r) => r.studentId === DEMO_STUDENT_ID), [requests])
+  const myIssues = useMemo(() => (studentId ? issues.filter((i) => i.studentId === studentId) : []), [issues, studentId])
+  const myTasks = useMemo(() => (studentId ? tasks.filter((t) => t.studentId === studentId) : []), [tasks, studentId])
+  const myRequests = useMemo(() => (studentId ? requests.filter((r) => r.studentId === studentId) : []), [requests, studentId])
 
   // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
   // (Declared before the early return — hooks must run unconditionally.)
   const srvClassLabel = useCurrentUser((s) => s.me?.student?.classLabel)
 
-  if (!student || positions.length === 0) {
+  if (resolving || !canonical || positions.length === 0) {
     // No active responsibility — the panel hides the nav entry entirely; this
     // is a defensive empty state.
     return (
@@ -119,7 +125,7 @@ export function MyClassModule() {
       {/* LR-1 — compact context line, no giant module title. The position
           hero below carries the real identity of this surface. */}
       <p className="truncate text-xs text-muted-foreground">
-        {srvClassLabel ?? `${student.className}-${student.section}`} · Class responsibility
+        {srvClassLabel ?? canonical.classLabel ?? 'Class'} · Class responsibility
       </p>
 
       {/* Position hero */}
@@ -142,7 +148,7 @@ export function MyClassModule() {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-              <span>{srvClassLabel ?? `${student.className}-${student.section}`}</span>
+              <span>{srvClassLabel ?? canonical.classLabel ?? 'Class'}</span>
               <span className="text-border">·</span>
               <span>Since {formatDate(primary.assignedOn)}</span>
               <span className="text-border">·</span>
@@ -211,7 +217,7 @@ export function MyClassModule() {
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {myTasks.map((t) => (
-                  <TaskRow key={t.id} task={t} />
+                  <TaskRow key={t.id} task={t} studentId={studentId ?? ''} />
                 ))}
               </div>
             )}
@@ -294,9 +300,9 @@ export function MyClassModule() {
       )}
 
       {/* Dialogs */}
-      {dialog === 'update' && <PostUpdateDialog positions={positions} onClose={() => setDialog(null)} />}
-      {dialog === 'issue' && <ReportIssueDialog onClose={() => setDialog(null)} />}
-      {dialog === 'meeting' && <MeetingDialog onClose={() => setDialog(null)} />}
+      {dialog === 'update' && <PostUpdateDialog positions={positions} studentId={studentId ?? ''} onClose={() => setDialog(null)} />}
+      {dialog === 'issue' && <ReportIssueDialog studentId={studentId ?? ''} onClose={() => setDialog(null)} />}
+      {dialog === 'meeting' && <MeetingDialog studentId={studentId ?? ''} classId={studentClassId ?? ''} section={studentSection ?? ''} onClose={() => setDialog(null)} />}
     </div>
   )
 }
@@ -333,10 +339,10 @@ function ActionCard({ icon, title, desc, stat, onClick, accent }: {
   )
 }
 
-function TaskRow({ task }: { task: ResponsibilityTask }) {
+function TaskRow({ task, studentId }: { task: ResponsibilityTask; studentId: string }) {
   const completeTask = useClassResponsibilityStore((s) => s.completeTask)
   const toggle = () => {
-    const result = completeTask(task.id, DEMO_STUDENT_ID)
+    const result = completeTask(task.id, studentId)
     if (!result.ok) toast.error('Could not update task', { description: result.error })
   }
   return (
@@ -406,7 +412,7 @@ function DialogShell({ title, subtitle, onClose, children, footer }: {
   )
 }
 
-function PostUpdateDialog({ positions, onClose }: { positions: StudentPosition[]; onClose: () => void }) {
+function PostUpdateDialog({ positions, studentId, onClose }: { positions: StudentPosition[]; studentId: string; onClose: () => void }) {
   const postClassUpdate = useClassResponsibilityStore((s) => s.postClassUpdate)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -414,7 +420,7 @@ function PostUpdateDialog({ positions, onClose }: { positions: StudentPosition[]
 
   const submit = () => {
     if (!title.trim() || !body.trim()) return
-    const result = postClassUpdate({ actorStudentId: DEMO_STUDENT_ID, title: title.trim(), body: body.trim(), category })
+    const result = postClassUpdate({ actorStudentId: studentId, title: title.trim(), body: body.trim(), category })
     if (result.ok) {
       toast.success('Update submitted for review', { description: 'Your class teacher will review it before it appears on the class notice board.' })
       onClose()
@@ -464,7 +470,7 @@ function PostUpdateDialog({ positions, onClose }: { positions: StudentPosition[]
   )
 }
 
-function ReportIssueDialog({ onClose }: { onClose: () => void }) {
+function ReportIssueDialog({ studentId, onClose }: { studentId: string; onClose: () => void }) {
   const reportIssue = useClassResponsibilityStore((s) => s.reportIssue)
   const [category, setCategory] = useState<IssueCategory>('facility')
   const [priority, setPriority] = useState<IssuePriority>('medium')
@@ -473,7 +479,7 @@ function ReportIssueDialog({ onClose }: { onClose: () => void }) {
 
   const submit = () => {
     if (!title.trim() || !description.trim()) return
-    const result = reportIssue({ actorStudentId: DEMO_STUDENT_ID, category, priority, title: title.trim(), description: description.trim() })
+    const result = reportIssue({ actorStudentId: studentId, category, priority, title: title.trim(), description: description.trim() })
     if (result.ok) {
       toast.success('Issue reported', { description: 'Your class teacher and the principal have been notified.' })
       onClose()
@@ -540,12 +546,11 @@ function ReportIssueDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
-function MeetingDialog({ onClose }: { onClose: () => void }) {
+function MeetingDialog({ studentId, classId, section, onClose }: { studentId: string; classId: string; section: string; onClose: () => void }) {
   const requestTeacherMeeting = useClassResponsibilityStore((s) => s.requestTeacherMeeting)
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
   const teacherList = useMemo(
-    () => (student ? allowedTeachers(student.classId, student.section) : []),
-    [student],
+    () => (classId ? allowedTeachers(classId, section) : []),
+    [classId, section],
   )
   const [teacherId, setTeacherId] = useState<string>(teacherList[0]?.id ?? '')
   const [topic, setTopic] = useState('')
@@ -555,7 +560,7 @@ function MeetingDialog({ onClose }: { onClose: () => void }) {
     if (!teacherId || !topic.trim()) return
     const teacher = teacherList.find((t) => t.id === teacherId)
     const result = requestTeacherMeeting({
-      actorStudentId: DEMO_STUDENT_ID,
+      actorStudentId: studentId,
       teacherId,
       teacherName: teacher?.name ?? teacherId,
       topic: topic.trim(),

@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import dynamic from 'next/dynamic'
 import { AppShell } from '@/components/shell/app-shell'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { lazyModule } from '@/components/shared/lazy-module'
 import { useTeachersStore } from '@/lib/store/teachers-store'
 import { useTeacherHubStore } from '@/lib/store/teacher-hub-store'
 import { useTeacherRole } from './teacher-panel/use-teacher-role'
@@ -24,9 +23,10 @@ import {
 import { useTeacherHandlers } from './teacher-panel/use-teacher-handlers'
 
 // Lazily-loaded chunk — compiles only when the payroll tab is opened.
-const MySalaryModule = dynamic(
-  () => import('./modules/my-salary').then((m) => m.MySalaryModule),
-  { loading: ModuleLoading }
+// Chunk-resilient: import retry + per-module error boundary (§22).
+const MySalaryModule = lazyModule(
+  () => import('./modules/my-salary'),
+  'MySalaryModule',
 )
 
 /** Module keys the ModuleRouter knows — validates ?module= deep-links. */

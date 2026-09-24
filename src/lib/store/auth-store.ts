@@ -47,11 +47,13 @@ const roleProfiles: Record<Role, SessionUser> = {
   },
   student: {
     role: 'student',
-    name: 'Aarav Sharma',
-    avatar: 'AS',
-    id: 'STU-58',
-    email: 'aarav.sharma@greenwood.edu.in',
-    studentId: 'STU-58',
+    // Neutral placeholder — the REAL identity (name/email/id) is synced
+    // from the server login response via `login(role, overrides)`. Never
+    // a client-side demo roster id (the STU-58 overlay is retired).
+    name: 'Student',
+    avatar: '·',
+    id: '',
+    email: '',
   },
   superadmin: {
     role: 'superadmin',
@@ -93,7 +95,17 @@ export const useAuth = create<AuthState>()(
       name: 'scholario-auth',
       // v1 — re-key student identity to the canonical STU-58 (fresh sessions
       // after the roster unification; stale persisted users are discarded).
-      version: 1,
+      // v2 — STU-58 demo-overlay retirement: any persisted STUDENT session
+      // still carrying the fabricated identity (id/email STU-58/greenwood)
+      // is dropped — the user re-authenticates and gets the server identity.
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as AuthState | undefined
+        if (state?.user?.role === 'student' && (state.user.id === 'STU-58' || !state.user.email)) {
+          return { ...state, user: null, isAuthenticated: false, isAuthenticating: false } as unknown as AuthState
+        }
+        return state as unknown as AuthState
+      },
       onRehydrateStorage: () => (state) => {
         useAuth.setState({ hydrated: true })
         if (state) state.setHydrated()

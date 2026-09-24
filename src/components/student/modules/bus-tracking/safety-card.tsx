@@ -3,15 +3,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { Shield, AlertCircle } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
-import { busStats } from '@/lib/mock/bus-tracking'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import type { MyTransportRoute } from '../shared/canonical'
+import { formatServiceTime } from './format'
 
 /** T4-D — armed state auto-reset and accidental double-tap guard. */
 const SOS_ARM_RESET_MS = 6000
 const SOS_DOUBLE_TAP_GUARD_MS = 500
 
-export function SafetyCard() {
+/**
+ * SafetyCard — emergency help for the transport service. The guidance text
+ * references the recorded service window and the assigned driver; the
+ * two-step SOS stays an interactive control. The old stats block (trips /
+ * on-time rate / distance / fabricated checklist claims) had no data
+ * source and is gone.
+ */
+export function SafetyCard({ route }: { route: MyTransportRoute }) {
   const [armed, setArmed] = useState(false)
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const armedAt = useRef(0)
@@ -49,40 +57,22 @@ export function SafetyCard() {
 
   return (
     <GlassCard className="p-3 sm:p-4 lg:p-5">
-      <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-        <Shield className="h-4 w-4 text-emerald-500" /> Safety & Stats
-      </h3>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Total trips this month</span>
-          <span className="font-display font-bold">{busStats.daysThisMonth}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">On-time arrival</span>
-          <span className="font-display font-bold text-emerald-600">{busStats.onTimeRate}%</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Total distance</span>
-          <span className="font-display font-bold">{busStats.totalDistance} km</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Avg pickup</span>
-          <span className="font-display font-bold tabular-nums">{busStats.avgPickupTime}</span>
-        </div>
-
-        <div className="pt-3 border-t border-border">
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 p-3">
-            <Shield className="h-5 w-5 text-emerald-600 shrink-0" />
-            <div>
-              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">All safety checks passed</p>
-              <p className="text-[10px] text-muted-foreground">GPS active · Speed governor OK · Fire extinguisher ✓</p>
-            </div>
-          </div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <Shield className="h-4 w-4 text-emerald-500" aria-hidden /> Safety &amp; Help
+          </h3>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Timings follow the scheduled service window ({formatServiceTime(route.startTime)} –{' '}
+            {formatServiceTime(route.endTime)}); there is no live GPS on this service. For
+            day-to-day route questions, contact the school office
+            {route.driverName ? ` or your driver, ${route.driverName}` : ''}.
+          </p>
         </div>
 
         {/* T4-D — two-step SOS: first tap arms (filled rose + Confirm label
             + Cancel), a deliberate second tap sends. Auto-resets after 6s. */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 lg:w-72 lg:shrink-0">
           <button
             onClick={handleSos}
             aria-label={armed ? 'Confirm SOS alert' : 'Send SOS alert'}
@@ -93,7 +83,7 @@ export function SafetyCard() {
                 : 'border-rose-500/30 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10',
             )}
           >
-            <AlertCircle className="h-4 w-4" /> {armed ? 'Confirm SOS?' : 'Send SOS Alert'}
+            <AlertCircle className="h-4 w-4" aria-hidden /> {armed ? 'Confirm SOS?' : 'Send SOS Alert'}
           </button>
           {armed && (
             <button

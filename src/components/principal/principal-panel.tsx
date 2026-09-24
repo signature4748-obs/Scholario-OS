@@ -8,8 +8,7 @@ import {
   PieChart, Download, LayoutGrid, Users, Layers, Clock
 } from 'lucide-react'
 import { AppShell, type NavGroup } from '@/components/shell/app-shell'
-import dynamic from 'next/dynamic'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { lazyModule } from '@/components/shared/lazy-module'
 import { useLiveAlerts } from '@/lib/store/live-alerts-store'
 import { useAdmissionStore } from '@/lib/store/admission-store'
 import { ensureApplicationSeedData } from '@/lib/store/applications-store'
@@ -22,10 +21,10 @@ import type { UnifiedTab } from './modules/students-classes'
 
 // Every module is a separate lazily-loaded chunk: navigating compiles just
 // that module (small memory spikes) instead of one giant principal bundle.
+// Chunk-resilient lazy loader: import retry + per-module error boundary
+// (stabilization §22/§29 — a failed chunk must never blank the app).
 const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
-  dynamic(() => loader().then((m) => m[pick] as React.ComponentType<any>), {
-    loading: ModuleLoading,
-  })
+  lazyModule(loader, pick)
 
 // Wave 1 scope: Homework & Assignments are intentionally deferred from the
 // Principal role. They will be rebuilt as a connected Teacher → Student →

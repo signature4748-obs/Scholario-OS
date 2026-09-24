@@ -3,18 +3,27 @@
 /**
  * Attendance shared presentational pieces.
  *
- * CalendarLegend — compact color legend strip.
- * SelectedDayPanel — Brief §10 (connected to heatmap) + §19 (View full CTA)
- *   + Brief PART 8 (accepts dateStr + holiday for cross-month selection)
- *   + Brief PART 35 (distinguishes holiday from working day)
+ * CalendarLegend — compact color legend strip (real-rate bands + honest
+ *   "no record" state + weekend/holiday geometry).
+ * SelectedDayPanel — real per-day summary for the heatmap: shows the
+ *   recorded rate/count when the day has Attendance rows, the honest
+ *   "no record" state when it doesn't, and the holiday state.
+ * StudentDrillDialog — per-student canonical history (?studentId= fetch)
+ *   used by the Overview roster + History rows.
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, CalendarOff } from 'lucide-react'
-import { attendanceOverview } from '@/lib/mock/attendance'
+import { ArrowRight, CalendarOff, CalendarSearch } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { Holiday } from '@/lib/mock/school-calendar'
-import { formatNumber } from '@/lib/format'
-import { ATTENDANCE_PALETTE } from './attendance-charts'
+import {
+  useStudentDrill,
+  formatDateLong,
+  formatDateLabel,
+} from './data'
+import { metaFor } from './attendance-status'
 
 export function CalendarLegend() {
   return (
@@ -33,44 +42,43 @@ export function CalendarLegend() {
         <span className="h-2.5 w-2.5 rounded-sm bg-rose-400/70 border border-rose-500" /> &lt;85%
       </span>
       <span className="flex items-center gap-1.5">
+        <span className="h-2.5 w-2.5 rounded-sm bg-muted/40 border border-border" /> No record
+      </span>
+      <span className="flex items-center gap-1.5">
         <span className="h-2.5 w-2.5 rounded-sm bg-violet-500/15 border border-violet-500/40" /> Holiday
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-2.5 w-2.5 rounded-sm bg-muted/40 border border-border" /> Weekend
+        <span className="h-2.5 w-2.5 rounded-sm bg-muted/40 border border-dashed border-border" /> Weekend
       </span>
     </div>
   )
 }
 
 /**
- * SelectedDayPanel — Brief §10 (connected to heatmap) + §19 (View full CTA).
+ * SelectedDayPanel — real summary for the picked heatmap day.
  *
- * Brief PART 8: accepts `dateStr` (ISO date) + `holiday` (from school calendar)
- *   so it can correctly display the selected day across any month.
- *
- * Brief PART 35: when the selected day is a holiday, shows the holiday name
- *   instead of attendance counts.
+ * `dayRecord` is the day's REAL aggregate from the snapshot's weekTrend
+ * ({ rate, recorded }) or null when the school has no Attendance rows
+ * for that day. Nothing is derived or fabricated here.
  */
 export function SelectedDayPanel({
   selectedDay,
   dateStr,
   holiday,
+  dayRecord,
   onViewFullAttendance,
 }: {
   selectedDay: number
   dateStr: string
   holiday: Holiday | null
+  dayRecord: { rate: number; recorded: number } | null
   onViewFullAttendance?: () => void
 }) {
   const reduce = useReducedMotion()
 
-  // Parse dateStr (YYYY-MM-DD) → Date for label
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const dateLabel = new Date(y, m - 1, d).toLocaleDateString('en-IN', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  })
+  const dateLabel = formatDateLong(dateStr)
 
-  // Brief PART 35: holiday display — no attendance counts
+  // Holiday display — no attendance counts
   if (holiday) {
     return (
       <motion.div
@@ -102,67 +110,200 @@ export function SelectedDayPanel({
     )
   }
 
-  // Compute the rate from the dateStr — derive deterministically per date.
-  // This matches the buildMonthCalendar() rate formula.
-  const seed = y * 10000 + m * 100 + d
-  let rate = 88 + Math.round(Math.sin(seed * 0.6) * 4 + Math.cos(seed * 0.3) * 3 + 4)
-  rate = Math.max(82, Math.min(98, rate))
+  // Real recorded day
+  if (dayRecord) {
+    return (
+      <motion.div
+        initial={reduce ? false : { opacity: 0, y: 6, height: 0 }}
+        animate={{ opacity: 1, y: 0, height: 'auto' }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        className="mt-3 rounded-lg border border-primary/30 bg-primary/5 overflow-hidden"
+      >
+        <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-primary/20 bg-primary/5">
+          <div className="min-w-0">
+            <p className="text-[9px] uppercase tracking-wider font-semibold text-primary">Selected Day</p>
+            <p className="text-xs font-semibold text-foreground truncate">{dateLabel}</p>
+          </div>
+          <div className="flex items-baseline gap-1 shrink-0">
+            <span className="font-display text-2xl font-bold tabular-nums text-primary">{dayRecord.rate}%</span>
+            <span className="text-[10px] text-muted-foreground">attendance</span>
+          </div>
+        </div>
+        <div className="px-3 py-2 border-t border-primary/10">
+          <p className="text-[10px] text-muted-foreground">
+            <span className="font-semibold text-foreground tabular-nums">{dayRecord.recorded}</span>{' '}
+            attendance {dayRecord.recorded === 1 ? 'row' : 'rows'} recorded this day.
+          </p>
+          {onViewFullAttendance && (
+            <button
+              onClick={onViewFullAttendance}
+              className="mt-1 text-[11px] font-semibold text-primary hover:underline underline-offset-2 flex items-center gap-1 transition-colors"
+            >
+              View full attendance
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </motion.div>
+    )
+  }
 
-  // Derived counts — same proportional computation as before (Brief §29).
-  const total = attendanceOverview.today.total
-  const presentCount = Math.round(total * rate / 100)
-  const lateCount = Math.round(total * 0.012)
-  const absentCount = Math.max(0, total - presentCount - lateCount - Math.round(total * 0.005))
-  const leaveCount = Math.round(total * 0.005)
-
+  // Working day with no Attendance rows — honest state
   return (
     <motion.div
       initial={reduce ? false : { opacity: 0, y: 6, height: 0 }}
       animate={{ opacity: 1, y: 0, height: 'auto' }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="mt-3 rounded-lg border border-primary/30 bg-primary/5 overflow-hidden"
+      className="mt-3 rounded-lg border border-border bg-muted/30 overflow-hidden"
     >
-      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-primary/20 bg-primary/5">
+      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border/60">
         <div className="min-w-0">
-          <p className="text-[9px] uppercase tracking-wider font-semibold text-primary">Selected Day</p>
+          <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">Selected Day</p>
           <p className="text-xs font-semibold text-foreground truncate">{dateLabel}</p>
         </div>
-        <div className="flex items-baseline gap-1 shrink-0">
-          <span className="font-display text-2xl font-bold tabular-nums text-primary">{rate}%</span>
-          <span className="text-[10px] text-muted-foreground">attendance</span>
-        </div>
+        <CalendarSearch className="h-4 w-4 text-muted-foreground shrink-0" />
       </div>
-
-      <div className="grid grid-cols-4 divide-x divide-border">
-        <StatTile label="Present" value={presentCount} color={ATTENDANCE_PALETTE.present} />
-        <StatTile label="Late" value={lateCount} color={ATTENDANCE_PALETTE.late} />
-        <StatTile label="Absent" value={absentCount} color={ATTENDANCE_PALETTE.absent} />
-        <StatTile label="Leave" value={leaveCount} color={ATTENDANCE_PALETTE.leave} />
-      </div>
-
-      {/* Brief §19: View full attendance → CTA */}
-      {onViewFullAttendance && (
-        <div className="px-3 py-2 border-t border-primary/20 bg-primary/5">
+      <div className="px-3 py-2">
+        <p className="text-[10px] text-muted-foreground">
+          No attendance recorded for this day.
+        </p>
+        {onViewFullAttendance && (
           <button
             onClick={onViewFullAttendance}
-            className="text-[11px] font-semibold text-primary hover:underline underline-offset-2 flex items-center gap-1 transition-colors"
+            className="mt-1 text-[11px] font-semibold text-primary hover:underline underline-offset-2 flex items-center gap-1 transition-colors"
           >
-            View full attendance
+            View day in History
             <ArrowRight className="h-3 w-3" />
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </motion.div>
   )
 }
 
-function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
+/* ──────────────────────────────────────────────────────────
+   StudentDrillDialog — canonical per-student history
+   (fetched live via ?studentId=; used by Overview roster + History)
+   ────────────────────────────────────────────────────────── */
+
+export function StudentDrillDialog({
+  student,
+  date,
+  onClose,
+}: {
+  student: { studentId: string; name: string; rollNo: string; classLabel?: string } | null
+  date: string | null
+  onClose: () => void
+}) {
+  const { drill, loading, error } = useStudentDrill(student?.studentId ?? null, date, !!student)
+
   return (
-    <div className="px-2 py-2 text-center">
-      <p className="font-display text-sm sm:text-base font-bold tabular-nums" style={{ color }}>
-        {formatNumber(value)}
-      </p>
-      <p className="text-[9px] uppercase tracking-wider text-muted-foreground mt-0.5">{label}</p>
+    <Dialog open={!!student} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md p-0 gap-0">
+        <DialogHeader className="px-4 pt-4 pb-3 border-b border-border">
+          <DialogTitle className="text-sm font-semibold">
+            {student?.name ?? 'Student'}
+          </DialogTitle>
+          <DialogDescription className="text-[10px]">
+            Attendance history · canonical records
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+          {loading && (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-24 w-full rounded-lg" />
+            </div>
+          )}
+
+          {!loading && error && (
+            <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>
+          )}
+
+          {!loading && !error && drill && (
+            <>
+              <div className="rounded-lg border border-border bg-card p-2.5">
+                <p className="text-[10px] text-muted-foreground">
+                  {drill.classLabel ?? '—'}
+                  {drill.rollNo ? ` · Roll ${drill.rollNo}` : ''}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wider font-semibold text-primary">Attendance Rate</p>
+                    <p className="font-display text-2xl font-bold tabular-nums text-primary">{drill.rate}%</p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground text-right">
+                    {drill.records.length} record{drill.records.length === 1 ? '' : 's'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <DrillStat label="Present" value={drill.present} color="text-emerald-600 dark:text-emerald-400" />
+                <DrillStat label="Late" value={drill.late} color="text-amber-600 dark:text-amber-400" />
+                <DrillStat label="Absent" value={drill.absent} color="text-rose-600 dark:text-rose-400" />
+                <DrillStat label="Leave" value={drill.leave} color="text-sky-600 dark:text-sky-400" />
+              </div>
+
+              {drill.records.length > 0 && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <div className="px-3 py-1.5 bg-muted/50 border-b border-border">
+                    <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">Recorded days (latest first)</p>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {[...drill.records]
+                      .sort((a, b) => (a.date < b.date ? 1 : -1))
+                      .slice(0, 60)
+                      .map((r) => {
+                        const meta = metaFor(
+                          r.status === 'PRESENT' ? 'present'
+                            : r.status === 'LATE' ? 'late'
+                            : r.status === 'ABSENT' ? 'absent'
+                            : r.status === 'LEAVE' ? 'leave'
+                            : null,
+                        )
+                        return (
+                          <div key={r.date} className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/40 last:border-0 text-xs">
+                            <span className="font-mono tabular-nums text-muted-foreground">{formatDateLabel(r.date)}</span>
+                            <span className={`inline-flex items-center gap-1 font-semibold ${meta.text}`}>
+                              <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
+                              {meta.label}
+                            </span>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {!loading && !error && !drill && (
+            <p className="text-xs text-muted-foreground py-4 text-center">
+              No attendance records found for this student.
+            </p>
+          )}
+        </div>
+
+        <div className="px-4 py-3 border-t border-border flex justify-end">
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DrillStat({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-2.5">
+      <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">{label}</p>
+      <p className={`font-display text-base font-bold tabular-nums ${color}`}>{value}</p>
     </div>
   )
 }

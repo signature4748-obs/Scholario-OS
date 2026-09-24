@@ -17,8 +17,8 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { useStudentsStore } from '@/lib/store/students-store'
-import { DEMO_STUDENT_ID } from '@/components/student/modules/applications/student'
 import { StudentIdCard } from '@/components/student/shell/student-id-card'
+import type { CanonicalStudent } from '@/components/student/modules/shared/canonical'
 import { SettingsTab, FieldGroup } from './shared'
 
 const THEME_SWATCHES: { key: 'violet' | 'sky' | 'emerald' | 'rose' | 'amber'; label: string; gradient: string }[] = [
@@ -48,8 +48,27 @@ export function IdCardTab() {
   const idCard = useSchoolSettingsStore((s) => s.idCard)
   const updateIdCard = useSchoolSettingsStore((s) => s.updateIdCard)
   // Preview against a REAL roster record — what the school sees is what
-  // every student's card will look like with their own particulars.
-  const previewStudent = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // every student's card will look like with their own particulars. The
+  // record is mapped to the canonical card shape (roster values only
+  // PREVIEW the template; student cards render their own session data).
+  const rosterRecord = useStudentsStore((s) => s.students.find((x) => x.id === 'STU-9'))
+  const previewStudent: CanonicalStudent | null = rosterRecord
+    ? {
+        studentId: rosterRecord.id,
+        classId: rosterRecord.classId ?? null,
+        className: rosterRecord.className ?? null,
+        section: rosterRecord.section ?? null,
+        classLabel: `${rosterRecord.className}${rosterRecord.section ? ` - ${rosterRecord.section}` : ''}`,
+        rollNo: rosterRecord.rollNo ?? null,
+        admissionNo: rosterRecord.admissionNo ?? null,
+        dob: rosterRecord.dob ?? null,
+        gender: rosterRecord.gender ?? null,
+        bloodGroup: rosterRecord.bloodGroup ?? null,
+        guardianName: rosterRecord.guardianName ?? null,
+        guardianPhone: rosterRecord.guardianPhone ?? null,
+        address: rosterRecord.address ?? null,
+      }
+    : null
 
   if (!idCard) return null
 
@@ -145,7 +164,7 @@ export function IdCardTab() {
           </div>
           <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4">
             {previewStudent ? (
-              <StudentIdCard student={previewStudent} className="mx-auto shadow-none" />
+              <StudentIdCard student={previewStudent} displayName={rosterRecord?.name ?? 'Student'} className="mx-auto shadow-none" />
             ) : (
               <p className="py-16 text-center text-xs text-muted-foreground">Loading preview…</p>
             )}

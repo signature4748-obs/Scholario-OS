@@ -1,18 +1,18 @@
 'use client'
 
 /**
- * results/report-card — the OFFICIAL REPORT CARD (§18/§20–§22, gen 2).
+ * results/report-card — the OFFICIAL REPORT CARD.
  *
  * A premium document section — not a dashboard button: the trigger reads
  * like the school-issued record it represents (document icon, official
  * title, quiet provenance line, two clear actions). The document itself
  * is a genuine institutional artifact — school letterhead (from School
- * Settings, the branding source of truth), student particulars, the
- * subject-wise marks table with the school's grading scale, totals, rank
- * (only when permitted), attendance (only when configured), the published
- * teacher remark and signature/seal furniture. Composition follows the
- * school's configured report-card flags; fields that don't exist never
- * print.
+ * Settings, the branding source of truth), the student's CANONICAL
+ * particulars (session display name, admission no, class, roll no —
+ * the server session's own values, never a hardcoded fallback), the
+ * subject-wise marks table exactly as declared on the server, totals,
+ * rank (only when the server computed one), attendance (only when
+ * configured), subject remarks and signature/seal furniture.
  *
  * Actions: in-app PREVIEW (A4 paper dialog), DOWNLOAD (real file) and
  * PRINT (the document itself — the preferred printable form). The
@@ -33,52 +33,40 @@ import {
   type StudentAttendanceRecord,
 } from '@/lib/store/student-attendance-store'
 import { useMyServerAttendance } from '@/hooks/use-my-attendance'
-import {
-  fmtPct,
-  pctOf,
-  gradeFor,
-  totalsOf,
-  type AssessmentDef,
-  type AssessmentResult,
-  type GradeBand,
-  type ClassStanding,
-} from '@/lib/store/student-results-store'
+import type { MyResultExam } from '../shared/canonical'
+import { fmtPct, fullDate, pctOfSubject, type ExamTotals } from './derive'
 import { school as schoolFallback } from '@/lib/mock/school'
 
 function esc(v: string): string {
   return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+/** Identity block — CANONICAL values fed by the parent (session + enrollment). */
+export interface ReportCardIdentity {
+  name: string
+  admissionNo: string
+  classSection: string
+  rollNo: string
+}
+
 interface ReportCardInput {
-  assessment: AssessmentDef
-  result: AssessmentResult
-  gradeScale: GradeBand[]
-  standings: ClassStanding[]
-  showRank: boolean
+  exam: MyResultExam
+  totals: ExamTotals
+  grade: string
   reportCardConfig: { includeAttendance: boolean; includePrincipalRemark: boolean; includeSealNote: boolean }
-  identity: { name: string; admissionNo: string; classSection: string; rollNo: string }
+  identity: ReportCardIdentity
   /** Server-verified attendance stats for the CURRENT student (null = omit the line). */
   attendance: { percent: number; attended: number; total: number } | null
 }
 
-const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
-function fullDate(iso: string): string {
-  return `${Number(iso.slice(8, 10))} ${MONTHS_FULL[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`
-}
-
 /** Build the institutional document — every value derives from real records. */
 function buildReportCardHTML(input: ReportCardInput): string {
-  const { assessment, result, gradeScale, standings, showRank, reportCardConfig, identity } = input
+  const { exam, totals, grade, reportCardConfig, identity } = input
   const general = useSchoolSettingsStore.getState().general
   const schoolName = general?.schoolName || schoolFallback.name
   const affiliation = general?.affiliation || schoolFallback.affiliation
   const address = general?.address || schoolFallback.address
   const principal = general?.principalName || schoolFallback.principal
-
-  const t = totalsOf(result)
-  const overallGrade = gradeFor(t.pct, gradeScale)
-  const mine = standings.find((s) => s.isMe)
 
   // Attendance — only when the school includes it on the report card
   // (stats come from the server's canonical rows via the parent).
@@ -87,33 +75,31 @@ function buildReportCardHTML(input: ReportCardInput): string {
     attendanceLine = `<tr><th>Attendance</th><td>${input.attendance.percent}% (${input.attendance.attended} of ${input.attendance.total} recorded school days)</td></tr>`
   }
 
-  const rows = result.subjects
+  const rows = exam.subjects
     .map((s) => {
-      const pct = pctOf(s.obtained, s.maxMarks)
-      const grade = gradeFor(pct, gradeScale)
-      const comp = (s.components?.length ?? 0) > 0
-        ? `<div class="comp">${esc(s.components!.map((c) => `${esc(c.name)} ${c.obtained}/${c.max}`).join(' · '))}</div>`
-        : ''
+      const pct = pctOfSubject(s)
+      const remark = s.remarks ? `<div class="comp">${esc(s.remarks)}</div>` : ''
       return `<tr>
-        <td><strong>${esc(s.subject)}</strong>${comp}</td>
-        <td class="c">${s.maxMarks}</td>
-        <td class="c"><strong>${s.obtained}</strong></td>
+        <td><strong>${esc(s.subject)}</strong>${remark}</td>
+        <td class="c">${s.totalMarks}</td>
+        <td class="c"><strong>${s.marks}</strong></td>
         <td class="c">${fmtPct(pct)}%</td>
-        <td class="c">${esc(grade)}</td>
+        <td class="c">${esc(s.grade || '—')}</td>
       </tr>`
     })
     .join('')
 
-  const remark = result.remark
+  // Real subject remarks, when the school entered any.
+  const subjectRemarks = exam.subjects.filter((s) => s.remarks)
+  const remark = subjectRemarks.length > 0
     ? `<div class="remarks">
-        <strong>Class Teacher&apos;s Remarks</strong><br />
-        ${esc(result.remark.text)}
-        <div class="by">— ${esc(result.remark.by)}, ${esc(result.remark.role)}</div>
+        <strong>Subject Teacher's Remarks</strong><br />
+        ${subjectRemarks.map((s) => `<span class="muted">${esc(s.subject)}:</span> ${esc(s.remarks!)}`).join('<br />')}
       </div>`
     : ''
 
   const principalBlock = reportCardConfig.includePrincipalRemark
-    ? `<div class="remarks"><strong>Principal&apos;s Office</strong><br /><span class="muted">Promoted as per the school&apos;s assessment policy for ${esc(assessment.name)}.</span></div>`
+    ? `<div class="remarks"><strong>Principal&apos;s Office</strong><br /><span class="muted">Promoted as per the school&apos;s assessment policy for ${esc(exam.examName)}.</span></div>`
     : ''
 
   const sealNote = reportCardConfig.includeSealNote
@@ -129,7 +115,7 @@ function buildReportCardHTML(input: ReportCardInput): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Report Card — ${esc(assessment.name)} — ${esc(identity.name)}</title>
+<title>Report Card — ${esc(exam.examName)} — ${esc(identity.name)}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Georgia, 'Times New Roman', serif; margin: 36px auto; max-width: 760px; color: #1f2a37; }
@@ -168,13 +154,13 @@ function buildReportCardHTML(input: ReportCardInput): string {
     <div class="contact">${esc(address)}</div>
   </div>
   <h1>STUDENT REPORT CARD</h1>
-  <div class="docmeta"><span>${esc(assessment.name)} · ${esc(sessionLabel)}</span><span>Issued ${esc(issuedOn)}</span></div>
+  <div class="docmeta"><span>${esc(exam.examName)} · ${esc(sessionLabel)}</span><span>Issued ${esc(issuedOn)}</span></div>
   <table class="meta">
     <tr><th>Student Name</th><td>${esc(identity.name)}</td></tr>
     <tr><th>Admission No</th><td>${esc(identity.admissionNo)}</td></tr>
     <tr><th>Class / Section</th><td>${esc(identity.classSection)}</td></tr>
     <tr><th>Roll No</th><td>${esc(identity.rollNo)}</td></tr>
-    <tr><th>Examination</th><td>${esc(assessment.name)} (${esc(assessment.term)})</td></tr>
+    <tr><th>Examination</th><td>${esc(exam.examName)} (${esc(exam.type)})</td></tr>
     ${attendanceLine}
   </table>
   <table class="data">
@@ -183,19 +169,19 @@ function buildReportCardHTML(input: ReportCardInput): string {
     </thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><th>Total</th><th class="c">${t.max}</th><th class="c">${t.obtained}</th><th class="c">${fmtPct(t.pct)}%</th><th class="c">${esc(overallGrade)}</th></tr>
+      <tr><th>Total</th><th class="c">${totals.max}</th><th class="c">${totals.obtained}</th><th class="c">${fmtPct(totals.pct)}%</th><th class="c">${esc(grade)}</th></tr>
     </tfoot>
   </table>
   <div class="summary">
-    <div>Total Marks<strong>${t.obtained} / ${t.max}</strong></div>
-    <div>Percentage<strong>${fmtPct(t.pct)}%</strong></div>
-    <div>Overall Grade<strong>${esc(overallGrade)}</strong></div>
-    ${showRank && mine ? `<div>Class Rank<strong>#${mine.rank} / ${standings.length}</strong></div>` : ''}
+    <div>Total Marks<strong>${totals.obtained} / ${totals.max}</strong></div>
+    <div>Percentage<strong>${fmtPct(totals.pct)}%</strong></div>
+    <div>Overall Grade<strong>${esc(grade)}</strong></div>
+    ${exam.rank ? `<div>Class Rank<strong>#${exam.rank.position} / ${exam.rank.assessedCount}</strong></div>` : ''}
   </div>
   ${remark}
   ${principalBlock}
   <div class="sign">
-    <div><div class="line">${esc(result.remark?.by ?? 'Class Teacher')}</div><div class="role">Class Teacher</div></div>
+    <div><div class="line">&nbsp;</div><div class="role">Class Teacher</div></div>
     <div><div class="line">${esc(principal)}</div><div class="role">Principal</div></div>
   </div>
   ${sealNote}
@@ -204,13 +190,11 @@ function buildReportCardHTML(input: ReportCardInput): string {
 }
 
 interface ReportCardProps {
-  assessment: AssessmentDef
-  result: AssessmentResult
-  gradeScale: GradeBand[]
-  standings: ClassStanding[]
-  showRank: boolean
+  exam: MyResultExam
+  totals: ExamTotals
+  grade: string
   reportCardConfig: { includeAttendance: boolean; includePrincipalRemark: boolean; includeSealNote: boolean }
-  identity: { name: string; admissionNo: string; classSection: string; rollNo: string }
+  identity: ReportCardIdentity
 }
 
 export function ReportCard(props: ReportCardProps) {
@@ -224,7 +208,7 @@ export function ReportCard(props: ReportCardProps) {
   }, [myAttendance])
 
   const html = buildReportCardHTML({ ...props, attendance: attendanceStats })
-  const filename = safeFileName(`Report Card ${props.assessment.name} ${props.identity.name}`, 'html')
+  const filename = safeFileName(`Report Card ${props.exam.examName} ${props.identity.name}`, 'html')
 
   const handleDownload = () => {
     downloadHTMLFile(html, filename)
@@ -256,7 +240,7 @@ export function ReportCard(props: ReportCardProps) {
           <h3 className="text-sm font-bold tracking-tight text-foreground">Official Report Card</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">Your school-issued academic record</p>
           <p className="mt-1.5 truncate text-[11px] font-medium text-foreground/75">
-            {props.assessment.name} · {getActiveAcademicSessionLabel()}
+            {props.exam.examName} · {getActiveAcademicSessionLabel()}
           </p>
         </div>
       </div>
@@ -270,15 +254,15 @@ export function ReportCard(props: ReportCardProps) {
         </Button>
       </div>
       <p className="mt-2.5 text-[10px] leading-relaxed text-muted-foreground/70">
-        Marks, grade{props.reportCardConfig.includeAttendance ? ', attendance' : ''}
-        {props.result.remark ? ' and the teacher\'s remark' : ''} — exactly as published by your school.
+        Marks and grade{props.reportCardConfig.includeAttendance ? ', attendance' : ''}
+        {props.exam.subjects.some((s) => s.remarks) ? ' and teacher remarks' : ''} — exactly as declared by your school.
       </p>
 
       {/* In-app preview — the institutional document on an A4 sheet */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="border-b border-border px-5 py-4">
-            <DialogTitle className="text-sm">Report Card — {props.assessment.name}</DialogTitle>
+            <DialogTitle className="text-sm">Report Card — {props.exam.examName}</DialogTitle>
             <DialogDescription className="text-xs">
               Official document preview · {props.identity.name} · {props.identity.classSection}
             </DialogDescription>
@@ -286,7 +270,7 @@ export function ReportCard(props: ReportCardProps) {
           <div className="max-h-[70vh] overflow-y-auto bg-muted/40 p-4">
             <iframe
               ref={iframeRef}
-              title={`Report card preview — ${props.assessment.name}`}
+              title={`Report card preview — ${props.exam.examName}`}
               srcDoc={html}
               className={cn('h-[62vh] w-full rounded-lg border border-border bg-white shadow-sm')}
             />

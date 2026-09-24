@@ -1,175 +1,113 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Bus, Sun, X, Route as RouteIcon } from 'lucide-react'
-import { AnimatePresence, motion } from 'framer-motion'
+/**
+ * BusTrackingModule — the student's Transport module (stabilization §8/§10).
+ *
+ * ONE data source: /api/student/transport via useMyServerTransport() —
+ * the SAME Route + Vehicle rows the school office configures. The legacy
+ * client demo universe (STU-58 · "Route 4 · Sohna Road" · simulated live
+ * GPS with ETA/speed/motion) is RETIRED: this module now presents the
+ * SCHEDULED service exactly as recorded — route, stops, vehicle, driver,
+ * fare and the service window. No fabricated per-stop times, no fake
+ * "Your Stop" marker, no live-motion simulation.
+ *
+ * Honest states: skeleton while the assignment resolves, an error card on
+ * failure, and a "No transport assignment" empty state with the
+ * school-office hint.
+ */
+import { Bus, AlertTriangle, Clock } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
-import { myBusRoute, myBusStops } from '@/lib/mock/bus-tracking'
-import { useTransportStore } from '@/lib/store/transport-store'
-import { cn } from '@/lib/utils'
+import { useMyServerTransport, type MyTransportRoute } from '../shared/canonical'
+import { formatServiceTime } from './format'
 import { KpiRow } from './kpi-row'
-import { LiveMap } from './live-map'
+import { RouteMap } from './route-map'
 import { BusDetails } from './bus-details'
 import { StopsTimeline } from './stops-timeline'
-import { TripHistory } from './trip-history'
 import { SafetyCard } from './safety-card'
 
-/** Canonical demo student (the same id the sibling student modules key on). */
-const STUDENT_ID = 'STU-58'
+export function BusTrackingModule() {
+  const { assigned, route, loading, error } = useMyServerTransport()
 
-function formatEffectiveDate(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  // Resolving — skeleton in the shape the module will render into.
+  if (loading) {
+    return (
+      <div className="space-y-5" aria-busy="true" aria-label="Loading transport assignment">
+        <div className="h-5 w-64 animate-pulse rounded-md bg-muted/60" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-[92px] animate-pulse rounded-xl bg-muted/60" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div className="h-96 animate-pulse rounded-xl bg-muted/60 lg:col-span-2" />
+          <div className="h-96 animate-pulse rounded-xl bg-muted/60" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <GlassCard className="p-6 text-center">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600">
+          <AlertTriangle className="h-5 w-5" aria-hidden />
+        </div>
+        <p className="text-sm font-semibold">Transport details unavailable</p>
+        <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">
+          {error} Please try again in a moment.
+        </p>
+      </GlassCard>
+    )
+  }
+
+  // Not on a school bus route — the honest empty state (no demo universe).
+  if (!assigned || !route) {
+    return (
+      <GlassCard className="px-6 py-14 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+          <Bus className="h-6 w-6" aria-hidden />
+        </div>
+        <p className="text-sm font-semibold">No transport assignment</p>
+        <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">
+          You are not on a school bus route. Contact the school office to request
+          transport or update your assignment.
+        </p>
+      </GlassCard>
+    )
+  }
+
+  return <TransportOverview route={route} />
 }
 
-export function BusTrackingModule() {
-  const [trip, setTrip] = useState<'pickup' | 'drop'>('pickup')
-  const [eta, setEta] = useState(myBusRoute.etaMinutes)
-  const [progress, setProgress] = useState(0)
-  const [speed, setSpeed] = useState(myBusRoute.currentSpeed)
-  const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0)
-  const [trackingPaused, setTrackingPaused] = useState(false)
-
-  const routeChange = useTransportStore((s) => s.routeChange)
-  const dismissRouteChange = useTransportStore((s) => s.dismissRouteChange)
-  // The store field is global — only the affected student sees their banner.
-  const myRouteChange = routeChange?.studentId === STUDENT_ID ? routeChange : null
-
-  // T4-C — honest live-data behaviour: while the tab is hidden BOTH clocks
-  // stop (the simulation AND the freshness ticker) and the UI says
-  // "Tracking paused". No fake updates behind the user's back.
-  useEffect(() => {
-    const sync = () => setTrackingPaused(document.visibilityState === 'hidden')
-    sync()
-    document.addEventListener('visibilitychange', sync)
-    return () => document.removeEventListener('visibilitychange', sync)
-  }, [])
-
-  // Simulate live updates — the freshness counter resets on every tick.
-  useEffect(() => {
-    if (trackingPaused) return
-    const sim = setInterval(() => {
-      setEta((e) => Math.max(1, e - 0.1))
-      setSpeed((s) => Math.max(20, Math.min(45, s + (Math.random() - 0.5) * 4)))
-      setProgress((p) => Math.min(100, p + 0.3))
-      setSecondsSinceUpdate(0)
-    }, 1500)
-    const ticker = setInterval(() => setSecondsSinceUpdate((s) => s + 1), 1000)
-    return () => {
-      clearInterval(sim)
-      clearInterval(ticker)
-    }
-  }, [trackingPaused])
-
-  // `progress` is tracked for future UI surface (live progress bar overlay);
-  // referenced here to silence the unused-var warning while preserving the
-  // tick behaviour.
-  void progress
-
-  const currentStopIdx = myBusStops.findIndex((s) => s.status === 'current')
-  const myStopIdx = myBusStops.findIndex((s) => s.name.includes('Your Stop'))
-  const stopsToGo = myStopIdx - currentStopIdx
-
+function TransportOverview({ route }: { route: MyTransportRoute }) {
   return (
     <div className="space-y-5">
-      {/* T4-E — real route-change notice (recorded when the office changes
-          THIS student's route). Renders nothing while null: no fabricated
-          changes. */}
-      <AnimatePresence initial={false}>
-        {myRouteChange && (
-          <motion.div
-            key="route-change-notice"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            role="status"
-            className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-1.5"
-          >
-            <RouteIcon className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
-            <p className="min-w-0 flex-1 truncate text-xs text-amber-700 dark:text-amber-400">
-              Route updated · now {myRouteChange.newRouteName} · effective{' '}
-              {formatEffectiveDate(myRouteChange.effectiveDate)}
-              {myRouteChange.stop ? ` · New stop: ${myRouteChange.stop}` : ''}
-            </p>
-            <button
-              onClick={dismissRouteChange}
-              aria-label="Dismiss route change notice"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <X className="h-4 w-4" aria-hidden />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* T4-A — trip context selector (compact segmented control) + T4-C
-          live freshness. Same vehicle either way; the KPI row keeps working. */}
+      {/* Scheduled service window — the honest header. There is no live GPS
+          feed, so this module presents the route as the school recorded
+          it (compact context line, no giant module title — LR-1). */}
       <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-        <div
-          className="inline-flex overflow-hidden rounded-lg border border-border bg-card p-0.5 shadow-2xs"
-          role="tablist"
-          aria-label="Trip"
-        >
-          <button
-            role="tab"
-            aria-selected={trip === 'pickup'}
-            onClick={() => setTrip('pickup')}
-            className={cn(
-              'flex h-9 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-all',
-              trip === 'pickup'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Bus className="h-3.5 w-3.5" aria-hidden /> Morning Pickup
-          </button>
-          <button
-            role="tab"
-            aria-selected={trip === 'drop'}
-            onClick={() => setTrip('drop')}
-            className={cn(
-              'flex h-9 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-all',
-              trip === 'drop'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Sun className="h-3.5 w-3.5" aria-hidden /> Afternoon Drop-off
-          </button>
-        </div>
-        <p className="text-[11px] tabular-nums text-muted-foreground">
-          {trackingPaused ? 'Tracking paused' : `Last updated ${secondsSinceUpdate}s ago`}
+        <p className="min-w-0 truncate text-xs text-muted-foreground">
+          {route.name} · Scheduled service {formatServiceTime(route.startTime)} –{' '}
+          {formatServiceTime(route.endTime)}
         </p>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+          <Clock className="h-3 w-3" aria-hidden /> Scheduled · no live GPS
+        </span>
       </div>
 
-      {/* LR-1 — compact context line, no giant module title (Transport
-          stays otherwise untouched: it is a strong module by design). */}
-      <p className="truncate text-xs text-muted-foreground">
-        {trip === 'pickup'
-          ? `Live tracking · ${myBusRoute.routeNo} · ${myBusRoute.routeName} · Pickup ${myBusRoute.pickupTime}`
-          : `Drop-off trip · ${myBusRoute.routeNo} · ${myBusRoute.routeName} · starts after school · Drop-off ${myBusRoute.dropTime}`}
-      </p>
-
-      <KpiRow eta={eta} speed={speed} stopsToGo={stopsToGo} currentStopIdx={currentStopIdx} trip={trip} />
+      <KpiRow route={route} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Live map + bus info */}
+        {/* Route map + vehicle/driver details */}
         <GlassCard className="p-0 overflow-hidden lg:col-span-2">
-          <LiveMap lastUpdatedSeconds={secondsSinceUpdate} paused={trackingPaused} />
-          <BusDetails />
+          <RouteMap route={route} />
+          <BusDetails route={route} />
         </GlassCard>
 
-        <StopsTimeline />
+        <StopsTimeline stops={route.stops} />
       </div>
 
-      {/* Trip history + safety */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <TripHistory />
-        <SafetyCard />
-      </div>
+      <SafetyCard route={route} />
     </div>
   )
 }

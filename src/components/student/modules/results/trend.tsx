@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowDownRight, ArrowUpRight, Minus, TrendingUp } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
-import { fmtPct, type TrendPoint } from '@/lib/store/student-results-store'
+import { fmtPct, type TrendPoint } from './derive'
 
 interface TrendProps {
   points: TrendPoint[]
@@ -110,7 +110,7 @@ export function Trend({ points }: TrendProps) {
               const isSel = i === selectedIdx
               return (
                 <div
-                  key={p.assessmentId}
+                  key={p.examId}
                   className="absolute"
                   style={{ left: `${xAt(i)}%`, bottom: `${yOf(p.pct)}%`, transform: 'translate(-50%, 50%)' }}
                 >
@@ -146,7 +146,7 @@ export function Trend({ points }: TrendProps) {
           <div className="relative mx-1 mt-2 h-7">
             {points.map((p, i) => (
               <button
-                key={p.assessmentId}
+                key={p.examId}
                 type="button"
                 onClick={() => setSelectedIdx(i)}
                 aria-pressed={i === selectedIdx}
@@ -168,7 +168,7 @@ export function Trend({ points }: TrendProps) {
           <AnimatePresence mode="wait">
             {selected && (
               <motion.div
-                key={selected.assessmentId}
+                key={selected.examId}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -2 }}

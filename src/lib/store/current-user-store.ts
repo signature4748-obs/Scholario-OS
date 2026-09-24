@@ -32,8 +32,14 @@ export interface MeUser {
   /** SD-3 — server-resolved enrollment context (STUDENT role only).
    *  Extended identity: every particular the student-facing surfaces
    *  display (profile, ID card, module headers) — the DB is the single
-   *  truth; the client seed roster is only a fallback. */
+   *  truth; client modules must scope every read to `studentId`, never
+   *  to a client-side demo roster. */
   student?: {
+    /** Canonical DB Student.id — the ONLY key student data reads use. */
+    studentId: string | null
+    classId?: string | null
+    className?: string | null
+    section?: string | null
     classLabel: string | null
     rollNo: string | null
     admissionNo?: string | null

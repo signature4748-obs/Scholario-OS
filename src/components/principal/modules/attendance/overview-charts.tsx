@@ -1,23 +1,18 @@
 'use client'
 
 /**
- * OverviewCharts — Phase 3 redesign.
+ * OverviewCharts — editorial analytics rows (structure preserved).
  *
- * Brief §10-§14 (Phase 3): "outside the box" — charts should feel like
- * editorial analytics sitting naturally on the page, NOT dashboard boxes.
+ * Row 1: Day Breakdown (compact) + Weekly Trend (last 7 RECORDED days)
+ * Row 2: Monthly Trend (full-width)
  *
- * Layout (Brief §8 — Phase 2, refined):
- *   Row 1: Today's Breakdown (compact, no giant card) + Weekly Trend
- *   Row 2: Monthly Trend (full-width open section)
- *
- * Visual decisions:
- *   - Remove ChartCard wrapper for trend charts — use plain section with
- *     thin divider instead of bordered card.
- *   - Today's Breakdown uses a compact inline layout (no oversized card).
- *   - Trend chart heights reduced (160-180px from 240px).
- *   - Subtle gridlines (1-2 faint horizontal lines, no vertical).
+ * All series come from the canonical snapshot: `summary` for the selected
+ * day, `weekTrend` / `monthTrend` for the session trends. When the
+ * selected day has no Attendance rows, the breakdown renders the honest
+ * "No attendance recorded for this date" state — never zeros-as-data.
  */
 
+import { CalendarOff } from 'lucide-react'
 import {
   TrendLine,
   TodayBreakdownStack,
@@ -25,21 +20,24 @@ import {
   deriveTrendInsight,
   ATTENDANCE_PALETTE,
 } from './attendance-charts'
+import {
+  formatDayTick,
+  formatMonthTick,
+  type AttendanceSummary,
+  type TrendPoint,
+  type MonthPoint,
+} from './data'
 
 interface OverviewChartsProps {
-  todaysRate: number
-  present: number
-  absent: number
-  late: number
-  leave: number
-  total: number
-  weeklyTrend: { day: string; present: number; rate: number }[]
-  monthlyTrend: { month: string; rate: number }[]
+  /** "16 Sep 2026" — label of the selected snapshot day */
+  dateLabel: string
+  summary: AttendanceSummary
+  weeklyTrend: TrendPoint[]
+  monthlyTrend: MonthPoint[]
 }
 
 export function OverviewCharts({
-  todaysRate, present, absent, late, leave, total,
-  weeklyTrend, monthlyTrend,
+  dateLabel, summary, weeklyTrend, monthlyTrend,
 }: OverviewChartsProps) {
   const weeklyInsight = deriveTrendInsight(weeklyTrend.map((d) => d.rate))
   const monthlyInsight = deriveTrendInsight(monthlyTrend.map((m) => m.rate))
@@ -47,34 +45,48 @@ export function OverviewCharts({
   const monthlyAvg = monthlyTrend.reduce((s, m) => s + m.rate, 0) / Math.max(monthlyTrend.length, 1)
   const latestMonthly = monthlyTrend[monthlyTrend.length - 1]?.rate ?? 0
 
+  const hasDayData = summary.recorded > 0
+
   const breakdownData = [
-    { name: 'Present', value: present, color: ATTENDANCE_PALETTE.present },
-    { name: 'Late',    value: late,    color: ATTENDANCE_PALETTE.late },
-    { name: 'Absent',  value: absent,  color: ATTENDANCE_PALETTE.absent },
-    { name: 'Leave',   value: leave,   color: ATTENDANCE_PALETTE.leave },
+    { name: 'Present', value: summary.present, color: ATTENDANCE_PALETTE.present },
+    { name: 'Late',    value: summary.late,    color: ATTENDANCE_PALETTE.late },
+    { name: 'Absent',  value: summary.absent,  color: ATTENDANCE_PALETTE.absent },
+    { name: 'Leave',   value: summary.leave,   color: ATTENDANCE_PALETTE.leave },
   ]
 
   return (
     <>
-      {/* Row 1: Today's Breakdown (compact) + Weekly Trend — side-by-side */}
+      {/* Row 1: Day Breakdown (compact) + Weekly Trend — side-by-side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* Today's Breakdown — compact, no oversized card */}
+        {/* Day Breakdown — compact, no oversized card */}
         <section className="py-2">
           <div className="flex items-baseline justify-between gap-2 mb-3">
             <div>
               <h3 className="text-[10px] uppercase tracking-[0.18em] font-bold text-muted-foreground">
-                Today's Breakdown
+                Day Breakdown
               </h3>
               <p className="text-[10px] text-muted-foreground/80 mt-0.5">
-                Attendance composition
+                Attendance composition · {dateLabel}
               </p>
             </div>
           </div>
-          <TodayBreakdownStack
-            data={breakdownData}
-            centerValue={`${todaysRate}%`}
-            centerLabel="Present"
-          />
+          {hasDayData ? (
+            <TodayBreakdownStack
+              data={breakdownData}
+              centerValue={`${summary.rate}%`}
+              centerLabel="Present"
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 flex items-center gap-3">
+              <CalendarOff className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground">No attendance recorded for this date</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Pick a recorded day from the heatmap — the trends below show real history.
+                </p>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Weekly Trend — thin divider on the left for lg+, no card */}
@@ -85,19 +97,25 @@ export function OverviewCharts({
                 Weekly Trend
               </h3>
               <p className="text-[10px] text-muted-foreground/80 mt-0.5">
-                Attendance rate · last 6 working days
+                Attendance rate · last {weeklyTrend.length || 0} recorded {weeklyTrend.length === 1 ? 'day' : 'days'}
               </p>
             </div>
-            <InsightBadge insight={weeklyInsight} />
+            {weeklyTrend.length > 0 && <InsightBadge insight={weeklyInsight} />}
           </div>
-          <TrendLine
-            data={weeklyTrend.map((d) => ({ name: d.day, value: d.rate }))}
-            xKey="name"
-            yKey="value"
-            color={ATTENDANCE_PALETTE.trend}
-            height={170}
-            yDomain={[80, 100]}
-          />
+          {weeklyTrend.length > 0 ? (
+            <TrendLine
+              data={weeklyTrend.map((d) => ({ name: formatDayTick(d.date), value: d.rate }))}
+              xKey="name"
+              yKey="value"
+              color={ATTENDANCE_PALETTE.trend}
+              height={170}
+              yDomain={[80, 100]}
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground py-8 text-center">
+              No attendance days recorded yet.
+            </p>
+          )}
         </section>
       </div>
 
@@ -112,32 +130,44 @@ export function OverviewCharts({
               Monthly Trend
             </h3>
             <p className="text-[10px] text-muted-foreground/80 mt-0.5">
-              6-month attendance rate · long-term direction
+              {monthlyTrend.length > 0
+                ? `${monthlyTrend.length}-month attendance rate · session to date`
+                : 'Monthly attendance rate · session to date'}
             </p>
           </div>
           <div className="flex items-baseline gap-3 text-[10px] text-muted-foreground">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-mono">6-mo avg</span>
-              <span className="font-display font-bold tabular-nums text-foreground">{monthlyAvg.toFixed(1)}%</span>
-            </div>
-            <span className="text-muted-foreground/40">·</span>
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-mono">Latest</span>
-              <span className="font-display font-bold tabular-nums text-foreground">{latestMonthly}%</span>
-            </div>
-            <span className="text-muted-foreground/40">·</span>
+            {monthlyTrend.length > 0 && (
+              <>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-mono">avg</span>
+                  <span className="font-display font-bold tabular-nums text-foreground">{monthlyAvg.toFixed(1)}%</span>
+                </div>
+                <span className="text-muted-foreground/40">·</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-mono">Latest</span>
+                  <span className="font-display font-bold tabular-nums text-foreground">{latestMonthly}%</span>
+                </div>
+                <span className="text-muted-foreground/40">·</span>
+              </>
+            )}
             <InsightBadge insight={monthlyInsight} />
           </div>
         </div>
-        <TrendLine
-          data={monthlyTrend.map((m) => ({ name: m.month, value: m.rate }))}
-          xKey="name"
-          yKey="value"
-          color={ATTENDANCE_PALETTE.monthly}
-          height={160}
-          yDomain={[88, 100]}
-          averageValue={monthlyAvg}
-        />
+        {monthlyTrend.length > 0 ? (
+          <TrendLine
+            data={monthlyTrend.map((m) => ({ name: formatMonthTick(m.month), value: m.rate }))}
+            xKey="name"
+            yKey="value"
+            color={ATTENDANCE_PALETTE.monthly}
+            height={160}
+            yDomain={[88, 100]}
+            averageValue={monthlyAvg}
+          />
+        ) : (
+          <p className="text-xs text-muted-foreground py-8 text-center">
+            No attendance months recorded yet.
+          </p>
+        )}
       </section>
     </>
   )

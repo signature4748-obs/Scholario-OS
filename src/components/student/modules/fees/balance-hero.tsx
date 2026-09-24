@@ -1,43 +1,56 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { IndianRupee, CheckCircle2, ShieldCheck, AlertTriangle, Wallet } from 'lucide-react'
+import { IndianRupee, CheckCircle2, ShieldCheck, AlertTriangle, Wallet, History, CalendarClock } from 'lucide-react'
 import { GlassCard, StatusBadge } from '@/components/shared/ui'
 import { AnimatedCounter } from '@/components/shared/animated-counter'
 import { ProgressBar } from '@/components/shared/charts'
 import { Button } from '@/components/ui/button'
 import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { StudentFeeAccount } from '@/lib/store/fee-store'
 
 /**
  * BalanceHero — the balance-first financial overview.
  *
  * The BALANCE DUE is the strongest number on the page (that's the question
  * a student/guardian opens Fees to answer), with the session progress as
- * its counterweight. Every figure comes from computeAccount — the same
- * engine the school's finance office reads. Colour discipline:
- *   emerald = paid / settled · amber = due · rose = overdue ·
+ * its counterweight. Every figure comes from the CANONICAL server fee
+ * ledger (/api/student/fees) — the same Fee + FeeTransaction rows the
+ * school's finance office reads. Colour discipline:
+ *   emerald = paid / settled · amber = due / awaiting · rose = overdue ·
  *   violet = action (the Pay button).
  */
-export function BalanceHero({ acct, lateFeeRule, onPay, canPayOnline }: {
-  acct: StudentFeeAccount
-  lateFeeRule: { enabled: boolean; amountPerMonth: number; gracePeriodDays: number; maxLateFee: number }
+
+/** The canonical totals slice the hero renders (see useMyServerFees). */
+export interface BalanceHeroTotals {
+  billed: number
+  paid: number
+  pendingVerification: number
+  outstanding: number
+  overdue: number
+}
+
+export function BalanceHero({ totals, identity, onPay, canPayOnline }: {
+  totals: BalanceHeroTotals
+  identity: { classLabel: string | null; studentName: string | null; admissionNo: string | null }
   onPay: () => void
   canPayOnline: boolean
 }) {
-  const totalDue = acct.totalDue
-  const overdue = acct.status === 'Overdue'
-  const paidPct = acct.netPayable > 0 ? Math.min(100, Math.round((acct.paid / acct.netPayable) * 100)) : 100
+  const { billed, paid, outstanding, overdue, pendingVerification } = totals
+  const paidPct = billed > 0 ? Math.min(100, Math.round((paid / billed) * 100)) : 100
   // The balance number's semantic colour — due-amount amber unless the
   // account is genuinely overdue (rose) or settled (emerald).
-  const balanceTone = totalDue <= 0
+  const balanceTone = outstanding <= 0
     ? 'text-emerald-600 dark:text-emerald-400'
-    : overdue
+    : overdue > 0
       ? 'text-rose-600 dark:text-rose-400'
       : 'text-amber-600 dark:text-amber-400'
-  const statusVariant = totalDue <= 0 ? 'success' : overdue ? 'danger' : 'warning'
-  const statusLabel = totalDue <= 0 ? 'All paid' : acct.status
+  const statusVariant = outstanding <= 0 ? 'success' : overdue > 0 ? 'danger' : 'warning'
+  const statusLabel = outstanding <= 0 ? 'All paid' : overdue > 0 ? 'Overdue' : 'Payment due'
+  const identityLine = [identity.classLabel, identity.studentName, identity.admissionNo]
+    .map((p) => (p ?? '').trim())
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <GlassCard className="p-4 sm:p-5 lg:p-6 relative overflow-hidden">
@@ -49,7 +62,7 @@ export function BalanceHero({ acct, lateFeeRule, onPay, canPayOnline }: {
               <IndianRupee className="h-4 w-4 text-amber-600 dark:text-amber-400" /> Balance Due
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {acct.className} · {acct.studentName} · {acct.admissionNo}
+              {identityLine || '—'}
             </p>
           </div>
           <StatusBadge status={statusLabel} variant={statusVariant} dot />
@@ -57,86 +70,87 @@ export function BalanceHero({ acct, lateFeeRule, onPay, canPayOnline }: {
 
         <div className="mt-4 flex items-baseline gap-3 flex-wrap">
           <p className={cn('font-display text-4xl sm:text-5xl font-extrabold tabular-nums tracking-tight', balanceTone)}>
-            {totalDue > 0 ? (
-              <AnimatedCounter value={totalDue} format={(n) => formatINR(n)} />
+            {outstanding > 0 ? (
+              <AnimatedCounter value={outstanding} format={(n) => formatINR(n)} />
             ) : (
               formatINR(0)
             )}
           </p>
-          {totalDue > 0 && (
-            <span className="text-sm text-muted-foreground">of {formatINR(acct.netPayable)} payable</span>
+          {outstanding > 0 && (
+            <span className="text-sm text-muted-foreground">of {formatINR(billed)} billed</span>
           )}
         </div>
 
         {/* Session progress — the counterweight to the balance */}
         <div className="mt-4 space-y-2">
           <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Session progress · {acct.paid > 0 ? `${formatINR(acct.paid)} paid` : 'no payments yet'}</span>
+            <span className="text-muted-foreground">Session progress · {paid > 0 ? `${formatINR(paid)} paid` : 'no payments yet'}</span>
             <span className={cn('font-semibold', paidPct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : '')}>{paidPct}%</span>
           </div>
           <ProgressBar value={paidPct} color={paidPct >= 100 ? 'oklch(0.55 0.14 162)' : 'oklch(0.65 0.16 75)'} height={10} />
         </div>
 
-        {/* Real derived facts — nothing fabricated:
-            · concession line only when a real approved concession exists
-            · late-fee line only when the school's rule is actually enabled */}
+        {/* Money submitted but not yet verified by the office is NOT paid —
+            the same verification semantics the Principal applies. */}
+        {pendingVerification > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3 flex items-start gap-2.5">
+            <History className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {formatINR(pendingVerification)} submitted and <span className="font-semibold text-amber-600 dark:text-amber-400">awaiting office verification</span> — it is not counted as paid until the school verifies it.
+            </p>
+          </div>
+        )}
+
+        {/* Real ledger facts — nothing fabricated */}
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {acct.concession > 0 ? (
-            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-3">
+          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-3">
+            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+              <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Paid so far
+            </p>
+            <p className="font-display text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+              {formatINR(paid)}
+            </p>
+            <p className="text-[10px] text-muted-foreground/80 mt-0.5">
+              of {formatINR(billed)} billed this session
+            </p>
+          </div>
+          {overdue > 0 ? (
+            <div className="rounded-xl border border-rose-500/25 bg-rose-500/[0.06] p-3">
               <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                <ShieldCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Concession applied
+                <AlertTriangle className="h-3 w-3 text-rose-600 dark:text-rose-400" /> Overdue now
               </p>
-              <p className="font-display text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                −{formatINR(acct.concession)}
+              <p className="font-display text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                {formatINR(overdue)}
               </p>
               <p className="text-[10px] text-muted-foreground/80 mt-0.5">
-                On {formatINR(acct.totalApplicable)} applicable
+                Past its due date — please clear at the earliest
               </p>
             </div>
           ) : (
             <div className="rounded-xl border border-border bg-card/40 p-3">
-              <p className="text-[11px] text-muted-foreground">Applicable this session</p>
-              <p className="font-display text-lg font-bold mt-0.5">{formatINR(acct.totalApplicable)}</p>
-              <p className="text-[10px] text-muted-foreground/80 mt-0.5">
-                {acct.examExpected > 0 ? 'Recurring + examination fees' : 'Recurring fees only'}
-              </p>
-            </div>
-          )}
-          {lateFeeRule.enabled ? (
-            <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3">
               <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" /> Late fee policy
+                <CalendarClock className="h-3 w-3 text-muted-foreground" /> Overdue
               </p>
-              <p className="font-display text-lg font-bold text-amber-600 dark:text-amber-400 mt-0.5">
-                {formatINR(lateFeeRule.amountPerMonth)} / month
-              </p>
+              <p className="font-display text-lg font-bold mt-0.5 text-muted-foreground">Nothing overdue</p>
               <p className="text-[10px] text-muted-foreground/80 mt-0.5">
-                {acct.lateFee > 0
-                  ? `${formatINR(acct.lateFee)} accrued on this account`
-                  : `After ${lateFeeRule.gracePeriodDays}-day grace · capped at ${formatINR(lateFeeRule.maxLateFee)}`}
+                {outstanding > 0 ? 'Current dues are within their due dates' : 'Your account is fully settled'}
               </p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-border bg-card/40 p-3">
-              <p className="text-[11px] text-muted-foreground">Late fee</p>
-              <p className="font-display text-lg font-bold mt-0.5 text-muted-foreground">Not charged</p>
-              <p className="text-[10px] text-muted-foreground/80 mt-0.5">School policy — no late fee configured</p>
             </div>
           )}
         </div>
 
-        {totalDue > 0 && (
+        {outstanding > 0 && (
           <motion.div layout className="mt-5">
             {canPayOnline ? (
               <Button
                 onClick={onPay}
                 className="w-full h-11 gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white shadow-md"
               >
-                <Wallet className="h-4 w-4" /> Pay {formatINR(totalDue)} Online
+                <Wallet className="h-4 w-4" /> Pay {formatINR(outstanding)} Online
               </Button>
             ) : (
               <div className="rounded-xl border border-border bg-muted/30 p-3.5 flex items-center gap-3">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   To settle this balance, please contact the school office — online payment isn&apos;t available right now.
                 </p>

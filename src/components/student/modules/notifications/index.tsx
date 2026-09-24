@@ -3,23 +3,28 @@
 /**
  * StudentNotificationsModule — the student's "My Feed" (Notices tab 1).
  *
- * A data-driven feed DERIVED from real sources (no fabricated items):
+ * A data-driven feed DERIVED from real sources only (stabilization §8/§10):
  *
- *   Timetable        → timetable-store publications (≤72h, affects the
- *                      student's class) — one notification per publication.
- *   Exams            → mock academics `exams` (Scheduled)
- *   Fee reminder     → students-store STU-58 (feeStatus ≠ Paid)
- *   Library overdue  → library-store issues (borrower STU-58, Overdue)
+ *   Fee reminder     → the student's OWN server fee ledger
+ *                      (/api/student/fees — one row while outstanding > 0)
+ *   Exams            → the next upcoming exam from the server's Exam rows
+ *                      (/api/student/results → upcoming)
  *   New messages     → student-messaging store unread conversations
- *   School news      → LR-1: REAL announcements from /api/student/notices
+ *                      (live count)
+ *   School news      → REAL announcements from /api/student/notices
  *                      (audience-scoped Notification rows published by the
- *                      school — no static demo content).
+ *                      school — no static demo content)
+ *
+ * The legacy client-universe rows are RETIRED: the students-store STU-58
+ * fee status, the library-store overdue books (no student-scoped API),
+ * the mock-academics exam list and the client timetable-store
+ * publications are no longer sources — they simply produce no row.
  *
  * Read state + "Mark all read" persist in the shared student-notif-prefs
  * store (the channel switches live in Settings); announcement rows ALSO
  * honour the server-side acknowledgement (NotificationRead) so feed state
- * converges with the Announcements tab. `onNavigate` (optional) deep-links
- * each item to its module.
+ * converges with the Announcements tab. `onNavigate` (optional)
+ * deep-links each item to its module.
  *
  * LR-1 no-duplicate-title rule: no giant "Notifications" heading — the
  * Notices tab bar above says where you are; this opens straight into a
@@ -28,24 +33,20 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
-  Award, IndianRupee, Library, MessageCircle,
-  Megaphone, CheckCheck, ChevronRight, Bell, CalendarDays,
+  Award, IndianRupee, MessageCircle,
+  Megaphone, CheckCheck, ChevronRight, Bell,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime, formatDate, formatINR } from '@/lib/format'
-import { exams } from '@/lib/mock/academics'
-import { useStudentsStore, type StudentRecord } from '@/lib/store/students-store'
-import { useLibraryStore, type IssueRecord } from '@/lib/store/library-store'
 import {
   useStudentMessagingStore, countUnreadConversations, isConversationUnread,
   type StudentConversation,
 } from '@/lib/store/student-messaging-store'
 import { useStudentNotifPrefsStore, NOTIF_KIND_TO_PREF } from '@/lib/store/student-notif-prefs-store'
-import { useTimetableStore, getRecentChangesForClass, type PublishedVersion } from '@/lib/store/timetable-store'
 import { useServerNotices, type ServerNotice } from '@/lib/store/server-notices-store'
 import { toast } from 'sonner'
-import { DEMO_STUDENT_ID } from '../applications/student'
+import { useMyServerFees, useMyServerResults } from '../shared/canonical'
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -53,8 +54,9 @@ export type StudentNotificationTarget =
   | 'results' | 'fees'
   | 'messages' | 'announcements' | 'timetable'
 
+/** Feed kinds that are actually derivable from real sources. */
 export type StudentNotificationKind =
-  | 'exam' | 'fee' | 'library' | 'message' | 'announcement' | 'timetable'
+  | 'exam' | 'fee' | 'message' | 'announcement'
 
 export interface StudentNotificationItem {
   id: string
@@ -70,84 +72,58 @@ export interface StudentNotificationItem {
   serverRead?: boolean
 }
 
+/** The next upcoming exam from /api/student/results. */
+export interface UpcomingExam {
+  examName: string
+  startsAt: string
+  endsAt: string | null
+}
+
 interface BuildDeps {
-  student: StudentRecord | undefined
-  issues: IssueRecord[]
+  /** Outstanding fee total from the server ledger; null while it loads. */
+  feeOutstanding: number | null
+  /** Next scheduled (not yet declared) exam; null when there is none. */
+  upcomingExam: UpcomingExam | null
   conversations: StudentConversation[]
   seenAt: Record<string, string>
-  publications: PublishedVersion[]
   /** LR-1 — real school announcements (null while loading). */
   serverNotices: ServerNotice[] | null
 }
 
 // ─── Derivation (single source of truth for feed + badge) ───────────
 
-export function buildStudentNotifications({ student, issues, conversations, seenAt, publications, serverNotices }: BuildDeps): StudentNotificationItem[] {
+export function buildStudentNotifications(
+  { feeOutstanding, upcomingExam, conversations, seenAt, serverNotices }: BuildDeps,
+): StudentNotificationItem[] {
   const items: StudentNotificationItem[] = []
 
-  // Timetable — ONE notification per recent publication (≤72h) whose
-  // changes affect the student's class. Same TTL as the timetable's
-  // "Updated" chips; the id is keyed by version so the same event is
-  // never duplicated in the feed.
-  if (student) {
-    const myClass = `${student.className}-${student.section}`
-    for (const pub of publications) {
-      if (Date.now() >= new Date(pub.publishedAt).getTime() + 72 * 60 * 60 * 1000) continue
-      const affecting = getRecentChangesForClass(myClass, [pub])
-      if (affecting.length === 0) continue
-      const first = affecting[0]
-      items.push({
-        id: `tt-pub-${pub.version}`,
-        kind: 'timetable',
-        title: 'Your class timetable was updated',
-        description:
-          affecting.length === 1 && first.changeLabel
-            ? `${first.context.split(' · ')[1] ?? first.context} — ${first.changeLabel}`
-            : `${affecting.length} changes published by your school`,
-        at: pub.publishedAt,
-        target: 'timetable',
-      })
-    }
-  }
-
-  // Exams — Scheduled announcements
-  for (const e of exams.filter((x) => x.status === 'Scheduled')) {
+  // Exams — the next upcoming exam from the server's own Exam rows (the
+  // same universe the Results module reads). No mock exam list.
+  if (upcomingExam) {
     items.push({
-      id: `exam-${e.id}`,
+      id: `exam-upcoming-${upcomingExam.examName}`,
       kind: 'exam',
-      title: `${e.name} — schedule announced`,
-      description: `${e.type} · ${formatDate(e.startDate)} to ${formatDate(e.endDate)} · ${e.classes.join(', ')}`,
-      at: e.startDate,
+      title: `${upcomingExam.examName} — schedule announced`,
+      description: `Starts ${formatDate(upcomingExam.startsAt)}${
+        upcomingExam.endsAt ? ` · ends ${formatDate(upcomingExam.endsAt)}` : ''
+      }`,
+      at: upcomingExam.startsAt,
+      standing: 'Upcoming',
       target: 'results',
     })
   }
 
-  // Fee reminder — standing, derived from the canonical student record
-  if (student && student.feeStatus !== 'Paid') {
-    const pending = Math.max(0, student.feeTotal - student.feePaid)
+  // Fee reminder — standing, derived from the canonical server ledger
+  // (/api/student/fees). One honest line: what is actually outstanding.
+  if (feeOutstanding != null && feeOutstanding > 0) {
     items.push({
-      id: `fee-${student.id}`,
+      id: 'fee-outstanding',
       kind: 'fee',
       title: 'Fee reminder',
-      description: `${formatINR(pending)} pending of ${formatINR(student.feeTotal)} (${student.feeStatus})`,
+      description: `${formatINR(feeOutstanding)} fee outstanding`,
       standing: 'This term',
       target: 'fees',
     })
-  }
-
-  // Library — the student's own overdue issues (with fine). Informational
-  // only (no target): the dedicated student Library module was retired in
-  // the 2.9 workspace cut — returns/fines settle at the counter.
-  if (student) {
-    for (const i of issues.filter((x) => x.borrowerId === student.id && x.status === 'Overdue')) {
-      items.push({
-        id: `lib-${i.id}`,
-        kind: 'library',
-        title: `Library book overdue — ${i.bookTitle}`,
-        description: `Was due ${formatDate(i.dueDate)} · fine ${formatINR(i.fine)}`,
-        at: i.dueDate,
-      })
-    }
   }
 
   // New messages — one notification while any conversation is unread
@@ -191,20 +167,23 @@ export function buildStudentNotifications({ student, issues, conversations, seen
  *  badge (same filter the feed applies — prefs are server-persisted,
  *  hydrated on panel mount). */
 export function useUnreadStudentNotificationCount(): number {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
-  const issues = useLibraryStore((s) => s.issues)
+  const { ledger } = useMyServerFees()
+  const { upcoming } = useMyServerResults()
   const conversations = useStudentMessagingStore((s) => s.conversations)
   const seenAt = useStudentMessagingStore((s) => s.seenAt)
-  const publications = useTimetableStore((s) => s.publications)
   const serverNotices = useServerNotices((s) => s.notices)
   const readIds = useStudentNotifPrefsStore((s) => s.readIds)
   const prefs = useStudentNotifPrefsStore((s) => s.prefs)
   return useMemo(() => {
-    const items = buildStudentNotifications({ student, issues, conversations, seenAt, publications, serverNotices })
+    const items = buildStudentNotifications({
+      feeOutstanding: ledger?.totals.outstanding ?? null,
+      upcomingExam: upcoming,
+      conversations, seenAt, serverNotices,
+    })
     return items.filter(
       (i) => !i.serverRead && !readIds.includes(i.id) && (prefs[NOTIF_KIND_TO_PREF[i.kind]] ?? true),
     ).length
-  }, [student, issues, conversations, seenAt, publications, serverNotices, readIds, prefs])
+  }, [ledger, upcoming, conversations, seenAt, serverNotices, readIds, prefs])
 }
 
 // ─── Presentation meta ───────────────────────────────────────────────
@@ -212,18 +191,16 @@ export function useUnreadStudentNotificationCount(): number {
 const KIND_META: Record<StudentNotificationKind, { icon: typeof Bell; tone: string; label: string }> = {
   exam: { icon: Award, tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Exam' },
   fee: { icon: IndianRupee, tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', label: 'Fees' },
-  library: { icon: Library, tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400', label: 'Library' },
   message: { icon: MessageCircle, tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Messages' },
   announcement: { icon: Megaphone, tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', label: 'School' },
-  timetable: { icon: CalendarDays, tone: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400', label: 'Timetable' },
 }
 
 // ─── Module ──────────────────────────────────────────────────────────
 
 export function StudentNotificationsModule({ onNavigate }: { onNavigate?: (key: string) => void }) {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
-  const issues = useLibraryStore((s) => s.issues)
-  const publications = useTimetableStore((s) => s.publications)
+  // Canonical server data — the student's own fee ledger + exam universe.
+  const { ledger } = useMyServerFees()
+  const { upcoming } = useMyServerResults()
   const conversations = useStudentMessagingStore((s) => s.conversations)
   const seenAt = useStudentMessagingStore((s) => s.seenAt)
   const serverNotices = useServerNotices((s) => s.notices)
@@ -236,9 +213,13 @@ export function StudentNotificationsModule({ onNavigate }: { onNavigate?: (key: 
   // messages/announcements are ALSO enforced server-side in the bell feed).
   const items = useMemo(
     () =>
-      buildStudentNotifications({ student, issues, conversations, seenAt, publications, serverNotices })
+      buildStudentNotifications({
+        feeOutstanding: ledger?.totals.outstanding ?? null,
+        upcomingExam: upcoming,
+        conversations, seenAt, serverNotices,
+      })
         .filter((i) => prefs[NOTIF_KIND_TO_PREF[i.kind]] ?? true),
-    [student, issues, conversations, seenAt, publications, serverNotices, prefs],
+    [ledger, upcoming, conversations, seenAt, serverNotices, prefs],
   )
   const isRead = (i: StudentNotificationItem) => i.serverRead === true || readIds.includes(i.id)
   const unreadItems = items.filter((i) => !isRead(i))

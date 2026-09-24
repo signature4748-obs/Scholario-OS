@@ -1,71 +1,55 @@
 'use client'
 
-import { Route, Navigation, MapPin, Fuel, Thermometer, PhoneCall } from 'lucide-react'
+import { Route as RouteIcon, PhoneCall } from 'lucide-react'
 import { StatusBadge, GradientAvatar } from '@/components/shared/ui'
-import { myBusRoute } from '@/lib/mock/bus-tracking'
 import { toast } from 'sonner'
+import type { MyTransportRoute } from '../shared/canonical'
+import { formatServiceTime } from './format'
 
-export function BusDetails() {
+/**
+ * BusDetails — the route, vehicle and driver exactly as the school
+ * recorded them (/api/student/transport). The old onboard-count /
+ * distance / fuel / cabin-temperature metrics and the attendant card were
+ * fabricated with no data source and are gone.
+ */
+export function BusDetails({ route }: { route: MyTransportRoute }) {
   return (
     <div className="p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-sm flex items-center gap-2">
-            <Route className="h-4 w-4 text-primary" /> {myBusRoute.routeNo} — {myBusRoute.routeName}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <RouteIcon className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <span className="truncate">{route.name}</span>
           </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Vehicle {myBusRoute.vehicleNo} · {myBusRoute.studentsOnboard}/{myBusRoute.capacity} onboard</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            Vehicle {route.vehicleNo ?? '—'} · {formatServiceTime(route.startTime)} –{' '}
+            {formatServiceTime(route.endTime)}
+          </p>
         </div>
-        <StatusBadge status={myBusRoute.status} variant="success" dot />
+        <StatusBadge status="Scheduled" variant="neutral" />
       </div>
 
-      {/* Trip metrics */}
-      <div className="grid grid-cols-4 gap-3">
-        <div className="rounded-xl border border-border bg-card/40 p-3 text-center">
-          <Navigation className="h-4 w-4 text-emerald-500 mx-auto mb-1" />
-          <p className="font-display text-sm font-bold">{myBusRoute.distanceCovered} km</p>
-          <p className="text-[9px] text-muted-foreground">Covered</p>
+      {/* Driver — the school's assigned driver for this route */}
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
+        <GradientAvatar name={route.driverName ?? 'Not assigned'} size="md" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted-foreground">Driver</p>
+          <p className="truncate text-sm font-semibold">
+            {route.driverName ?? 'Not assigned'}
+          </p>
+          {route.driverPhone && (
+            <p className="text-[11px] text-muted-foreground">{route.driverPhone}</p>
+          )}
         </div>
-        <div className="rounded-xl border border-border bg-card/40 p-3 text-center">
-          <MapPin className="h-4 w-4 text-violet-500 mx-auto mb-1" />
-          <p className="font-display text-sm font-bold">{myBusRoute.totalDistance} km</p>
-          <p className="text-[9px] text-muted-foreground">Total</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card/40 p-3 text-center">
-          <Fuel className="h-4 w-4 text-amber-500 mx-auto mb-1" />
-          <p className="font-display text-sm font-bold">{myBusRoute.fuelLevel}%</p>
-          <p className="text-[9px] text-muted-foreground">Fuel</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card/40 p-3 text-center">
-          <Thermometer className="h-4 w-4 text-cyan-500 mx-auto mb-1" />
-          <p className="font-display text-sm font-bold">{myBusRoute.temperature}°C</p>
-          <p className="text-[9px] text-muted-foreground">Cabin</p>
-        </div>
-      </div>
-
-      {/* Driver & attendant */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
-          <GradientAvatar name={myBusRoute.driverName} size="md" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">Driver</p>
-            <p className="text-sm font-semibold truncate">{myBusRoute.driverName}</p>
-            <p className="text-[11px] text-muted-foreground">{myBusRoute.driverPhone}</p>
-          </div>
-          <button onClick={() => toast.info('Calling driver')} className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition-colors">
-            <PhoneCall className="h-4 w-4" />
+        {route.driverPhone && (
+          <button
+            onClick={() => toast.info('Calling driver')}
+            aria-label="Call driver"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 transition-colors hover:bg-emerald-500/20"
+          >
+            <PhoneCall className="h-4 w-4" aria-hidden />
           </button>
-        </div>
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3">
-          <GradientAvatar name={myBusRoute.attendant} size="md" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-muted-foreground">Attendant</p>
-            <p className="text-sm font-semibold truncate">{myBusRoute.attendant}</p>
-            <p className="text-[11px] text-muted-foreground">{myBusRoute.attendantPhone}</p>
-          </div>
-          <button onClick={() => toast.info('Calling attendant')} className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition-colors">
-            <PhoneCall className="h-4 w-4" />
-          </button>
-        </div>
+        )}
       </div>
     </div>
   )

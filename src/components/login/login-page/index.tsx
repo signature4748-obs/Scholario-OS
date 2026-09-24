@@ -87,9 +87,10 @@ export function LoginPage({ onBackToWebsite }: { onBackToWebsite?: () => void })
 
       // 3) Navigate ONLY after the session cookie exists. `login()` flips
       //    isAuthenticated → Home swaps the login screen for the role's
-      //    panel. Real identity (name/email) is synced into the store so
+      //    panel. Real identity (id/name/email) is synced into the store so
       //    the shell shows the authenticated user, not a stale mock.
       login(role, {
+        ...(payload.data?.id ? { id: payload.data.id } : {}),
         ...(payload.data?.name ? { name: payload.data.name } : {}),
         ...(payload.data?.email ? { email: payload.data.email } : {}),
       })

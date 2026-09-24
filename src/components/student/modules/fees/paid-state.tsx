@@ -3,21 +3,18 @@
 import { motion } from 'framer-motion'
 import { CheckCircle2, Receipt, Lock } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
-import { Button } from '@/components/ui/button'
-import { toast } from 'sonner'
 import { formatINR } from '@/lib/format'
-import { downloadReceiptA5 } from '@/components/principal/modules/fees/fee-receipt-a5'
-import type { StudentFeeAccount, FeeTransaction, ReceiptSettings } from '@/lib/store/fee-store'
 
 /**
  * AllPaidState — the honest celebratory empty state. Rendered ONLY when
- * the engine computes a zero balance (outstanding + late fee + additional
- * all settled). Latest receipt stays one click away.
+ * the CANONICAL server ledger computes a zero outstanding balance with a
+ * non-zero billed total (outstanding ≤ 0 && billed > 0) — never for a
+ * student who simply has no fee records yet (that is the honest
+ * "No fee records yet" empty state in index.tsx).
  */
-export function AllPaidState({ acct, latestTxn, receiptSettings }: {
-  acct: StudentFeeAccount
-  latestTxn?: FeeTransaction
-  receiptSettings: ReceiptSettings
+export function AllPaidState({ billed, latestReceiptNo }: {
+  billed: number
+  latestReceiptNo: string | null
 }) {
   return (
     <GlassCard className="p-6 sm:p-8 relative overflow-hidden">
@@ -33,21 +30,12 @@ export function AllPaidState({ acct, latestTxn, receiptSettings }: {
         </motion.div>
         <h3 className="mt-4 font-display text-xl font-bold text-foreground">All fees paid</h3>
         <p className="mt-1.5 text-sm text-muted-foreground max-w-sm leading-relaxed">
-          Your full session obligation of {formatINR(acct.netPayable)} is settled — nothing outstanding,
-          {acct.lateFee > 0 ? '' : ' no late fee,'} nothing due.
+          Your full session obligation of {formatINR(billed)} is settled — nothing outstanding, nothing due.
         </p>
-        {latestTxn && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 gap-2"
-            onClick={() => {
-              downloadReceiptA5(latestTxn, receiptSettings)
-              toast.success('Receipt downloaded', { description: `${latestTxn.receiptNo}.html` })
-            }}
-          >
-            <Receipt className="h-3.5 w-3.5" /> Latest receipt · {latestTxn.receiptNo}
-          </Button>
+        {latestReceiptNo && (
+          <span className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+            <Receipt className="h-3.5 w-3.5" aria-hidden /> Latest receipt · {latestReceiptNo}
+          </span>
         )}
       </div>
     </GlassCard>

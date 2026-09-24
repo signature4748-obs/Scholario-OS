@@ -3,25 +3,26 @@
 /**
  * attendance-status — universal status system for the Attendance module.
  *
- * Brief §7 (Phase 3): the SAME semantic language must be used everywhere:
- *   - Student attendance
- *   - Staff attendance
- *   - History
+ * The SAME semantic language is used everywhere:
+ *   - Student attendance (Overview rosters)
+ *   - History records
+ *   - (Staff tab: currently an honest empty state — no data configured)
  *
  * Provides:
  *   - STATUS_META: status → label, color, bg, text, border, icon, dot
+ *   - UNMARKED_META + metaFor(): honest "no row yet" state for rosters
  *   - StatusBadge: inline badge with icon + text
  *   - StatusDot: tiny colored dot
  *
- * Brief §36: always icon + text + color (never color alone).
+ * Always icon + text + color (never color alone).
  */
 
 import {
-  Check, Clock, X, Coffee,
+  Check, Clock, X, Coffee, Minus,
   type LucideIcon,
 } from 'lucide-react'
 import { ATTENDANCE_PALETTE } from './attendance-charts'
-import type { AttendanceStatus } from '@/lib/mock/attendance'
+import type { AttendanceStatus, RosterStatus } from './data'
 
 export interface StatusMeta {
   label: string
@@ -78,7 +79,23 @@ export const STATUS_META: Record<AttendanceStatus, StatusMeta> = {
   },
 }
 
+/** Honest "no Attendance row for this student on this day" state. */
+export const UNMARKED_META: StatusMeta = {
+  label: 'Not marked',
+  color: 'var(--muted-foreground)',
+  bg: 'bg-muted/50',
+  bgFilled: 'bg-muted hover:bg-muted/80',
+  text: 'text-muted-foreground',
+  border: 'border-border',
+  icon: Minus,
+}
+
 export const STATUS_ORDER: AttendanceStatus[] = ['present', 'late', 'absent', 'leave']
+
+/** StatusMeta for a roster status — including the null ("not marked") case. */
+export function metaFor(status: RosterStatus): StatusMeta {
+  return status === null ? UNMARKED_META : STATUS_META[status]
+}
 
 /* ──────────────────────────────────────────────────────────
    StatusBadge — inline badge with icon + text
@@ -88,11 +105,11 @@ export function StatusBadge({
   size = 'sm',
   showIcon = true,
 }: {
-  status: AttendanceStatus
+  status: AttendanceStatus | 'unmarked'
   size?: 'xs' | 'sm'
   showIcon?: boolean
 }) {
-  const meta = STATUS_META[status]
+  const meta = status === 'unmarked' ? UNMARKED_META : STATUS_META[status]
   const Icon = meta.icon
   const sizeCls = size === 'xs'
     ? 'text-[9px] px-1.5 py-0'
@@ -109,7 +126,7 @@ export function StatusBadge({
 /* ──────────────────────────────────────────────────────────
    StatusDot — tiny colored dot (compact lists)
    ────────────────────────────────────────────────────────── */
-export function StatusDot({ status, className }: { status: AttendanceStatus; className?: string }) {
-  const meta = STATUS_META[status]
+export function StatusDot({ status, className }: { status: AttendanceStatus | 'unmarked'; className?: string }) {
+  const meta = status === 'unmarked' ? UNMARKED_META : STATUS_META[status]
   return <span className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${className}`} style={{ background: meta.color }} />
 }
