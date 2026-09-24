@@ -36,16 +36,14 @@ import { useEffect } from 'react'
 import {
   CalendarCheck, IndianRupee, UserPlus, FileText,
 } from 'lucide-react'
-import { attendanceOverview } from '@/lib/mock/attendance'
 import { feeAnalytics } from '@/lib/mock/finance'
-import { studentStats } from '@/lib/mock/students'
-import { exams } from '@/lib/mock/academics'
 import { formatINR } from '@/lib/format'
 import { useDuesSummaryStore, selectLiveDues } from '@/lib/store/dues-summary-store'
 import { useFocusStore } from '@/lib/store/focus-store'
+import { useSchoolStats } from '@/hooks/use-school-stats'
+import { useAdmissionStore } from '@/lib/store/admission-store'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { LiveChip } from '../shared/live-chip'
-import { admissionsMonthly } from '../analytics/data'
 
 export interface KpiRowProps {
   onNavigate?: (module: string) => void
@@ -57,6 +55,27 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
   const dues = useDuesSummaryStore(selectLiveDues)
   const ensureDues = useDuesSummaryStore((s) => s.ensure)
   useEffect(() => { void ensureDues() }, [ensureDues])
+
+  // SERVER TRUTH — attendance + upcoming exams from GET /api/dashboard
+  // (real Attendance rows + real Exam rows; never the mock universe).
+  const { data: schoolStats, loading: statsLoading } = useSchoolStats()
+  const realAttendance = schoolStats?.stats.attendanceRate
+  const realPresent = schoolStats?.attendance.present
+  const upcoming = schoolStats?.upcomingExams ?? []
+
+  // New admissions — the SAME admission-store universe the Admissions
+  // module reads (applications submitted this calendar month, no drafts).
+  const newAdmissions = useAdmissionStore((s) => {
+    const now = new Date()
+    const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    return s.applications.filter(
+      (a) => a.status !== 'Draft' && (a.submittedDate ?? '').startsWith(prefix)
+    ).length
+  })
+  const nearestExam = upcoming.find((e) => e.startDate)
+  const nearestInDays = nearestExam?.startDate
+    ? Math.max(0, Math.round((new Date(nearestExam.startDate).getTime() - Date.now()) / 86_400_000))
+    : null
 
   /** Deep-link: fees module + Outreach tab (the card's numbers live there). */
   const openOutreach = () => {
@@ -79,14 +98,12 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
     <SummaryCardGrid columns={4}>
       <SummaryCard
         label="Attendance"
-        value={attendanceOverview.today.rate}
-        suffix="%"
-        sub={`${attendanceOverview.today.present.toLocaleString('en-IN')} present`}
+        value={statsLoading ? '…' : realAttendance ?? 0}
+        suffix={statsLoading ? '' : '%'}
+        sub={statsLoading ? 'loading…' : `${(realPresent ?? 0).toLocaleString('en-IN')} present · last 7 days`}
         tone="emerald"
         icon={<CalendarCheck className="h-4 w-4" />}
         delay={0}
-        sparkline={attendanceOverview.weekTrend.map((d) => d.rate)}
-        trend="up"
         onClick={onNavigate ? () => onNavigate('attendance') : undefined}
       />
       <SummaryCard
@@ -103,19 +120,17 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
       />
       <SummaryCard
         label="New Admissions"
-        value={studentStats.newThisMonth}
-        sub="+18.4% this month"
+        value={newAdmissions}
+        sub={`applications this month`}
         tone="sky"
         icon={<UserPlus className="h-4 w-4" />}
         delay={0.08}
-        sparkline={admissionsMonthly.map((d) => d.value)}
-        trend="up"
         onClick={onNavigate ? () => onNavigate('admission') : undefined}
       />
       <SummaryCard
         label="Upcoming Exams"
-        value={exams.filter((e) => e.status === 'Scheduled').length}
-        sub="Pre-Board in 12 days"
+        value={statsLoading ? '…' : upcoming.length}
+        sub={nearestExam && nearestInDays != null ? `${nearestExam.name} in ${nearestInDays} day${nearestInDays === 1 ? '' : 's'}` : 'none scheduled'}
         tone="amber"
         icon={<FileText className="h-4 w-4" />}
         delay={0.12}

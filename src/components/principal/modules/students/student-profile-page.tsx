@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { StudentRecord } from '@/lib/store/students-store'
+import type { ServerStudentRecord } from './use-server-directory'
 import { Metric } from './shared'
 import {
   OverviewTab, AcademicsTab, AttendanceTab, FeesTab, ApplicationsTab,
@@ -19,7 +20,7 @@ const TABS = ['overview', 'academics', 'attendance', 'fees', 'applications', 'do
 type TabName = typeof TABS[number]
 
 interface Props {
-  student: StudentRecord
+  student: StudentRecord | ServerStudentRecord
   onBack: () => void
   onArchive?: (s: StudentRecord) => void
   onRestore?: (s: StudentRecord) => void
@@ -30,6 +31,9 @@ interface Props {
 export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTransfer, backLabel = 'Students & Classes' }: Props) {
   const [activeTab, setActiveTab] = useState<TabName>('overview')
   const isArchived = student.status === 'Archived'
+  // Server records are canonical DB rows — archive/transfer are store-demo
+  // flows, so they hide themselves instead of pretending to work (§18).
+  const isServerRecord = 'serverRecord' in student
 
   return (
     <PageTransition>
@@ -64,16 +68,22 @@ export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTr
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-4 flex-wrap">
-            {!isArchived ? (
-              <>
-                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => onTransfer?.(student)}><Bus className="h-3.5 w-3.5" /> Transfer</Button>
-                <Button size="sm" variant="destructive" className="h-8 text-xs ml-auto" onClick={() => onArchive?.(student)}><Archive className="h-3.5 w-3.5" /> Archive</Button>
-              </>
-            ) : (
-              <Button size="sm" variant="default" className="h-8 text-xs ml-auto" onClick={() => onRestore?.(student)}><RotateCcw className="h-3.5 w-3.5" /> Restore</Button>
-            )}
-          </div>
+          {isServerRecord ? (
+            <p className="mt-4 text-[10px] text-muted-foreground">
+              Canonical school record — synced from the student register.
+            </p>
+          ) : (
+            <div className="flex items-center gap-2 mt-4 flex-wrap">
+              {!isArchived ? (
+                <>
+                  <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => onTransfer?.(student)}><Bus className="h-3.5 w-3.5" /> Transfer</Button>
+                  <Button size="sm" variant="destructive" className="h-8 text-xs ml-auto" onClick={() => onArchive?.(student)}><Archive className="h-3.5 w-3.5" /> Archive</Button>
+                </>
+              ) : (
+                <Button size="sm" variant="default" className="h-8 text-xs ml-auto" onClick={() => onRestore?.(student)}><RotateCcw className="h-3.5 w-3.5" /> Restore</Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

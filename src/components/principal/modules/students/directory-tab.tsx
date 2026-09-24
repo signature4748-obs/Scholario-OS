@@ -42,7 +42,7 @@ export function StudentCard({ student, onClick }: { student: StudentRecord; onCl
   )
 }
 
-export function DirectoryTab({ students, classes, onStudentClick }: { students: StudentRecord[]; classes: ClassRecord[]; onStudentClick: (s: StudentRecord) => void }) {
+export function DirectoryTab({ students, classes, onStudentClick }: { students: StudentRecord[]; classes: Pick<ClassRecord, 'id' | 'name'>[]; onStudentClick: (s: StudentRecord) => void }) {
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState('all')
   const [feeFilter, setFeeFilter] = useState('all')

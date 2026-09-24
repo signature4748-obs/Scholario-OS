@@ -13,6 +13,7 @@ import { ModuleHeader } from './shared/module-header'
 import { SegmentedTabs } from './shared/segmented-tabs'
 import { OverviewTab } from './students/overview-tab'
 import { DirectoryTab } from './students/directory-tab'
+import { useServerDirectory, type ServerStudentRecord } from './students/use-server-directory'
 import { StudentProfilePage } from './students/student-profile-page'
 import { ClassesView } from './classes'
 import { ClassDetailsPage } from './classes/class-details'
@@ -24,9 +25,13 @@ export type UnifiedTab = 'overview' | 'directory' | 'classes' | 'archived'
 export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?: UnifiedTab }) {
   const [activeTab, setActiveTab] = useState<UnifiedTab>(initialTab)
   const store = useStudentsStore()
+  // SERVER TRUTH — the Directory tab + header meta read the school's real
+  // roster/classes (spec §8). Store-backed flows (demo classes, archive/
+  // transfer on demo records) keep working unchanged for store records.
+  const serverDir = useServerDirectory()
   const [selectedClass, setSelectedClass] = useState<ClassRecord | null>(null)
   const [showAddClass, setShowAddClass] = useState(false)
-  const [profileStudent, setProfileStudent] = useState<StudentRecord | null>(null)
+  const [profileStudent, setProfileStudent] = useState<StudentRecord | ServerStudentRecord | null>(null)
   const [profileBackLabel, setProfileBackLabel] = useState('Students & Classes')
   const [archiveTarget, setArchiveTarget] = useState<StudentRecord | null>(null)
   const [archiveReason, setArchiveReason] = useState('Graduation')
@@ -35,8 +40,10 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
 
   useEffect(() => { if (initialTab) setActiveTab(initialTab) }, [initialTab])
 
-  const openProfile = (student: StudentRecord, backLabel?: string) => {
-    const fresh = store.students.find((st) => st.id === student.id) ?? student
+  const openProfile = (student: StudentRecord | ServerStudentRecord, backLabel?: string) => {
+    // Server records carry their own truth; store records refresh from the store.
+    const fresh =
+      'serverRecord' in student ? student : (store.students.find((st) => st.id === student.id) ?? student)
     setProfileStudent(fresh)
     setProfileBackLabel(backLabel || 'Students & Classes')
   }
@@ -127,7 +134,11 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
   return (
     <PageTransition className="space-y-4">
       <ModuleHeader
-        meta={[`${formatNumber(totalStudents)} students`, `${store.classes.length} classes`, `AY ${school.academicYear}`]}
+        meta={[
+          serverDir.loading ? '…' : `${formatNumber(serverDir.students.length)} students`,
+          serverDir.loading ? '…' : `${serverDir.classes.length} classes`,
+          `AY ${school.academicYear}`,
+        ]}
         actions={
           <SegmentedTabs
             tabs={[
@@ -143,12 +154,12 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
       />
 
       {activeTab === 'overview' && (
-        <OverviewTab store={store} onStudentClick={(st) => openProfile(st, 'Students Directory')} onNavigateToClasses={() => setActiveTab('classes')} />
+        <OverviewTab />
       )}
       {activeTab === 'directory' && (
         <DirectoryTab
-          students={store.students.filter((st) => st.status === 'Active')}
-          classes={store.classes}
+          students={serverDir.students.filter((st) => st.status === 'Active')}
+          classes={serverDir.classes}
           onStudentClick={(st) => openProfile(st, 'Students Directory')}
         />
       )}

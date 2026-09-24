@@ -22,11 +22,11 @@
  */
 
 import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import {
   CalendarDays, ArrowRight, FileText, IndianRupee, Wallet,
 } from 'lucide-react'
 import { Panel } from '../shared/panel'
-import { upcomingEvents } from '@/lib/mock/operations'
 import { useAdmissionStore } from '@/lib/store/admission-store'
 import { useFeeStore } from '@/lib/store/fee-store'
 import { useSalaryStore } from '@/lib/store/salary-store'
@@ -37,11 +37,49 @@ export interface EventsRowProps {
 
 // ─── Upcoming Events ──────────────────────────────────────────────────
 
+interface SchoolEventRow {
+  id: string
+  title: string
+  type: string
+  startDate: string
+  endDate: string | null
+}
+
 function UpcomingEventsCard({ onNavigate }: { onNavigate?: (m: string) => void }) {
+  // SERVER TRUTH — upcoming SchoolEvent rows (GET /api/events?upcoming=1),
+  // the same calendar the Calendar module reads (spec §8).
+  const [events, setEvents] = useState<SchoolEventRow[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/events?upcoming=1', { credentials: 'same-origin' })
+      .then(async (res) => {
+        const json = (await res.json().catch(() => null)) as
+          | { ok?: boolean; data?: SchoolEventRow[] }
+          | null
+        if (cancelled) return
+        setEvents(Array.isArray(json?.data) ? json!.data!.slice(0, 4) : [])
+        setLoading(false)
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <Panel title="Upcoming Events" subtitle="School calendar">
       <div className="space-y-1.5">
-        {upcomingEvents.map((e, i) => (
+        {loading && (
+          <p className="px-2 py-4 text-xs text-muted-foreground">Loading…</p>
+        )}
+        {!loading && events.length === 0 && (
+          <p className="px-2 py-4 text-xs text-muted-foreground">No upcoming events on the calendar.</p>
+        )}
+        {events.map((e, i) => (
           <motion.div
             key={e.id}
             initial={{ opacity: 0, x: -8 }}
@@ -53,15 +91,17 @@ function UpcomingEventsCard({ onNavigate }: { onNavigate?: (m: string) => void }
             {/* Small 28×28 date chip */}
             <div className="flex flex-col items-center justify-center h-7 w-7 shrink-0 rounded-md bg-muted/60 text-foreground">
               <span className="text-[11px] font-bold leading-none">
-                {new Date(e.date).getDate()}
+                {new Date(e.startDate).getDate()}
               </span>
               <span className="text-[8px] uppercase tracking-wider leading-none mt-0.5">
-                {new Date(e.date).toLocaleDateString('en-IN', { month: 'short' })}
+                {new Date(e.startDate).toLocaleDateString('en-IN', { month: 'short' })}
               </span>
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-foreground truncate">{e.title}</p>
-              <p className="text-[11px] text-muted-foreground">{e.type} · {e.time}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {e.type === 'HOLIDAY' ? 'Holiday' : e.type.charAt(0) + e.type.slice(1).toLowerCase()} · {new Date(e.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              </p>
             </div>
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 hidden sm:inline-block">
               {e.type}

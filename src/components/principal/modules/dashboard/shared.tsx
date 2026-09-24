@@ -12,10 +12,9 @@
  *     KPIs, so they live here as a quiet summary instead of as 2 of 8 cards)
  */
 
-import { attendanceOverview } from '@/lib/mock/attendance'
-import { studentStats } from '@/lib/mock/students'
 import { school } from '@/lib/mock/school'
 import { useAuth } from '@/lib/store/auth-store'
+import { useSchoolStats } from '@/hooks/use-school-stats'
 import { Users, GraduationCap } from 'lucide-react'
 
 export interface WelcomeBannerProps {
@@ -24,6 +23,12 @@ export interface WelcomeBannerProps {
 
 export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
   const { user } = useAuth()
+  // SERVER TRUTH — real students/teachers counts + attendance rate from
+  // GET /api/dashboard (never the mock universe; spec §8/§18).
+  const { data: schoolStats, loading: statsLoading } = useSchoolStats()
+  const realStudents = schoolStats?.stats.students
+  const realTeachers = schoolStats?.stats.teachers
+  const realAttendance = schoolStats?.stats.attendanceRate
   const firstName = user?.name?.split(' ').slice(0, 2).join(' ') ?? 'Principal'
   const today = new Date().toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -37,7 +42,7 @@ export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
           Good morning, {firstName}
         </h1>
         <p className="text-xs text-muted-foreground mt-1">
-          {school.shortName} · Attendance {attendanceOverview.today.rate}% · {studentStats.birthdaysToday} birthdays today
+          {school.shortName} · Attendance {statsLoading ? '…' : realAttendance != null ? `${realAttendance}%` : '—'}
         </p>
       </div>
       <div className="flex items-center gap-3 shrink-0 text-sm">
@@ -50,7 +55,7 @@ export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
             <Users className="h-3.5 w-3.5" />
           </span>
           <span className="leading-tight">
-            <span className="block font-semibold text-foreground tabular-nums">{studentStats.total.toLocaleString('en-IN')}</span>
+            <span className="block font-semibold text-foreground tabular-nums">{statsLoading ? '…' : realStudents != null ? realStudents.toLocaleString('en-IN') : '—'}</span>
             <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Students</span>
           </span>
         </button>
@@ -64,7 +69,7 @@ export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
             <GraduationCap className="h-3.5 w-3.5" />
           </span>
           <span className="leading-tight">
-            <span className="block font-semibold text-foreground tabular-nums">{school.totalTeachers}</span>
+            <span className="block font-semibold text-foreground tabular-nums">{statsLoading ? '…' : realTeachers != null ? realTeachers.toLocaleString('en-IN') : '—'}</span>
             <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Teachers</span>
           </span>
         </button>
