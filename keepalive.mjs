@@ -40,11 +40,13 @@ function sh(cmd) {
  *  presence is the only reliable liveness signal for it.) */
 async function listening(port) {
   if (port === 3000) {
-    const { stdout } = await sh(`pgrep -f "next dev -p 3000" | head -1`)
+    // [d] bracket: the sh -c wrapper's own cmdline (which contains this
+    // literal pattern text) must not match the regex it executes.
+    const { stdout } = await sh(`pgrep -f "next de[v] -p 3000" | head -1`)
     return stdout.trim().length > 0
   }
   if (port === 3003) {
-    const { stdout } = await sh(`pgrep -f "bun --hot index.ts" | head -1`)
+    const { stdout } = await sh(`pgrep -f "bun --ho[t] index.ts" | head -1`)
     return stdout.trim().length > 0
   }
   const { stdout } = await sh(`ss -ltn | grep -c ':${port} ' || true`)
