@@ -489,8 +489,9 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
         </motion.div>
       ))}
 
-      {/* Latest confirmed payment (quiet context when nothing is pending) */}
-      {pending.length === 0 && latestConfirmed && (
+      {/* Latest confirmed payment (quiet context when nothing is pending;
+          simple mode already surfaces it in the summary cards) */}
+      {pending.length === 0 && latestConfirmed && mode !== 'simple' && (
         <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl border border-border bg-card p-4 sm:p-5">
           <div className="min-w-0">
             <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Latest payment</p>
