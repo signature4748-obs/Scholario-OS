@@ -2323,3 +2323,22 @@ Stage Summary:
 - The three reported critical bugs are FIXED at the root (student identity overlay, Principal Attendance mock universe, Principal Fees mix), the cross-role financial ledger agrees everywhere, and the app is hardened against chunk-load failures.
 - All gates green: tsc 0 · eslint clean · db:validate ZERO CRITICAL · 3-role browser QA clean.
 - Known remaining (next-phase candidates): (1) fee structures/catalogue/settings tabs still client-store config tooling (DB tables empty — decide: seed DB structures or present honest empty states); (2) teacher personal-attendance + analytics modules still read mock/stores; (3) Phase 10 production-build verification blocked by sandbox constraint — needs an environment where `next build` is permitted; (4) student messaging remains a client-seeded demo (server Message rows exist for inbox counts but no student compose API); (5) the dashboard's stale ₹5,400 fee-reminder message text (historically correct at send time 19 Sep; banner shows it beside the live ₹3,400 — consider labeling quotes as "as of <date>").
+
+---
+Task ID: git-publish-1
+Agent: Z.ai Code (main orchestrator)
+Task: Push current project state to GitHub repository signature4748-obs/Scholario-OS (user-provided repo + PAT)
+
+Work Log:
+- Audited git state: 23 uncommitted changes from the final cleanup round (teacher personal-attendance canonical, student messaging demo removed, ₹5,400 stale reminder fixed, fee structures honest empty states, staff-attendance-store + student-messaging-store deleted, server-inbox-store added)
+- Security scan before push: scanned tracked files for live API keys/secrets (rzp_live/sk_live/AKIA/ghp_/AIza patterns) — none found
+- Untracked .env (was previously committed despite gitignore; content = local DATABASE_URL path only, no secrets; existing .env* ignore rule now effective for future commits)
+- Added scripts/tmp/ to .gitignore (scratch debug scripts, not part of the app)
+- Committed everything as 9d81b03 "final cleanup: retire remaining mock/demo runtime surfaces" (24 files, +706/−1954)
+- Added remote origin (PAT stored only in local .git/config, never committed) and pushed main → origin/main
+- Verified: remote HEAD 9d81b03 == local HEAD; 46 commits on remote main; working tree clean and in sync
+
+Stage Summary:
+- Full project history (46 commits) now published at https://github.com/signature4748-obs/Scholario-OS (branch: main)
+- Includes db/custom.db (seeded demo database) — anyone cloning gets working demo data; .env needs to be recreated (DATABASE_URL=file:/home/z/my-project/db/custom.db, adjust path) then `bun install && bun run db:push && bun run dev`
+- No secrets leaked; .env untracked going forward
