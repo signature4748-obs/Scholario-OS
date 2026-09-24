@@ -2190,3 +2190,27 @@ Stage Summary:
 - DB is internally consistent (ZERO critical errors from the validation suite; only 18 documented historical-result warnings).
 - Attendance now has ONE canonical write path per role surface + ONE read path per student surface; no second attendance universe remains.
 - Next: browser QA (principal → teacher → student module-by-module, console/network capture), auth audit, cross-role workflows A–F, responsive, exports, final report.
+
+---
+Task ID: 19-b
+Agent: Z.ai Code (main orchestrator — FULL SYSTEM STABILIZATION PASS)
+Task: Security + network audit continuation (spec §7, §28, §29, §32).
+
+Work Log:
+- API SMOKE MATRIX (39 endpoints × 3 roles): 37/39 healthy; 2 expected artifacts (fees/payments needs orderId param; follow-ups is POST-only).
+- CROSS-PERMISSION PROBE AS STUDENT found 10 UNGATED GET endpoints leaking school data to any authenticated user:
+  · /api/teachers — full staff roster with names+emails+phones (PII)
+  · /api/students — full student roster with guardian PII (no component callers; teachers use scoped /api/teacher/students)
+  · /api/results — every student's marks
+  · /api/contacts — user directory with emails+phones
+  · /api/questions — question bank (assessment content)
+  · /api/payments-export — financial CSV export (names, admission numbers, amounts)
+  · /api/dashboard GET — school-wide stats (POST variant is correctly self-scoped student/parent)
+  · /api/fees + /api/fees/transactions — every student's fee/payment ledger
+  · /api/assignments + /api/exams + /api/classes + /api/subjects — unscoped catalogues
+- FIXED: role gates added to all 12 GET handlers (staff-only; verified per-role: student→403 on all, teacher→200 on staff surfaces, principal→200 on admin). /api/messages confirmed self-scoped (own inbox/sent) — no change needed.
+- Gates after: tsc → 0 errors.
+
+Stage Summary:
+- No authenticated student can enumerate staff PII, other students' marks/fees, question banks, or financial exports any more. All previously-leaking endpoints return 403 for students while staff surfaces remain fully functional (smoke matrix green).
+- Next: browser UI QA (principal → teacher → student module-by-module with console capture).
