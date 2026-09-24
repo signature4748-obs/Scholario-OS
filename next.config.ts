@@ -8,10 +8,13 @@ import type { NextConfig } from "next";
 // it work behind the sandbox gateway — the stock backend burns an absolute
 // `http://localhost:<random>/` URL into browser chunks, which every remote
 // visitor fails to reach (blank preview). See src/lazy-compilation/*.js.
-const lazyBackend =
-  process.env.NODE_ENV === "production"
-    ? undefined
-    : require(`${process.cwd()}/src/lazy-compilation/backend`);
+// webpack lazy-compilation backends are CommonJS by contract; next.config
+// is compiled to CJS, so a cwd-absolute require is the only reliable path.
+let lazyBackend: unknown;
+if (process.env.NODE_ENV !== "production") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  lazyBackend = require(`${process.cwd()}/src/lazy-compilation/backend`);
+}
 
 const nextConfig: NextConfig = {
   output: "standalone",

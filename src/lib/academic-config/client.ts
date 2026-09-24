@@ -83,7 +83,10 @@ export const useAcademicConfigStore = create<AcademicConfigState>()((set, get) =
     try {
       const res = await fetch('/api/principal/academic', { cache: 'no-store' })
       if (!res.ok) throw new Error(`Server responded ${res.status}`)
-      const data = (await res.json()) as AcademicConfig
+      // API envelope: { ok, data } — unwrap to the configuration payload.
+      const payload = (await res.json()) as { ok?: boolean; data?: AcademicConfig }
+      const data = payload?.data ?? (payload as AcademicConfig)
+      if (!data || !Array.isArray(data.classes)) throw new Error('Malformed academic configuration payload')
       set({ config: data, loading: false, version: get().version + 1 })
     } catch (e) {
       set({ loading: false, error: e instanceof Error ? e.message : 'Failed to load academic configuration' })

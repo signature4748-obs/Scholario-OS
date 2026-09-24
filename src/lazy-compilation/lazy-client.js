@@ -116,6 +116,7 @@ exports.keepAlive = function (options) {
 	var data = options.data;
 	var onError = options.onError;
 	var active = options.active;
+	// eslint-disable-next-line @next/next/no-assign-module-variable -- upstream webpack client contract: `module` is the webpack module API.
 	var module = options.module;
 	errorHandlers.add(onError);
 	var value = activeKeys.get(data) || 0;

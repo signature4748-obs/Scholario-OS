@@ -496,7 +496,7 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
           <div className="min-w-0">
             <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Latest payment</p>
             <p className="mt-1.5 text-sm font-bold">
-              {latestConfirmed.monthLabel} · {mode === 'simple' ? 'Paid' : 'Net Pay'}{' '}
+              {latestConfirmed.monthLabel} · Net Pay{' '}
               <span className="tabular-nums">{moneyMy(latestConfirmed.amount)}</span>
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground">

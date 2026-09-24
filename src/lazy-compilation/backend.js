@@ -36,6 +36,7 @@
  * the SSE server is a shared singleton for the process lifetime.
  */
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- webpack lazy-compilation backend contract (CommonJS).
 const http = require('http')
 
 const PORT = Number(process.env.SCHOLARIO_LAZY_PORT || 3777)
