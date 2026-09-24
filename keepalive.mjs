@@ -34,8 +34,19 @@ function sh(cmd) {
   })
 }
 
-/** OS truth: is anything LISTENING on this port? */
+/** Process truth: does a matching service process exist?
+ *  (ss/netstat on this sandbox CANNOT see the Next dev listener — the
+ *  socket shows only as TIME_WAIT entries in /proc/net/tcp6 — so process
+ *  presence is the only reliable liveness signal for it.) */
 async function listening(port) {
+  if (port === 3000) {
+    const { stdout } = await sh(`pgrep -f "next dev -p 3000" | head -1`)
+    return stdout.trim().length > 0
+  }
+  if (port === 3003) {
+    const { stdout } = await sh(`pgrep -f "bun --hot index.ts" | head -1`)
+    return stdout.trim().length > 0
+  }
   const { stdout } = await sh(`ss -ltn | grep -c ':${port} ' || true`)
   return Number(stdout.trim() || '0') > 0
 }
