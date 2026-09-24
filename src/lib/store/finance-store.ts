@@ -384,8 +384,26 @@ export interface FinanceAttentionItem {
   module?: 'fees' | 'salary' | 'statements' | 'reports' | 'finance-settings'
 }
 
-export function useFinanceAttention(): FinanceAttentionItem[] {
-  const feeData = useFeeData(CURRENT_ACADEMIC_YEAR)
+export interface FinanceFeeCounts {
+  /** Canonical FeeTransactions awaiting the Principal's verification. */
+  pendingVerification: number
+  /** Canonical students with overdue fee accounts. */
+  overdueStudents: number
+  /** Canonical total outstanding across all fee accounts. */
+  outstanding: number
+}
+
+/**
+ * STABILIZATION — the fee-side counts (verification queue / overdue
+ * accounts / outstanding) come from the CANONICAL server ledger via the
+ * caller (useCanonicalFees → /api/fees + /api/fees/transactions), the
+ * same source Fee Management renders from. The former client-universe
+ * analytics (useFeeData over the seeded receipts) retired with the
+ * fee-store v15 seed purge. Client-store reads remain ONLY for
+ * user-created state (salary workflow, drafts, cash requests the
+ * school itself recorded).
+ */
+export function useFinanceAttention(feeCounts?: FinanceFeeCounts): FinanceAttentionItem[] {
   const salaryData = useSalaryData()
   // Payment infrastructure state (central Finance Settings) — the command
   // centre should surface configuration problems, not just balances.
@@ -393,10 +411,22 @@ export function useFinanceAttention(): FinanceAttentionItem[] {
   const gatewayConfig = useFeeStore((s) => s.gatewayConfig)
   const upiQrConfigs = useFeeStore((s) => s.upiQrConfigs)
   const bankAccounts = useFeeStore((s) => s.bankAccounts)
+  // User-created client workflow state (never seeded — the v15 purge
+  // removed the fabricated rows).
+  const feeStructures = useFeeStore((s) => s.feeStructures)
+  const versions = useFeeStore((s) => s.versions)
+  const additionalCharges = useFeeStore((s) => s.additionalCharges)
+  const cashRequests = useFeeStore((s) => s.cashRequests)
+
+  const pendingVerification = feeCounts?.pendingVerification ?? 0
+  const overdueCount = feeCounts?.overdueStudents ?? 0
+  const totalOutstanding = feeCounts?.outstanding ?? 0
+  const pendingCashRequests = cashRequests.filter(
+    (r) => r.status === 'Pending Principal Acceptance' || r.status === 'Collected by Teacher',
+  ).length
 
   return useMemo(() => {
     const items: FinanceAttentionItem[] = []
-    const { analytics } = feeData
 
     // 1 — Payroll still unpaid for the current month (money the school owes its staff).
     const payrollBalance = salaryData.rows.reduce((s, r) => s + r.balance, 0)
@@ -436,46 +466,48 @@ export function useFinanceAttention(): FinanceAttentionItem[] {
       })
     }
 
-    // 4 — Online fee payments sitting under verification.
-    if (analytics.pendingVerification > 0) {
+    // 4 — Online fee payments sitting under verification (canonical).
+    if (pendingVerification > 0) {
       items.push({
         id: 'fee-verification',
         severity: 'warning',
         title: 'Fee payments to verify',
-        description: `${analytics.pendingVerification} payment${analytics.pendingVerification > 1 ? 's' : ''} under verification — receipts finalize after this`,
+        description: `${pendingVerification} payment${pendingVerification > 1 ? 's' : ''} under verification — receipts finalize after this`,
         cta: 'Verify',
         module: 'fees',
       })
     }
 
-    // 5 — Parent cash-deposit requests needing Principal acceptance.
-    if (analytics.pendingCashRequests > 0) {
+    // 5 — Parent cash-deposit requests needing Principal acceptance
+    //     (user-recorded client workflow only — never seeded).
+    if (pendingCashRequests > 0) {
       items.push({
         id: 'fee-cash-requests',
         severity: 'warning',
         title: 'Cash requests need acceptance',
-        description: `${analytics.pendingCashRequests} cash collection request${analytics.pendingCashRequests > 1 ? 's' : ''} waiting for your acceptance`,
+        description: `${pendingCashRequests} cash collection request${pendingCashRequests > 1 ? 's' : ''} waiting for your acceptance`,
         cta: 'Review',
         module: 'fees',
       })
     }
 
-    // 6 — Overdue student accounts (collection worklist).
-    if (analytics.overdueCount > 0) {
+    // 6 — Overdue student accounts (canonical collection worklist).
+    if (overdueCount > 0) {
       items.push({
         id: 'fee-overdue',
         severity: 'warning',
         title: 'Overdue student accounts',
-        description: `${analytics.overdueCount} account${analytics.overdueCount > 1 ? 's' : ''} past due · ${formatINR(analytics.totalOutstanding, true)} outstanding overall`,
+        description: `${overdueCount} account${overdueCount > 1 ? 's' : ''} past due · ${formatINR(totalOutstanding, true)} outstanding overall`,
         cta: 'Open Accounts',
         module: 'fees',
       })
     }
 
-    // 7 — Class fee plans not yet published for the active session.
-    const total = feeData.feeStructures.length
-    const published = feeData.feeStructures.filter((st) =>
-      feeData.versions.some((v) => v.structureId === st.id && v.status === 'current'),
+    // 7 — Class fee plans not yet published for the active session
+    //     (user-created structures only — the seeded ones were purged).
+    const total = feeStructures.length
+    const published = feeStructures.filter((st) =>
+      versions.some((v) => v.structureId === st.id && v.status === 'current'),
     ).length
     if (total > 0 && published < total) {
       items.push({
@@ -492,7 +524,7 @@ export function useFinanceAttention(): FinanceAttentionItem[] {
     //     BEFORE it can collect money (APPS-IA-1 drafts are invisible to
     //     students until published; the Principal is the only one who can
     //     unblock them).
-    const draftCharges = feeData.additionalCharges.filter((c) => c.status === 'Draft')
+    const draftCharges = additionalCharges.filter((c) => c.status === 'Draft')
     if (draftCharges.length > 0) {
       items.push({
         id: 'collection-drafts',
@@ -504,11 +536,16 @@ export function useFinanceAttention(): FinanceAttentionItem[] {
       })
     }
 
-    // 9 — Reserves below the 3-month operating target.
-    const cashAvailable = balanceSheet.find((b) => b.account === 'Cash & Bank Balance')?.amount ?? 0
+    // 9 — Reserves below the 3-month operating target. STABILIZATION:
+    //     gated on a CONFIGURED bank account — with none configured the
+    //     mock balance sheet's numbers are not the school's truth, so no
+    //     reserve claim is made either way.
+    const cashAvailable = bankAccounts.length > 0
+      ? balanceSheet.find((b) => b.account === 'Cash & Bank Balance')?.amount ?? 0
+      : 0
     const monthlyOperatingExpense = financeStats.monthlyRevenue.reduce((s, m) => s + m.expense, 0) / 12
-    const reserveCoverage = monthlyOperatingExpense > 0 ? Math.round((cashAvailable / monthlyOperatingExpense) * 10) / 10 : 0
-    if (reserveCoverage < 3) {
+    const reserveCoverage = bankAccounts.length > 0 && monthlyOperatingExpense > 0 ? Math.round((cashAvailable / monthlyOperatingExpense) * 10) / 10 : 0
+    if (bankAccounts.length > 0 && reserveCoverage < 3) {
       items.push({
         id: 'reserve-low',
         severity: 'info',
@@ -558,5 +595,7 @@ export function useFinanceAttention(): FinanceAttentionItem[] {
 
     const order: Record<FinanceAttentionItem['severity'], number> = { critical: 0, warning: 1, info: 2 }
     return items.sort((a, b) => order[a.severity] - order[b.severity])
-  }, [feeData, salaryData, paymentModes, gatewayConfig, upiQrConfigs, bankAccounts])
+  }, [salaryData, paymentModes, gatewayConfig, upiQrConfigs, bankAccounts,
+      feeStructures, versions, additionalCharges, cashRequests,
+      pendingVerification, overdueCount, totalOutstanding, pendingCashRequests])
 }

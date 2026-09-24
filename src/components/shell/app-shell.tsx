@@ -16,7 +16,6 @@ import { school } from '@/lib/mock/school'
 import { useActiveTenant } from '@/lib/tenant/store'
 import { cn } from '@/lib/utils'
 import { formatINR } from '@/lib/format'
-import { notifications as initialNotifications } from '@/lib/mock/operations'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { CommandPalette } from '@/components/shared/command-palette'
 import type { ShellProps } from './app-shell/types'
@@ -68,9 +67,12 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
   const [notifOpen, setNotifOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
-  const [notifList, setNotifList] = useState<NotificationItem[]>(initialNotifications)
-  // 'live' = fetched from /api/notifications-feed, 'demo' = static mock fallback
-  const [notifSource, setNotifSource] = useState<'live' | 'demo'>('demo')
+  const [notifList, setNotifList] = useState<NotificationItem[]>([])
+  // STABILIZATION — the bell NEVER renders fabricated notifications. The
+  // former static mock list ("₹9,500 from Aadhya Menon", "96 employees" …
+  // from @/lib/mock/operations) is retired: 'loading' → 'live' (even an
+  // honestly-empty feed, e.g. super admin) or 'error'.
+  const [notifSource, setNotifSource] = useState<'live' | 'loading' | 'error'>('loading')
   // Real-time event stream status (socket.io mini-service :3003 via gateway)
   const [streamLive, setStreamLive] = useState(false)
   const { user, switchTo } = useAuth()
@@ -83,18 +85,22 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
   useEffect(() => { void meRefresh() }, [meRefresh])
 
   // Wire notification bell to the real DB-backed feed (unread messages + announcements).
-  // Polls every 60s; falls back to demo mock data when the live feed is empty/unavailable.
+  // Polls every 60s. A successful sync is 'live' even when the feed is EMPTY
+  // (super admin intentionally has no personal inbox) — no mock fallback.
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
         const r = await fetch('/api/notifications-feed', { cache: 'no-store' })
-        if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) return
+        if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) {
+          if (!cancelled) setNotifSource('error')
+          return
+        }
         const j = await r.json().catch(() => null)
         // API wraps payloads as { ok, data } — unwrap defensively
         const payload = j && typeof j === 'object' && 'data' in j ? (j as { data?: { feed?: unknown[] } }).data : j
         const feedArr = payload && Array.isArray(payload.feed) ? payload.feed : []
-        if (cancelled || feedArr.length === 0) return
+        if (cancelled) return
         const mapped: NotificationItem[] = feedArr.map((f: { id: string; type?: string; title?: string; description?: string; timestamp?: string; read?: boolean }) => ({
           id: f.id,
           type: f.type,
@@ -106,7 +112,7 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
         setNotifList(mapped)
         setNotifSource('live')
       } catch {
-        /* keep mock fallback */
+        if (!cancelled) setNotifSource('error')
       }
     }
     load()
@@ -248,7 +254,7 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
   }, [])
 
   const persistRead = (id: string, type?: string) => {
-    // Fire-and-forget persistence; mock/demo items simply get persisted=false
+    // Fire-and-forget persistence for live-feed items
     fetch('/api/notifications-feed', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -418,13 +424,13 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
                     </p>
                   </div>
                 )}
-                {role === 'superadmin' && notifSource === 'demo' && (
+                {role === 'superadmin' && (
                   <div className="mx-1 mb-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2.5 py-2">
                     <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400 flex items-center gap-1">
                       <Globe className="h-3 w-3" /> Platform scope
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">
-                      Super admins manage tenants across schools — no personal school inbox. Showing demo feed.
+                      Super admins manage tenants across schools — no personal school inbox. Tenant activity is monitored from the Schools module.
                     </p>
                   </div>
                 )}

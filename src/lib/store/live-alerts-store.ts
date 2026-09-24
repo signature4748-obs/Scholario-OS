@@ -58,25 +58,18 @@ interface LiveAlertState {
 }
 
 // Initial activity log — simulated hourly alert activity for today (8 AM to now)
+// STABILIZATION — no fabricated hourly counters; the log starts empty
+// and records only what actually happens in this session.
 const initialActivityLog: ActivityEvent[] = [
-  { hour: '8 AM', resolved: 2, snoozed: 1, new: 4 },
-  { hour: '9 AM', resolved: 3, snoozed: 0, new: 5 },
-  { hour: '10 AM', resolved: 1, snoozed: 2, new: 3 },
-  { hour: '11 AM', resolved: 4, snoozed: 1, new: 6 },
-  { hour: '12 PM', resolved: 2, snoozed: 0, new: 2 },
-  { hour: '1 PM', resolved: 0, snoozed: 1, new: 1 },
-  { hour: '2 PM', resolved: 3, snoozed: 2, new: 4 },
   { hour: 'Now', resolved: 0, snoozed: 0, new: 0 },
 ]
 
-const initialAlerts: LiveAlert[] = [
-  { id: 'a1', severity: 'critical', title: 'Bus TRP-201 delayed by 18 min', desc: 'Sector 14 traffic · 24 students affected', time: '2 min ago', color: 'rose', navKey: 'transport' },
-  { id: 'a2', severity: 'high', title: '3 new admission applications submitted', desc: 'Grade 9 & 10 transfers · awaiting review', time: '12 min ago', color: 'amber', navKey: 'admission' },
-  { id: 'a3', severity: 'high', title: 'Class 7-B teacher absent', desc: 'Mr. Suresh · substitute assigned: Ms. Kavita', time: '28 min ago', color: 'amber', navKey: 'teachers' },
-  { id: 'a4', severity: 'info', title: '₹4.2L fees collected today', desc: '67 transactions · UPI 78%, Card 22%', time: '1 hr ago', color: 'emerald', navKey: 'fees' },
-  { id: 'a5', severity: 'info', title: 'Library: 4 books overdue', desc: 'Class 10-A · auto-reminder sent', time: '2 hr ago', color: 'emerald', navKey: 'library' },
-  { id: 'a6', severity: 'low', title: 'Inventory: Lab reagents low stock', desc: 'Chemistry lab · 3 items below threshold', time: '3 hr ago', color: 'cyan', navKey: 'inventory' },
-]
+// STABILIZATION — the fabricated default alert set (bus delays, fake
+// ₹4.2L collections, absent teachers…) is RETIRED: unsolicited invented
+// operational data must never render as if real. The panel starts EMPTY
+// and shows the canonical live fee alert (real dues) plus whatever the
+// principal explicitly simulates from the hidden demo tools.
+const initialAlerts: LiveAlert[] = []
 
 // Pool of simulated real-time alerts for the "simulate new alert" feature
 const simulatedAlertPool: Omit<LiveAlert, 'id' | 'time' | 'isNew'>[] = [
@@ -240,6 +233,24 @@ export const useLiveAlerts = create<LiveAlertState>()(
     }),
     {
       name: 'scholario-live-alerts',
+      // v2 — STABILIZATION: purge the retired fabricated alert seeds
+      // (ids a1–a6) + the fake hourly activity counters from persisted
+      // namespaces. User-simulated alerts (sim-*) survive.
+      version: 2,
+      migrate: (persistedState: any, fromVersion: number) => {
+        if (fromVersion < 2 && persistedState && typeof persistedState === 'object') {
+          const st = persistedState as Record<string, any>
+          const seedIds = new Set(['a1', 'a2', 'a3', 'a4', 'a5', 'a6'])
+          if (Array.isArray(st.alerts)) st.alerts = st.alerts.filter((a: any) => !a || !seedIds.has(a.id))
+          if (Array.isArray(st.dismissed)) st.dismissed = st.dismissed.filter((a: any) => !a || !seedIds.has(a.id))
+          if (Array.isArray(st.snoozed)) st.snoozed = st.snoozed.filter((a: any) => !a || !seedIds.has(a.id))
+          if (st.snoozedUntil && typeof st.snoozedUntil === 'object') {
+            for (const id of seedIds) delete st.snoozedUntil[id]
+          }
+          st.activityLog = [{ hour: 'Now', resolved: 0, snoozed: 0, new: 0 }]
+        }
+        return persistedState
+      },
       // Only persist the data arrays, not the filter, functions, or transient flags
       partialize: (state) => ({
         alerts: state.alerts.map((a) => ({ ...a, isNew: false })),

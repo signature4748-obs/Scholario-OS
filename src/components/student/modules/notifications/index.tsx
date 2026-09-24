@@ -9,8 +9,8 @@
  *                      (/api/student/fees — one row while outstanding > 0)
  *   Exams            → the next upcoming exam from the server's Exam rows
  *                      (/api/student/results → upcoming)
- *   New messages     → student-messaging store unread conversations
- *                      (live count)
+ *   New messages     → the canonical server inbox unread count
+ *                      (/api/messages?box=inbox — REAL Message rows)
  *   School news      → REAL announcements from /api/student/notices
  *                      (audience-scoped Notification rows published by the
  *                      school — no static demo content)
@@ -40,9 +40,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime, formatDate, formatINR } from '@/lib/format'
 import {
-  useStudentMessagingStore, countUnreadConversations, isConversationUnread,
-  type StudentConversation,
-} from '@/lib/store/student-messaging-store'
+  useServerInbox, type ServerInboxMessage,
+} from '@/lib/store/server-inbox-store'
 import { useStudentNotifPrefsStore, NOTIF_KIND_TO_PREF } from '@/lib/store/student-notif-prefs-store'
 import { useServerNotices, type ServerNotice } from '@/lib/store/server-notices-store'
 import { toast } from 'sonner'
@@ -84,8 +83,8 @@ interface BuildDeps {
   feeOutstanding: number | null
   /** Next scheduled (not yet declared) exam; null when there is none. */
   upcomingExam: UpcomingExam | null
-  conversations: StudentConversation[]
-  seenAt: Record<string, string>
+  /** The canonical server inbox (/api/messages?box=inbox); null while loading. */
+  inbox: ServerInboxMessage[] | null
   /** LR-1 — real school announcements (null while loading). */
   serverNotices: ServerNotice[] | null
 }
@@ -93,7 +92,7 @@ interface BuildDeps {
 // ─── Derivation (single source of truth for feed + badge) ───────────
 
 export function buildStudentNotifications(
-  { feeOutstanding, upcomingExam, conversations, seenAt, serverNotices }: BuildDeps,
+  { feeOutstanding, upcomingExam, inbox, serverNotices }: BuildDeps,
 ): StudentNotificationItem[] {
   const items: StudentNotificationItem[] = []
 
@@ -126,18 +125,20 @@ export function buildStudentNotifications(
     })
   }
 
-  // New messages — one notification while any conversation is unread
-  const unread = countUnreadConversations(conversations, seenAt)
-  if (unread > 0) {
-    const latestUnreadAt = conversations.reduce<string | undefined>((acc, c) => {
-      if (!isConversationUnread(c, seenAt)) return acc
-      return !acc || c.lastOn > acc ? c.lastOn : acc
-    }, undefined)
+  // New messages — one notification while any inbox message is unread
+  // (canonical /api/messages rows — real mail, not demo threads).
+  const unreadMsgs = (inbox ?? []).filter((m) => !m.read)
+  if (unreadMsgs.length > 0) {
+    const latestUnreadAt = unreadMsgs.reduce<string | undefined>(
+      (acc, m) => (!acc || m.createdAt > acc ? m.createdAt : acc),
+      undefined,
+    )
+    const from = unreadMsgs[0]?.sender?.name
     items.push({
       id: 'msg-unread',
       kind: 'message',
-      title: 'New message from teacher',
-      description: `${unread} unread conversation${unread > 1 ? 's' : ''} — open Messages`,
+      title: from ? `New message from ${from}` : 'New message',
+      description: `${unreadMsgs.length} unread message${unreadMsgs.length > 1 ? 's' : ''} — open Messages`,
       at: latestUnreadAt,
       target: 'messages',
     })
@@ -169,8 +170,7 @@ export function buildStudentNotifications(
 export function useUnreadStudentNotificationCount(): number {
   const { ledger } = useMyServerFees()
   const { upcoming } = useMyServerResults()
-  const conversations = useStudentMessagingStore((s) => s.conversations)
-  const seenAt = useStudentMessagingStore((s) => s.seenAt)
+  const inbox = useServerInbox((s) => s.messages)
   const serverNotices = useServerNotices((s) => s.notices)
   const readIds = useStudentNotifPrefsStore((s) => s.readIds)
   const prefs = useStudentNotifPrefsStore((s) => s.prefs)
@@ -178,12 +178,12 @@ export function useUnreadStudentNotificationCount(): number {
     const items = buildStudentNotifications({
       feeOutstanding: ledger?.totals.outstanding ?? null,
       upcomingExam: upcoming,
-      conversations, seenAt, serverNotices,
+      inbox, serverNotices,
     })
     return items.filter(
       (i) => !i.serverRead && !readIds.includes(i.id) && (prefs[NOTIF_KIND_TO_PREF[i.kind]] ?? true),
     ).length
-  }, [ledger, upcoming, conversations, seenAt, serverNotices, readIds, prefs])
+  }, [ledger, upcoming, inbox, serverNotices, readIds, prefs])
 }
 
 // ─── Presentation meta ───────────────────────────────────────────────
@@ -201,8 +201,7 @@ export function StudentNotificationsModule({ onNavigate }: { onNavigate?: (key: 
   // Canonical server data — the student's own fee ledger + exam universe.
   const { ledger } = useMyServerFees()
   const { upcoming } = useMyServerResults()
-  const conversations = useStudentMessagingStore((s) => s.conversations)
-  const seenAt = useStudentMessagingStore((s) => s.seenAt)
+  const inbox = useServerInbox((s) => s.messages)
   const serverNotices = useServerNotices((s) => s.notices)
   const readIds = useStudentNotifPrefsStore((s) => s.readIds)
   const prefs = useStudentNotifPrefsStore((s) => s.prefs)
@@ -216,10 +215,10 @@ export function StudentNotificationsModule({ onNavigate }: { onNavigate?: (key: 
       buildStudentNotifications({
         feeOutstanding: ledger?.totals.outstanding ?? null,
         upcomingExam: upcoming,
-        conversations, seenAt, serverNotices,
+        inbox, serverNotices,
       })
         .filter((i) => prefs[NOTIF_KIND_TO_PREF[i.kind]] ?? true),
-    [ledger, upcoming, conversations, seenAt, serverNotices, prefs],
+    [ledger, upcoming, inbox, serverNotices, prefs],
   )
   const isRead = (i: StudentNotificationItem) => i.serverRead === true || readIds.includes(i.id)
   const unreadItems = items.filter((i) => !isRead(i))

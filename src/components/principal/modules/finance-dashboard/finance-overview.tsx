@@ -34,11 +34,12 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
-  useFinanceData, useFinanceAttention,
+  useFinanceData, useFinanceAttention, type FinanceFeeCounts,
   type FinanceAttentionItem, formatINRCompact,
 } from '@/lib/store/finance-store'
-import { useFeeData, CURRENT_ACADEMIC_YEAR } from '@/lib/store/fee-store'
 import { useSalaryData, CURRENT_SESSION, sessionOfPeriod } from '@/lib/store/salary-store'
+import { useFeeStore } from '@/lib/store/fee-store'
+import { useCanonicalFees, isVerifiedTxnStatus, isPendingTxnStatus } from '../fees/use-canonical-fees'
 import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { CHART_PALETTE } from '@/components/shared/premium-charts'
@@ -56,9 +57,27 @@ interface Props {
 }
 
 export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: Props) {
-  const attention = useFinanceAttention()
-  const feeData = useFeeData(CURRENT_ACADEMIC_YEAR)
+  // STABILIZATION — the attention feed's fee side also reads the CANONICAL
+  // ledger (verification queue / overdue accounts / outstanding), the same
+  // numbers Fee Management shows.
+  const canonicalForAttention = useCanonicalFees()
+  const feeCounts: FinanceFeeCounts = {
+    pendingVerification: (canonicalForAttention.data?.txns ?? []).filter((t) => isPendingTxnStatus(t.status)).length,
+    overdueStudents: canonicalForAttention.data?.totals.overdueStudents ?? 0,
+    outstanding: canonicalForAttention.data?.totals.outstanding ?? 0,
+  }
+  const attention = useFinanceAttention(feeCounts)
+  // STABILIZATION — the fee side reads the CANONICAL server ledger
+  // (useCanonicalFees → /api/fees + /api/fees/transactions), the SAME
+  // source the Fee Management module renders from, so the Finance
+  // Dashboard can never disagree with it. The former client-universe
+  // analytics (useFeeData over the seeded receipts) retired with the
+  // fee-store v15 seed purge.
+  const canonical = useCanonicalFees()
   const salaryData = useSalaryData()
+  // Honest bank signal — after the v15 purge no bank account is
+  // configured until the school adds one (Finance → Settings).
+  const bankAccounts = useFeeStore((s) => s.bankAccounts)
 
   const jumpTo = (moduleKey: string, label: string) => {
     if (onModuleNavigate) onModuleNavigate(moduleKey)
@@ -71,7 +90,15 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
     else if (item.module) jumpTo(item.module, item.cta)
   }
 
-  const { analytics } = feeData
+  // Canonical fee analytics (same vocabulary as Fee Management).
+  const totals = canonical.data?.totals
+  const totalCollected = totals?.collected ?? 0
+  const totalExpected = totals?.billed ?? 0
+  const totalOutstanding = totals?.outstanding ?? 0
+  const collectionRate = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 1000) / 10 : 0
+  const duesStudents = totals?.studentsWithDues ?? 0
+  const overdueCount = totals?.overdueStudents ?? 0
+  const canonicalMonthly = canonical.data?.monthly ?? []
   const { currentMonth, monthLabel } = salaryData
   const payrollBalance = currentMonth.payable - currentMonth.confirmed
 
@@ -92,25 +119,26 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
       const idx = fyIndexOf(m - 1)
       outByIdx.set(idx, (outByIdx.get(idx) ?? 0) + p.amount)
     }
-    const months = analytics.monthly // display series Apr→Dec = FY indices 0–8
+    const months = canonicalMonthly // canonical monthly series, Apr first
     const nowIdx = fyIndexOf(new Date().getMonth())
     const visible = nowIdx < months.length ? months.slice(0, nowIdx + 1) : months
     // Slice always starts at FY index 0, so array position === FY index.
     return visible.map((m, i) => ({ month: m.month, in: m.collected, out: outByIdx.get(i) ?? 0 }))
-  }, [analytics.monthly, salaryData.payments])
+  }, [canonicalMonthly, salaryData.payments])
   const chartHasData = inVsOut.some((m) => m.in > 0 || m.out > 0)
 
-  // ── Recent money movement — REAL entries only: fee collections +
-  //    confirmed salary payments, merged, newest first.
+  // ── Recent money movement — REAL entries only: canonical fee
+  //    collections (/api/fees/transactions, verified) + confirmed salary
+  //    payments, merged, newest first.
   const recentMovement = useMemo(() => {
-    const feeRows = analytics.recentCollections
-      .filter((t) => t.status === 'Success')
+    const feeRows = (canonical.data?.txns ?? [])
+      .filter((t) => isVerifiedTxnStatus(t.status))
       .map((t) => ({
         id: `fee-${t.id}`,
         kind: 'in' as const,
-        title: `${t.studentName}${t.className ? ` · ${t.className}` : ''}`,
-        sub: `Fee${t.feeHead ? ` — ${t.feeHead}` : ''} · ${t.mode}`,
-        date: t.date,
+        title: `${t.studentName ?? 'Student'}${t.className ? ` · ${t.className}` : ''}`,
+        sub: `Fee${t.feeHeadName ? ` — ${t.feeHeadName}` : ''} · ${t.method}`,
+        date: (t.collectedAt ?? t.createdAt).slice(0, 10),
         amount: t.amount,
       }))
     const salaryRows = salaryData.payments
@@ -128,14 +156,22 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
     return [...feeRows, ...salaryRows]
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 8)
-  }, [analytics.recentCollections, salaryData.payments])
+  }, [canonical.data?.txns, salaryData.payments])
 
   // Annual expense picture (P&L baseline; salaries line is live payroll).
   const expenseBars = data.expenseBreakdown.slice(0, 6).map((e) => ({
     label: e.name, value: e.value, color: e.color,
   }))
 
-  const netThisMonth = analytics.monthCollection - currentMonth.confirmed
+  // This month's canonical collections (the monthly series point for the
+  // current FY month; 0 when the ledger has none yet).
+  const monthCollection = useMemo(() => {
+    const fyIndexOf = (calendarMonth: number) => (calendarMonth - 3 + 12) % 12
+    const nowIdx = fyIndexOf(new Date().getMonth())
+    return canonicalMonthly[nowIdx]?.collected ?? 0
+  }, [canonicalMonthly])
+
+  const netThisMonth = monthCollection - currentMonth.confirmed
 
   return (
     <div className="space-y-4">
@@ -145,8 +181,8 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
         <SummaryCard
           icon={<CheckCircle2 className="h-4 w-4" />}
           label="Fees Collected"
-          value={formatINR(analytics.totalCollected, true)}
-          sub={`${analytics.collectionRate}% of ${formatINR(analytics.totalExpected, true)} expected`}
+          value={formatINR(totalCollected, true)}
+          sub={`${collectionRate}% of ${formatINR(totalExpected, true)} expected`}
           tone="emerald"
           delay={0}
           onClick={() => jumpTo('fees', 'Fee Management')}
@@ -154,8 +190,8 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
         <SummaryCard
           icon={<AlertCircle className="h-4 w-4" />}
           label="Fees Outstanding"
-          value={formatINR(analytics.totalOutstanding, true)}
-          sub={`${analytics.pendingCount} students · ${analytics.overdueCount} overdue`}
+          value={formatINR(totalOutstanding, true)}
+          sub={`${duesStudents} student${duesStudents === 1 ? '' : 's'} · ${overdueCount} overdue`}
           tone="rose"
           delay={0.05}
           onClick={() => jumpTo('fees', 'Fee Management')}
@@ -173,14 +209,23 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
           delay={0.1}
           onClick={() => jumpTo('salary', 'Salary & Payroll')}
         />
+        {/* STABILIZATION — no fabricated bank balance: the school has no
+            bank account configured (the demo BA-01 seed was purged), so
+            the card states that honestly instead of quoting the mock
+            balance sheet. Configuring an account (Finance → Settings)
+            restores live settlement tracking. */}
         <SummaryCard
           icon={<Landmark className="h-4 w-4" />}
           label="Cash in Bank"
-          value={formatINRCompact(data.cashAvailable)}
-          sub={`${data.reserveCoverage} months of costs in reserve`}
+          value={bankAccounts.length > 0 ? formatINRCompact(data.cashAvailable) : '—'}
+          sub={
+            bankAccounts.length > 0
+              ? `${data.reserveCoverage} months of costs in reserve`
+              : 'No bank account configured — add one in Finance → Settings'
+          }
           tone="violet"
           delay={0.15}
-          onClick={() => onNavigate('statements')}
+          onClick={() => onNavigate('settings')}
         />
       </SummaryCardGrid>
 
@@ -223,7 +268,7 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
         <FinancePanel title="This Month" subtitle="money in and out, last 30 days">
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
-              <FinanceStat label="Money In" value={`+${formatINR(analytics.monthCollection, true)}`} accent="emerald" />
+              <FinanceStat label="Money In" value={`+${formatINR(monthCollection, true)}`} accent="emerald" />
               <FinanceStat label="Salary Out" value={`-${formatINR(currentMonth.confirmed, true)}`} accent="rose" />
               <FinanceStat
                 label="Net"
@@ -234,13 +279,13 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
             <div className="rounded-lg border border-border/50 bg-muted/20 px-2.5 py-2">
               <div className="flex items-center justify-between text-[10px] mb-1.5">
                 <span className="text-muted-foreground font-medium">Session collection</span>
-                <span className="font-bold tabular-nums">{analytics.collectionRate}% <span className="text-muted-foreground font-normal">/ 85% target</span></span>
+                <span className="font-bold tabular-nums">{collectionRate}% <span className="text-muted-foreground font-normal">/ 85% target</span></span>
               </div>
-              <ProgressBar value={analytics.collectionRate} max={100} />
+              <ProgressBar value={collectionRate} max={100} />
             </div>
             <div className="flex items-center justify-between text-[10px] px-0.5">
               <span className="text-muted-foreground flex items-center gap-1">
-                <Landmark className="h-3 w-3" /> Bank covers {data.reserveCoverage} months of costs
+                <Landmark className="h-3 w-3" /> {bankAccounts.length > 0 ? `Bank covers ${data.reserveCoverage} months of costs` : 'Bank position not configured'}
               </span>
               <button
                 onClick={() => onNavigate('statements')}
@@ -389,7 +434,7 @@ export function FinanceOverviewSection({ data, onNavigate, onModuleNavigate }: P
               <div className="min-w-0">
                 <p className="text-xs font-semibold">Fee Management</p>
                 <p className="text-[10px] text-muted-foreground truncate">
-                  {formatINRCompact(analytics.totalCollected)} collected · {analytics.collectionRate}% of session
+                  {formatINRCompact(totalCollected)} collected · {collectionRate}% of session
                 </p>
               </div>
             </div>

@@ -32,6 +32,7 @@ import { useFeeData } from '@/lib/store/fee-store'
 import { useFocusStore } from '@/lib/store/focus-store'
 import { toast } from 'sonner'
 import { school } from '@/lib/mock/school'
+import { useCanonicalFees, isPendingTxnStatus } from './use-canonical-fees'
 // SaaS-STAGE-2A (Task 7-b) — tenant-aware feature gating: the tab list is
 // FILTERED by the ACTIVE school's sub-feature configuration. Overview /
 // Payments / Student Accounts are always present (core operations); the
@@ -83,8 +84,11 @@ export function FeesShell({ onNavigate }: { onNavigate?: (moduleKey: string) => 
   }, [focus?.ts])
 
   // Live verification count for the Payments tab badge — the Principal's
-  // actionable queue (cash collections awaiting verification).
-  const pendingVerification = data.analytics.pendingCashRequests
+  // actionable queue. STABILIZATION: counts the CANONICAL verification
+  // queue (/api/fees/transactions), the exact rows the Payments tab's
+  // verification workspace renders — never the retired client seed universe.
+  const { data: canonicalFees } = useCanonicalFees()
+  const pendingVerification = (canonicalFees?.txns ?? []).filter((t) => isPendingTxnStatus(t.status)).length
 
   // SaaS-STAGE-2A (Task 7-b) — tenant-aware sub-feature gates for the tab
   // list. Overview / Payments / Student Accounts are ALWAYS present (core

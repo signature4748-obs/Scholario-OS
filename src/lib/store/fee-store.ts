@@ -54,22 +54,24 @@ import {
   SEED_VERSIONS,
   DEFAULT_PAYMENT_MODES,
   DEFAULT_LATE_FEE_RULE,
-  DEFAULT_CONCESSION_RULE,
-  DEFAULT_RECEIPT_SETTINGS,
   SEED_GATEWAY_CONFIG,
-  SEED_BANK_ACCOUNTS,
-  SEED_UPI_QR_CONFIGS,
-  SEED_SETTLEMENTS,
-  SEED_RECONCILIATION_RECORDS,
-  SEED_WEBHOOK_EVENTS,
   SEED_TRANSACTIONS,
-  SEED_FEE_TRANSACTIONS,
-  STU58_SEED_TXNS,
   SEED_CASH_REQUESTS,
   SEED_AUDIT,
   SEED_ADDITIONAL_CHARGES,
+  SEED_SETTLEMENTS,
+  SEED_RECONCILIATION_RECORDS,
+  SEED_WEBHOOK_EVENTS,
   SEED_CONCESSIONS,
+  SEED_BANK_ACCOUNTS,
+  SEED_UPI_QR_CONFIGS,
+  SEED_OPTIONAL_HEAD_OPTINS_SNAPSHOT,
+  SEED_FINANCIAL_ROW_IDS,
   SEED_OPTIONAL_HEAD_OPTINS,
+  SEED_FEE_TRANSACTIONS,
+  STU58_SEED_TXNS,
+  DEFAULT_CONCESSION_RULE,
+  DEFAULT_RECEIPT_SETTINGS,
   isHeadApplicableToStudent,
   expandHeadChargeEntries,
   expandExamChargeEntries,
@@ -1008,17 +1010,16 @@ export function structureEditWindowLive(
 // The signature accepts an optional classId (Phase 5 addition). Callers
 // that pass only className continue to work — backward compatible.
 export function findStructureForStudent(className: string, classId?: string): FeeStructureConfig | undefined {
-  // STRUCT-SESSION/REV — resolve against the LIVE store state (the pool the
-  // publish pipeline updates), falling back to the seed constant only when
-  // the store is not yet hydrated. Previously this read the static
-  // FEE_STRUCTURES seed directly, so a newly published version never
-  // reached student accounts (PART 21 violation).
-  let pool: FeeStructureConfig[] = FEE_STRUCTURES
+  // STRUCT-SESSION/REV — resolve against the LIVE store state only.
+  // STABILIZATION: the static FEE_STRUCTURES seed is no longer a fallback
+  // pool — an unconfigured school has NO structures, and returning a
+  // fabricated one here would fabricate charges downstream.
+  let pool: FeeStructureConfig[] = []
   try {
     const live = useFeeStore.getState().feeStructures
-    if (Array.isArray(live) && live.length > 0) pool = live
+    if (Array.isArray(live)) pool = live
   } catch {
-    /* store not initialised yet — seed fallback is correct at init time */
+    /* store not initialised — no structures resolvable yet */
   }
   // 1. classId exact match (preferred path — Phase 5)
   if (classId) {
@@ -1496,30 +1497,40 @@ migrateLegacyScopedStore(TENANT_SCOPED_BASES.fee, DEFAULT_TENANT_ID)
 
 export const useFeeStore = create<FeeState>()(
   persist((set, get) => ({
-  transactions: SEED_TRANSACTIONS,
-  cashRequests: SEED_CASH_REQUESTS,
-  audit: SEED_AUDIT,
-  feeStructures: FEE_STRUCTURES,
-  versions: SEED_VERSIONS,
+  // STABILIZATION — the fabricated financial-history seeds are RETIRED as
+  // initial state: no receipts, cash submissions, structures, obligations,
+  // settlements, concessions or audit entries exist until a real user
+  // creates them. The canonical fee ledger lives in the DB (Fee +
+  // FeeTransaction + Payment rows via /api/fees + /api/fees/transactions);
+  // this store remains the CONFIGURATION layer only (payment modes,
+  // late-fee/concession/entry policy, receipt settings). See SEED_FINANCIAL_ROW_IDS
+  // (fee-store-data) + the v15 migration for purging persisted namespaces.
+  transactions: [],
+  cashRequests: [],
+  audit: [],
+  feeStructures: [],
+  versions: [],
   changeLog: [],
   structureRevisions: [],
   structureEditWindow: { structureId: null, openedAt: null, expiresAt: null },
-  additionalCharges: SEED_ADDITIONAL_CHARGES,
+  additionalCharges: [],
   paymentModes: DEFAULT_PAYMENT_MODES,
   lateFeeRule: DEFAULT_LATE_FEE_RULE,
   concessionRule: DEFAULT_CONCESSION_RULE,
   entryFeePolicy: DEFAULT_ENTRY_FEE_POLICY,
   receiptSettings: DEFAULT_RECEIPT_SETTINGS,
-  receiptCounter: 1060,
+  receiptCounter: 0,
   // ─── Payment infrastructure state (Phase 4) ───
-  gatewayConfig: SEED_GATEWAY_CONFIG,
-  bankAccounts: SEED_BANK_ACCOUNTS,
-  upiQrConfigs: SEED_UPI_QR_CONFIGS,
-  settlements: SEED_SETTLEMENTS,
-  reconciliationRecords: SEED_RECONCILIATION_RECORDS,
-  webhookEvents: SEED_WEBHOOK_EVENTS,
-  concessions: SEED_CONCESSIONS,
-  optionalHeadApplicability: SEED_OPTIONAL_HEAD_OPTINS,
+  // No gateway/bank/UPI configuration is seeded either — the school
+  // connects its own (the settings surfaces have honest empty states).
+  gatewayConfig: null,
+  bankAccounts: [],
+  upiQrConfigs: [],
+  settlements: [],
+  reconciliationRecords: [],
+  webhookEvents: [],
+  concessions: [],
+  optionalHeadApplicability: {},
 
   recordPayment: (input) => {
     const state = get()
@@ -3710,7 +3721,7 @@ export const useFeeStore = create<FeeState>()(
   // `additionalCharges` array (event-based charges like the Class 8
   // Educational Tour) when the persisted state predates the key. Never
   // overwrites user-created charges; never touches transactions.
-  version: 14,
+  version: 15,
   migrate: (persistedState: any, fromVersion: number) => {
     // v13 — APPS-IA-1 standalone-collection lifecycle: `status` gains
     // 'Draft' and 'Archived' values and charges carry optional lifecycle
@@ -3758,30 +3769,36 @@ export const useFeeStore = create<FeeState>()(
     // archived 2025-26 session into the live 2026-27 session (CURRENT_ACADEMIC_YEAR).
     // Persisted state below v5 carries stale 2025-26 dates, receipt numbers and
     // academic-year labels that contradict the new seeds (dead Today/Week/Month
-    // tiles), so it is replaced wholesale with the fresh seeds (intentional
-    // product decision — replaces stale demo values).
+    // tiles), so it is replaced wholesale (intentional product decision —
+    // replaces stale demo values). STABILIZATION v15: the replacement now
+    // carries the CONFIGURATION defaults only — the fabricated financial
+    // history (receipts/cash/structures/charges/settlements/concessions)
+    // is no longer restored for ancient namespaces (the purge block at the
+    // end of this chain would strip them anyway).
     if (fromVersion < 5) {
       return {
-        transactions: SEED_TRANSACTIONS,
-        cashRequests: SEED_CASH_REQUESTS,
-        audit: SEED_AUDIT,
-        feeStructures: FEE_STRUCTURES,
-        versions: SEED_VERSIONS,
+        transactions: [],
+        cashRequests: [],
+        audit: [],
+        feeStructures: [],
+        versions: [],
         changeLog: [],
-        additionalCharges: SEED_ADDITIONAL_CHARGES,
+        additionalCharges: [],
         paymentModes: DEFAULT_PAYMENT_MODES,
         lateFeeRule: DEFAULT_LATE_FEE_RULE,
         concessionRule: DEFAULT_CONCESSION_RULE,
         entryFeePolicy: DEFAULT_ENTRY_FEE_POLICY,
         receiptSettings: DEFAULT_RECEIPT_SETTINGS,
-        receiptCounter: 1060,
-        gatewayConfig: SEED_GATEWAY_CONFIG,
-        bankAccounts: SEED_BANK_ACCOUNTS,
-        upiQrConfigs: SEED_UPI_QR_CONFIGS,
-        settlements: SEED_SETTLEMENTS,
-        reconciliationRecords: SEED_RECONCILIATION_RECORDS,
-        webhookEvents: SEED_WEBHOOK_EVENTS,
-      }
+        receiptCounter: 0,
+        gatewayConfig: null,
+        bankAccounts: [],
+        upiQrConfigs: [],
+        settlements: [],
+        reconciliationRecords: [],
+        webhookEvents: [],
+        concessions: [],
+        optionalHeadApplicability: {},
+      } as Record<string, any>
     }
     // v6 — STRUCT-SESSION: backfill academicYear on every persisted
     // structure (pre-session structures belong to the current session),
@@ -3896,6 +3913,55 @@ export const useFeeStore = create<FeeState>()(
       const st = persistedState as Record<string, any>
       if (Array.isArray(st.transactions) && !st.transactions.some((t: any) => t?.studentId === 'STU-58')) {
         return { ...st, transactions: [...STU58_SEED_TXNS, ...st.transactions] }
+      }
+      return st
+    }
+    // v15 — STABILIZATION seed purge: the fabricated financial-history seeds
+    // (receipts TXN001–020, cash requests PCR-*, structures FS-*, versions
+    // FSV-*, additional charges AC-*, settlements SET-*, recon records REC-*,
+    // webhook events WH-*, concessions CONC-*-SEED, bank accounts BA-*,
+    // UPI/QR configs, seeded optional-head opt-ins and the demo gateway
+    // config) never represented real school activity, yet they rendered as
+    // populated financial surfaces (Recent Payments, Additional Collections,
+    // Fee Structures, cash badge, audit trail). The canonical fee ledger is
+    // the DB (Fee + FeeTransaction + Payment); user-created rows in every
+    // list are ALWAYS kept — only known seed ids are stripped, plus the
+    // seeded opt-in student ids per head.
+    if (fromVersion < 15 && persistedState && typeof persistedState === 'object') {
+      const st = persistedState as Record<string, any>
+      const strip = (rows: unknown, ids: ReadonlySet<string>) =>
+        Array.isArray(rows) ? rows.filter((r: any) => !r || !r.id || !ids.has(r.id)) : rows
+      if (Array.isArray(st.transactions)) st.transactions = strip(st.transactions, SEED_FINANCIAL_ROW_IDS.transactions)
+      if (Array.isArray(st.cashRequests)) st.cashRequests = strip(st.cashRequests, SEED_FINANCIAL_ROW_IDS.cashRequests)
+      if (Array.isArray(st.audit)) st.audit = strip(st.audit, SEED_FINANCIAL_ROW_IDS.audit)
+      if (Array.isArray(st.feeStructures)) st.feeStructures = strip(st.feeStructures, SEED_FINANCIAL_ROW_IDS.feeStructures)
+      if (Array.isArray(st.versions)) st.versions = strip(st.versions, SEED_FINANCIAL_ROW_IDS.versions)
+      if (Array.isArray(st.additionalCharges)) st.additionalCharges = strip(st.additionalCharges, SEED_FINANCIAL_ROW_IDS.additionalCharges)
+      if (Array.isArray(st.settlements)) st.settlements = strip(st.settlements, SEED_FINANCIAL_ROW_IDS.settlements)
+      if (Array.isArray(st.reconciliationRecords)) st.reconciliationRecords = strip(st.reconciliationRecords, SEED_FINANCIAL_ROW_IDS.reconciliationRecords)
+      if (Array.isArray(st.webhookEvents)) st.webhookEvents = strip(st.webhookEvents, SEED_FINANCIAL_ROW_IDS.webhookEvents)
+      if (Array.isArray(st.concessions)) st.concessions = strip(st.concessions, SEED_FINANCIAL_ROW_IDS.concessions)
+      if (Array.isArray(st.bankAccounts)) st.bankAccounts = strip(st.bankAccounts, SEED_FINANCIAL_ROW_IDS.bankAccounts)
+      if (Array.isArray(st.upiQrConfigs)) st.upiQrConfigs = strip(st.upiQrConfigs, SEED_FINANCIAL_ROW_IDS.upiQrConfigs)
+      // Seeded gateway config (rzp_test_DEMO1234 "test_mode · healthy") —
+      // the school never connected it. Real connections survive only when
+      // the persisted row differs from the demo seed.
+      if (st.gatewayConfig && typeof st.gatewayConfig === 'object'
+          && (st.gatewayConfig as any).merchantId === SEED_GATEWAY_CONFIG.merchantId) {
+        st.gatewayConfig = null
+      }
+      // Seeded optional-head opt-ins: strip the seed roster's student ids
+      // per head; principal-approved opt-ins (post-seed writes) survive.
+      if (st.optionalHeadApplicability && typeof st.optionalHeadApplicability === 'object') {
+        const cleaned: Record<string, string[]> = {}
+        for (const [headId, ids] of Object.entries(st.optionalHeadApplicability as Record<string, unknown>)) {
+          const seedIds = SEED_OPTIONAL_HEAD_OPTINS_SNAPSHOT[headId]
+          const kept = Array.isArray(ids)
+            ? (ids as string[]).filter((sid) => !(seedIds && (seedIds as readonly string[]).includes(sid)))
+            : []
+          if (kept.length > 0) cleaned[headId] = kept
+        }
+        st.optionalHeadApplicability = cleaned
       }
       return st
     }

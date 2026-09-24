@@ -1,39 +1,50 @@
 'use client'
 
 /**
- * StudentMessagesModule — student ↔ teacher direct messages
- * (master-detail).
+ * StudentMessagesModule — the student's canonical server inbox
+ * (master-detail, read-only).
  *
- * Recipients are restricted to the student's class teacher + subject
- * teachers of their own class section (derived from the students-store
- * class record — never a school-wide directory). Sending appends a
- * persisted student message; the app NEVER fabricates teacher replies.
- * Unread is derived (last message from teacher + not seen since).
+ * STABILIZATION — every thread here is a REAL Message row from
+ * GET /api/messages?box=inbox (recipientId = the session user):
+ * principal reminders, teacher notices, school communications the
+ * staff actually sent. The former fabricated demo threads
+ * (Rohan/Kavita conversations persisted client-side in
+ * localStorage) are RETIRED — this module never invents content.
  *
- * LR-1 no-duplicate-title rule: NO giant "Messages" heading — the
+ * Compose: POST /api/messages is deliberately gated to staff roles
+ * (PRINCIPAL/MANAGEMENT/TEACHER) in this backend, so the student
+ * surface shows no composer — an honest read-only inbox. Opening a
+ * message marks it read (PATCH /api/messages, per-recipient).
+ *
+ * LR-1 no-duplicate-title rule: no giant "Messages" heading — the
  * sidebar + top bar already say where you are. One compact toolbar
- * (quiet context line + New message) sits directly above the mail-style
- * two-pane surface, and the content owns the rest of the space.
+ * above the mail-style two-pane surface.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, MessageCircle, Plus, Search, Send, X, Inbox,
+  ArrowLeft, Inbox, Mail, MailOpen, RefreshCw, Search,
 } from 'lucide-react'
 import { GlassCard, GradientAvatar } from '@/components/shared/ui'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime, formatTime, formatDate } from '@/lib/format'
-import { useDismissOnEscape } from '@/hooks/use-dismiss-on-escape'
-import { toast } from 'sonner'
-import {
-  useStudentMessagingStore, isConversationUnread, countUnreadConversations,
-  type StudentConversation,
-} from '@/lib/store/student-messaging-store'
+import { useServerInbox, type ServerInboxMessage } from '@/lib/store/server-inbox-store'
 import { useCanonicalStudent } from '../shared/canonical'
 
-/** Timestamp label for a message bubble — time today, date otherwise. */
+/** Sender role → friendly label for the thread header. */
+function roleLabel(role: string | null | undefined): string {
+  switch (role) {
+    case 'PRINCIPAL': return 'Principal'
+    case 'TEACHER': return 'Teacher'
+    case 'MANAGEMENT': return 'School Office'
+    case 'SUPER_ADMIN': return 'Platform'
+    default: return 'School'
+  }
+}
+
+/** Timestamp label for a message — time today, date otherwise. */
 function messageStamp(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
@@ -45,46 +56,46 @@ function messageStamp(iso: string): string {
   return sameDay ? formatTime(d) : formatDate(d)
 }
 
+/** First line of the body as the list preview. */
+function preview(body: string): string {
+  const line = body.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  return line.slice(0, 120)
+}
+
 export function StudentMessagesModule() {
-  const conversations = useStudentMessagingStore((s) => s.conversations)
-  const seenAt = useStudentMessagingStore((s) => s.seenAt)
-  const markConversationSeen = useStudentMessagingStore((s) => s.markConversationSeen)
+  const messages = useServerInbox((s) => s.messages)
+  const loading = useServerInbox((s) => s.loading)
+  const error = useServerInbox((s) => s.error)
+  const refresh = useServerInbox((s) => s.refresh)
 
   // Canonical identity — the context line renders the session's own class
-  // (server Student row); the retired STU-58 roster is not consulted.
+  // (server Student row); no client roster is consulted.
   const { student } = useCanonicalStudent()
 
   const [openId, setOpenId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [composing, setComposing] = useState(false)
 
-  const unread = countUnreadConversations(conversations, seenAt)
-  // Compose recipients: the client classes-store cannot resolve the
-  // canonical DB class id, so the compose roster stays empty for
-  // canonical logins (honest) — the seeded demo threads still render.
-  const contacts = useMemo(() => [] as { id: string; name: string; subject: string; role: string }[], [])
+  // Fresh inbox on mount (the panel hydrates it too — this catches
+  // messages that arrived while the student sat in another module).
+  useEffect(() => { void refresh() }, [refresh])
+
+  const unread = useMemo(() => (messages ?? []).filter((m) => !m.read).length, [messages])
 
   const sorted = useMemo(
-    () => [...conversations].sort((a, b) => (a.lastOn < b.lastOn ? 1 : -1)),
-    [conversations],
+    () => [...(messages ?? [])].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+    [messages],
   )
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return sorted
-    return sorted.filter((c) =>
-      c.teacherName.toLowerCase().includes(q) ||
-      c.subject.toLowerCase().includes(q) ||
-      (c.messages[c.messages.length - 1]?.body ?? '').toLowerCase().includes(q),
+    return sorted.filter((m) =>
+      (m.sender?.name ?? '').toLowerCase().includes(q) ||
+      m.subject.toLowerCase().includes(q) ||
+      m.body.toLowerCase().includes(q),
     )
   }, [sorted, query])
 
-  const active = conversations.find((c) => c.id === openId) ?? null
-
-  // Opening a thread flips the honest derived-read "seen" flag (re-fires
-  // when a new message lands while the thread is open).
-  useEffect(() => {
-    if (openId) markConversationSeen(openId)
-  }, [openId, markConversationSeen, active?.messages.length])
+  const active = (messages ?? []).find((m) => m.id === openId) ?? null
 
   return (
     <div className="space-y-3">
@@ -92,8 +103,8 @@ export function StudentMessagesModule() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="truncate text-xs text-muted-foreground">
           {student?.classLabel
-            ? `${student.classLabel} · class teacher & subject teachers`
-            : 'Direct messages with your teachers'}
+            ? `${student.classLabel} · school messages for you`
+            : 'Messages sent to you by the school'}
         </p>
         <div className="flex items-center gap-2">
           {unread > 0 && (
@@ -101,14 +112,15 @@ export function StudentMessagesModule() {
               {unread} unread
             </Badge>
           )}
-          <Button size="sm" className="h-8" onClick={() => setComposing(true)}>
-            <Plus className="h-4 w-4" /> New message
+          <Button size="sm" variant="outline" className="h-8" onClick={() => void refresh()} disabled={loading}>
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
+            {loading ? 'Checking…' : 'Refresh'}
           </Button>
         </div>
       </div>
 
       <GlassCard className="p-0 overflow-hidden flex h-[70vh] lg:h-[calc(100vh-13rem)] min-h-[28rem]">
-        {/* ── Conversation list (master) ── */}
+        {/* ── Message list (master) ── */}
         <div
           className={cn(
             'w-full lg:w-[330px] lg:min-w-[330px] lg:max-w-[330px] shrink-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col',
@@ -121,79 +133,44 @@ export function StudentMessagesModule() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search conversations"
-                aria-label="Search conversations"
+                placeholder="Search messages"
+                aria-label="Search messages"
                 className="w-full rounded-lg border border-border bg-background pl-8 pr-3 py-2 text-xs placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring/40"
               />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {filtered.length === 0 ? (
+            {loading && !messages ? (
+              <InboxSkeleton />
+            ) : error && !messages ? (
+              <EmptyMini text="Couldn't load your messages. Try the refresh button above." />
+            ) : filtered.length === 0 ? (
               <EmptyMini
                 text={
-                  conversations.length === 0
-                    ? 'No conversations yet — message your class teacher to get started.'
-                    : 'No conversations match your search.'
+                  (messages ?? []).length === 0
+                    ? 'No messages yet — school communications will appear here.'
+                    : 'No messages match your search.'
                 }
               />
             ) : (
-              filtered.map((c, i) => {
-                const isUnread = isConversationUnread(c, seenAt)
-                const last = c.messages[c.messages.length - 1]
-                const selected = openId === c.id
-                return (
-                  <motion.button
-                    key={c.id}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(i * 0.04, 0.2) }}
-                    onClick={() => setOpenId(c.id)}
-                    aria-current={selected ? 'true' : undefined}
-                    className={cn(
-                      'relative w-full flex items-start gap-3 px-3.5 py-3 text-left border-b border-border/40 transition-colors',
-                      selected ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
-                    )}
-                  >
-                    {/* Selection rail — a hairline accent on the open thread */}
-                    {selected && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-[3px] rounded-r-full bg-primary" aria-hidden />
-                    )}
-                    <GradientAvatar name={c.teacherName} size="sm" className="mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className={cn(
-                          'text-[13px] truncate flex-1',
-                          isUnread ? 'font-semibold' : 'font-medium text-foreground/85',
-                        )}>{c.teacherName}</p>
-                        {isUnread && (
-                          <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">{c.subject}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className={cn(
-                          'text-[10px] truncate flex-1',
-                          isUnread ? 'text-muted-foreground' : 'text-muted-foreground/70',
-                        )}>
-                          {last ? `${last.from === 'teacher' ? '' : 'You: '}${last.body}` : '—'}
-                        </p>
-                        <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
-                          {formatRelativeTime(c.lastOn)}
-                        </span>
-                      </div>
-                    </div>
-                  </motion.button>
-                )
-              })
+              filtered.map((m, i) => (
+                <MessageRow
+                  key={m.id}
+                  message={m}
+                  index={i}
+                  selected={openId === m.id}
+                  onOpen={() => setOpenId(m.id)}
+                />
+              ))
             )}
           </div>
         </div>
 
-        {/* ── Thread (detail) ── */}
+        {/* ── Message (detail) ── */}
         <div className={cn('flex-1 min-w-0 flex flex-col', !openId && 'hidden lg:flex')}>
           {active ? (
-            <ThreadView
-              conversation={active}
+            <MessageView
+              message={active}
               onBack={() => setOpenId(null)}
             />
           ) : (
@@ -201,276 +178,151 @@ export function StudentMessagesModule() {
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
                 <Inbox className="h-6 w-6" aria-hidden />
               </div>
-              <p className="text-sm font-medium">Select a conversation</p>
+              <p className="text-sm font-medium">Select a message</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-xs leading-relaxed">
-                Pick a thread from the list, or start a new message to your class teacher.
+                Pick a message from the list to read it in full.
               </p>
-              <Button variant="outline" size="sm" className="mt-4 h-8 gap-1.5 lg:hidden" onClick={() => setComposing(true)}>
-                <Plus className="h-3.5 w-3.5" aria-hidden /> New message
-              </Button>
             </div>
           )}
         </div>
       </GlassCard>
-
-      {/* New message dialog */}
-      {composing && (
-        <NewMessageDialog
-          contacts={contacts}
-          onClose={() => setComposing(false)}
-          onStarted={(id) => {
-            setComposing(false)
-            setOpenId(id)
-          }}
-        />
-      )}
     </div>
   )
 }
 
-// ─── Thread (detail pane) ───────────────────────────────────────────
+// ─── List row ───────────────────────────────────────────────────────
 
-function ThreadView({ conversation, onBack }: { conversation: StudentConversation; onBack: () => void }) {
-  const sendMessage = useStudentMessagingStore((s) => s.sendMessage)
-  const [draft, setDraft] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
+function MessageRow({ message, index, selected, onOpen }: {
+  message: ServerInboxMessage
+  index: number
+  selected: boolean
+  onOpen: () => void
+}) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.04, 0.2) }}
+      onClick={onOpen}
+      aria-current={selected ? 'true' : undefined}
+      className={cn(
+        'relative w-full flex items-start gap-3 px-3.5 py-3 text-left border-b border-border/40 transition-colors',
+        selected ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+      )}
+    >
+      {/* Selection rail — a hairline accent on the open message */}
+      {selected && (
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-[3px] rounded-r-full bg-primary" aria-hidden />
+      )}
+      <GradientAvatar name={message.sender?.name ?? 'School'} size="sm" className="mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className={cn(
+            'text-[13px] truncate flex-1',
+            !message.read ? 'font-semibold' : 'font-medium text-foreground/85',
+          )}>{message.sender?.name ?? 'School office'}</p>
+          {!message.read && (
+            <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
+          )}
+        </div>
+        <p className={cn(
+          'text-[11px] truncate mt-0.5',
+          !message.read ? 'text-foreground/80 font-medium' : 'text-muted-foreground',
+        )}>{message.subject}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <p className="text-[10px] truncate flex-1 text-muted-foreground/70">
+            {preview(message.body)}
+          </p>
+          <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
+            {formatRelativeTime(message.createdAt)}
+          </span>
+        </div>
+      </div>
+    </motion.button>
+  )
+}
 
-  // Auto-scroll to the newest message — deferred one rAF frame so the new
-  // message height is measured before scrolling (same fix as the principal
-  // messaging thread-view).
+// ─── Message detail ─────────────────────────────────────────────────
+
+function MessageView({ message, onBack }: { message: ServerInboxMessage; onBack: () => void }) {
+  const markRead = useServerInbox((s) => s.markRead)
+
+  // Opening a message acknowledges it (server-side per-recipient read
+  // state — re-fires safely if a new row replaces this one).
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-    })
-    return () => cancelAnimationFrame(id)
-  }, [conversation.id, conversation.messages.length])
-
-  const send = () => {
-    const body = draft.trim()
-    if (!body) return
-    const result = sendMessage(conversation.id, body)
-    if (result.ok) setDraft('')
-    else toast.error('Could not send message', { description: result.error })
-  }
+    if (!message.read) void markRead(message.id)
+  }, [message.id, message.read, markRead])
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* Thread header */}
+      {/* Message header */}
       <div className="shrink-0 flex items-center gap-3 px-3 sm:px-4 py-3 border-b border-border/60">
         <button
           onClick={onBack}
           className="lg:hidden -ml-1 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-          aria-label="Back to conversations"
+          aria-label="Back to messages"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <GradientAvatar name={conversation.teacherName} size="sm" />
+        <GradientAvatar name={message.sender?.name ?? 'School'} size="sm" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold truncate">{conversation.teacherName}</p>
+          <p className="text-sm font-semibold truncate">{message.sender?.name ?? 'School office'}</p>
           <p className="text-[11px] text-muted-foreground truncate">
-            {conversation.teacherSubject} · {conversation.subject}
+            {roleLabel(message.sender?.role)} · {messageStamp(message.createdAt)}
           </p>
         </div>
-        <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground shrink-0">
-          Teacher
+        <Badge
+          variant="secondary"
+          className={cn(
+            'text-[10px] shrink-0 gap-1',
+            message.read ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary',
+          )}
+        >
+          {message.read ? <MailOpen className="h-3 w-3" aria-hidden /> : <Mail className="h-3 w-3" aria-hidden />}
+          {message.read ? 'Read' : 'New'}
         </Badge>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 sm:px-4 py-4 space-y-3">
-        {conversation.messages.map((m) => (
-          <motion.div
-            key={m.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-            className={cn('flex', m.from === 'student' ? 'justify-end' : 'justify-start')}
-          >
-            <div
-              className={cn(
-                'max-w-[82%] sm:max-w-[70%] px-3.5 py-2.5 shadow-xs',
-                m.from === 'student'
-                  ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-md'
-                  : 'bg-muted/50 rounded-2xl rounded-bl-md',
-              )}
-            >
-              <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
-              <p
-                className={cn(
-                  'text-[10px] mt-1',
-                  m.from === 'student' ? 'text-primary-foreground/70' : 'text-muted-foreground/70',
-                )}
-              >
-                {m.from === 'student' ? 'You · ' : ''}{messageStamp(m.sentOn)}
-              </p>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Composer */}
-      <div className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-3 border-t border-border/60 bg-muted/20">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          placeholder={`Message ${conversation.teacherName.split(' ')[0]}…`}
-          aria-label={`Message ${conversation.teacherName}`}
-          className="flex-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-[13px] placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring/40"
-        />
-        <Button size="sm" onClick={send} disabled={!draft.trim()} aria-label="Send message">
-          <Send className="h-4 w-4" />
-          <span className="hidden sm:inline">Send</span>
-        </Button>
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 sm:px-6 py-5">
+        <p className="text-base font-semibold text-foreground mb-1">{message.subject}</p>
+        <p className="text-[11px] text-muted-foreground mb-4">
+          From {message.sender?.name ?? 'the school office'} ({roleLabel(message.sender?.role)}) · {formatDate(message.createdAt)} · {formatTime(message.createdAt)}
+        </p>
+        <div className="rounded-2xl border border-border/70 bg-card/40 p-4 sm:p-5">
+          <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words text-foreground/90">
+            {message.body}
+          </p>
+        </div>
       </div>
     </div>
   )
 }
 
-// ─── New message dialog ─────────────────────────────────────────────
+// ─── Loading skeleton + empty state ─────────────────────────────────
 
-function NewMessageDialog({
-  contacts,
-  onClose,
-  onStarted,
-}: {
-  contacts: { id: string; name: string; subject: string; role: string }[]
-  onClose: () => void
-  onStarted: (conversationId: string) => void
-}) {
-  const startConversation = useStudentMessagingStore((s) => s.startConversation)
-  const [recipientId, setRecipientId] = useState(contacts[0]?.id ?? '')
-  const [subject, setSubject] = useState('')
-  const [body, setBody] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  useDismissOnEscape(onClose)
-
-  const submit = () => {
-    const recipient = contacts.find((c) => c.id === recipientId)
-    if (!recipient) {
-      setError('Choose a recipient first.')
-      return
-    }
-    const result = startConversation({
-      teacherId: recipient.id,
-      teacherName: recipient.name,
-      teacherSubject: recipient.subject,
-      subject: subject.trim(),
-      body,
-    })
-    if (result.ok) {
-      toast.success('Message sent', { description: `${recipient.name} · ${subject.trim()}` })
-      onStarted(result.conversation.id)
-    } else {
-      setError(result.error)
-    }
-  }
-
+function InboxSkeleton() {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="New message"
-    >
-      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-premium-lg overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-3.5 border-b border-border/60">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">New message</h3>
-            <p className="text-xs text-muted-foreground truncate">
-              Your class teacher & subject teachers only
-            </p>
+    <div className="p-3 space-y-2" aria-label="Loading messages" role="status">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="flex items-start gap-3 px-1 py-2 animate-pulse">
+          <div className="h-8 w-8 shrink-0 rounded-full bg-muted/70" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-2/3 rounded bg-muted/70" />
+            <div className="h-2.5 w-1/2 rounded bg-muted/50" />
+            <div className="h-2 w-5/6 rounded bg-muted/40" />
           </div>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onClose} aria-label="Close new message dialog">
-            <X className="h-4 w-4" />
-          </Button>
         </div>
-        <div className="px-4 py-4 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
-          {/* Recipient picker — restricted to the student's class staff */}
-          <div role="radiogroup" aria-label="Recipient" className="space-y-1.5">
-            {contacts.map((c) => (
-              <button
-                key={c.id}
-                role="radio"
-                aria-checked={recipientId === c.id}
-                onClick={() => setRecipientId(c.id)}
-                className={cn(
-                  'w-full flex items-center gap-3 rounded-xl border p-2.5 text-left transition-colors',
-                  recipientId === c.id
-                    ? 'border-primary/40 bg-primary/5'
-                    : 'border-border bg-card/40 hover:bg-muted/30',
-                )}
-              >
-                <GradientAvatar name={c.name} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold truncate">{c.name}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{c.subject} · {c.role}</p>
-                </div>
-                <span
-                  className={cn(
-                    'h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center',
-                    recipientId === c.id ? 'border-primary' : 'border-border',
-                  )}
-                >
-                  {recipientId === c.id && <span className="h-2 w-2 rounded-full bg-primary" />}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div>
-            <label htmlFor="nm-subject" className="text-xs font-medium text-muted-foreground">
-              Subject
-            </label>
-            <input
-              id="nm-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g. Doubt in today's homework"
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/40"
-            />
-          </div>
-          <div>
-            <label htmlFor="nm-body" className="text-xs font-medium text-muted-foreground">
-              Message
-            </label>
-            <textarea
-              id="nm-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your message…"
-              rows={4}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring/40"
-            />
-          </div>
-          {error && (
-            <p className="text-xs text-destructive" role="alert">{error}</p>
-          )}
-        </div>
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border/60 bg-muted/20">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={submit} disabled={!subject.trim() || !body.trim() || !recipientId}>
-            <Send className="h-4 w-4" /> Send
-          </Button>
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
-
-// ─── Shared empty state ─────────────────────────────────────────────
 
 function EmptyMini({ text }: { text: string }) {
   return (
     <div className="py-12 text-center px-6">
       <div className="mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
-        <MessageCircle className="h-4.5 w-4.5" aria-hidden />
+        <Mail className="h-4.5 w-4.5" aria-hidden />
       </div>
       <p className="text-xs text-muted-foreground max-w-[16rem] mx-auto leading-relaxed">{text}</p>
     </div>

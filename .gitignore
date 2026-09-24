@@ -62,3 +62,6 @@ tmp-scripts/
 agent-ctx/
 keepalive.mjs
 keepalive.pid
+
+# scratch debug scripts
+scripts/tmp/

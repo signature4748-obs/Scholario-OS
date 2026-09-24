@@ -12,7 +12,7 @@ import { useUnreadStudentNotificationCount } from './modules/notifications'
 import { StudentSubscriptionActivation } from './StudentSubscriptionActivation'
 import { getStudentSubscription } from '@/lib/platform-subscription'
 import { useStudentsStore } from '@/lib/store/students-store'
-import { useStudentMessagingStore, countUnreadConversations } from '@/lib/store/student-messaging-store'
+import { useServerInbox } from '@/lib/store/server-inbox-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
 import { useMyServerTransport, useCanonicalStudent } from './modules/shared/canonical'
@@ -204,11 +204,18 @@ export function StudentPanel() {
   useEffect(() => {
     void hydrateNotifPrefsFromServer()
     void useServerNotices.getState().refresh()
+    // STABILIZATION — the canonical inbox (/api/messages) hydrates on
+    // mount too: the Messages badge + bell "New messages" slice read
+    // REAL Message rows, never fabricated demo threads.
+    void useServerInbox.getState().refresh()
   }, [])
 
   // Live nav badges — ALL derived from real stores/data, zero constants.
   const unreadNotifs = useUnreadStudentNotificationCount()
-  const unreadMsgs = useStudentMessagingStore((s) => countUnreadConversations(s.conversations, s.seenAt))
+  // Messages badge — canonical server inbox unread count (null while
+  // loading → no badge, never a fabricated count).
+  const inbox = useServerInbox((s) => s.messages)
+  const unreadMsgs = inbox ? inbox.filter((m) => !m.read).length : 0
   // Session display name (User.name) for the subscription gate + shell.
   const me = useCurrentUser((s) => s.me)
   const studentName = me?.name || 'Student'

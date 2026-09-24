@@ -917,3 +917,38 @@ export const SEED_AUDIT: AuditRecord[] = [
   { id: 'AUD-004', action: 'fee_structure.changed', actor: 'Principal', timestamp: '2026-04-01T10:00:00Z', entityId: 'FS-C12', entityType: 'fee_structure', description: '2026-27 fee policy published — tuition ₹250/₹300/₹400 bands, session exam fees ₹700/₹900/₹1,000, transport ₹500/mo opt-in' },
   { id: 'AUD-005', action: 'receipt.reprinted', actor: 'Principal', timestamp: '2026-08-20T15:20:00Z', entityId: 'TXN007', entityType: 'receipt', description: 'Receipt RCP-2026-1048 reprinted (no second transaction created)' },
 ]
+
+// ─── STABILIZATION: seed-row ID registry (v15 purge) ─────────────────
+//
+// The fabricated financial-history seeds are RETIRED as store initial
+// state (see fee-store.ts): a production fee module must never present
+// receipts, cash submissions, structures, obligations, settlements or
+// concessions that no one actually created. The canonical fee ledger
+// lives in the DB (Fee + FeeTransaction + Payment rows via
+// /api/fees + /api/fees/transactions); this client store remains the
+// configuration layer only (payment modes, late-fee/concession/entry
+// policy, receipt settings).
+//
+// This registry is the ONE list the store's v15 migration filters
+// persisted namespaces against — user-created rows are ALWAYS kept.
+export const SEED_FINANCIAL_ROW_IDS = {
+  transactions: new Set(SEED_TRANSACTIONS.map((t) => t.id)),
+  cashRequests: new Set(SEED_CASH_REQUESTS.map((r) => r.id)),
+  audit: new Set(SEED_AUDIT.map((a) => a.id)),
+  feeStructures: new Set(FEE_STRUCTURES.map((s) => s.id)),
+  versions: new Set(SEED_VERSIONS.map((v) => v.id)),
+  additionalCharges: new Set(SEED_ADDITIONAL_CHARGES.map((c) => c.id)),
+  settlements: new Set(SEED_SETTLEMENTS.map((s) => s.id)),
+  reconciliationRecords: new Set(SEED_RECONCILIATION_RECORDS.map((r) => r.id)),
+  webhookEvents: new Set(SEED_WEBHOOK_EVENTS.map((w) => w.id)),
+  concessions: new Set(SEED_CONCESSIONS.map((c) => c.id)),
+  bankAccounts: new Set(SEED_BANK_ACCOUNTS.map((b) => b.id)),
+  upiQrConfigs: new Set(SEED_UPI_QR_CONFIGS.map((q) => q.id)),
+} as const
+
+/** Seed optional-head opt-ins (headId → studentIds) — used by the v15
+ *  migration to strip seeded opt-ins from the persisted applicability
+ *  map while keeping principal-approved ones. */
+export const SEED_OPTIONAL_HEAD_OPTINS_SNAPSHOT: Readonly<Record<string, readonly string[]>> = Object.freeze(
+  Object.fromEntries(Object.entries(SEED_OPTIONAL_HEAD_OPTINS).map(([k, v]) => [k, Object.freeze([...v])])),
+)

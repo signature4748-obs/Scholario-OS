@@ -36,7 +36,6 @@ import { useEffect } from 'react'
 import {
   CalendarCheck, IndianRupee, UserPlus, FileText,
 } from 'lucide-react'
-import { feeAnalytics } from '@/lib/mock/finance'
 import { formatINR } from '@/lib/format'
 import { useDuesSummaryStore, selectLiveDues } from '@/lib/store/dues-summary-store'
 import { useFocusStore } from '@/lib/store/focus-store'
@@ -50,9 +49,13 @@ export interface KpiRowProps {
 }
 
 export function KpiRow({ onNavigate }: KpiRowProps) {
-  // Round-7 — server-truth dues for the Pending Fees card (mock fallback
-  // until the sync lands; honest lineage via the live chip).
+  // Round-7 — server-truth dues for the Pending Fees card. STABILIZATION:
+  // the former mock fallback (feeAnalytics.pendingDues — ₹1.84 Cr from
+  // the retired demo universe) is GONE. While the ledger loads (or if
+  // the sync fails) the card shows an honest loading/unavailable state
+  // — fake money must never render as if it were real.
   const dues = useDuesSummaryStore(selectLiveDues)
+  const duesStatus = useDuesSummaryStore((s) => s.status)
   const ensureDues = useDuesSummaryStore((s) => s.ensure)
   useEffect(() => { void ensureDues() }, [ensureDues])
 
@@ -89,10 +92,12 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
     onNavigate('fees')
   }
 
-  const feesValue = dues ? dues.totalOutstanding : feeAnalytics.pendingDues
+  const feesValue = dues ? formatINR(dues.totalOutstanding, true) : duesStatus === 'error' ? '—' : '…'
   const feesSub = dues
     ? `${dues.defaulterCount} student${dues.defaulterCount === 1 ? '' : 's'} · ${dues.overdueCount > 0 ? `${dues.overdueCount} past due` : 'all current'}`
-    : `${feeAnalytics.pendingCount} students`
+    : duesStatus === 'error'
+      ? 'fee ledger unavailable — retry from Fee Management'
+      : 'loading live ledger…'
 
   return (
     <SummaryCardGrid columns={4}>
@@ -108,14 +113,12 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
       />
       <SummaryCard
         label="Pending Fees"
-        value={formatINR(feesValue, true)}
+        value={feesValue}
         sub={feesSub}
         chip={dues ? <LiveChip /> : undefined}
         tone="rose"
         icon={<IndianRupee className="h-4 w-4" />}
         delay={0.04}
-        sparkline={dues ? undefined : feeAnalytics.monthly.map((d) => d.pending)}
-        trend="up"
         onClick={onNavigate ? (dues && dues.defaulterCount > 0 ? openOutreach : () => onNavigate('fees')) : undefined}
       />
       <SummaryCard

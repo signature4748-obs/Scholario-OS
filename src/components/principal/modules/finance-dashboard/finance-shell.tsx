@@ -27,7 +27,8 @@ import { cn } from '@/lib/utils'
 import { PageTransition } from '@/components/shared/ui'
 import { SegmentedTabs, type SegmentedTab } from '../shared/segmented-tabs'
 import { useFocusStore } from '@/lib/store/focus-store'
-import { useFinanceData, useFinanceAttention, FINANCE_PERIODS } from '@/lib/store/finance-store'
+import { useFinanceData, useFinanceAttention, type FinanceFeeCounts, FINANCE_PERIODS } from '@/lib/store/finance-store'
+import { useCanonicalFees, isPendingTxnStatus } from '../fees/use-canonical-fees'
 import { downloadCSVFile, safeFileName } from '@/lib/download-file'
 import { toCsv } from '@/lib/csv'
 import { FinanceOverviewSection } from './finance-overview'
@@ -49,7 +50,16 @@ export function FinanceShell({ onModuleNavigate }: { onModuleNavigate?: (moduleK
   // Escape closes the period-selector dropdown (click-catcher already does).
   useDismissOnEscape(() => setPeriodOpen(false), periodOpen)
   const data = useFinanceData(periodId)
-  const attention = useFinanceAttention()
+  // STABILIZATION — the tab badge's fee side counts the CANONICAL
+  // verification queue (/api/fees/transactions), not the retired client
+  // seed universe.
+  const canonical = useCanonicalFees()
+  const feeCounts: FinanceFeeCounts = {
+    pendingVerification: (canonical.data?.txns ?? []).filter((t) => isPendingTxnStatus(t.status)).length,
+    overdueStudents: canonical.data?.totals.overdueStudents ?? 0,
+    outstanding: canonical.data?.totals.outstanding ?? 0,
+  }
+  const attention = useFinanceAttention(feeCounts)
 
   // Deep-link: "open Finance Settings" requests (fee-settings link card,
   // attention-feed CTA from other modules) land directly on the Settings

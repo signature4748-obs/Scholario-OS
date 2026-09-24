@@ -242,12 +242,19 @@ export async function GET(_req: NextRequest) {
         // stable "Fee Reminder" subject prefix). Surfaces as the dashboard
         // banner so the outreach loop closes where the student actually
         // looks, not only in Messages/bell.
+        //
+        // STABILIZATION — the banner is a LIVE surface, so it must never
+        // quote the frozen send-time body: the ₹5,400 sent 19 Sep went
+        // stale the moment the ₹2,000 payment landed 20 Sep. Only the
+        // message METADATA (who/when) is surfaced here; every financial
+        // particular is re-derived from the canonical Fee rows above at
+        // read time. The historical body stays in the Messages archive.
         const reminderRow = outstanding > 0
           ? await db.message.findFirst({
               where: { recipientId: user.id, subject: { startsWith: 'Fee Reminder' } },
               orderBy: { createdAt: 'desc' },
               select: {
-                subject: true, body: true, createdAt: true,
+                subject: true, createdAt: true,
                 sender: { select: { name: true, role: true } },
               },
             })
@@ -255,9 +262,14 @@ export async function GET(_req: NextRequest) {
         const reminder = reminderRow
           ? {
               subject: reminderRow.subject,
-              excerpt: (reminderRow.body.split('\n').find((l) => /outstanding balance/i.test(l)) ?? '')
-                .replace(/^This is a gentle reminder from .*? that /i, '')
-                .slice(0, 140),
+              // Live ledger snapshot — itemised with CURRENT balances, so
+              // the banner can never disagree with the fees module.
+              excerpt: due.length
+                ? `Current dues: ${due
+                    .slice(0, 3)
+                    .map((r) => `${r.title} — ₹${Math.round(r.amount - r.paid).toLocaleString('en-IN')}`)
+                    .join(' · ')}${due.length > 3 ? ' · +' + (due.length - 3) + ' more' : ''}`
+                : '',
               createdAt: reminderRow.createdAt.toISOString(),
               senderName: reminderRow.sender?.name ?? 'the school office',
             }

@@ -447,7 +447,24 @@ export function FeesStructuresSection({ data, onNavigate }: { data: ReturnType<t
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {visibleStructures.length === 0 && (
           <div className="rounded-xl border border-dashed bg-card/50 p-8 text-center md:col-span-2 xl:col-span-3">
-            <p className="text-xs text-muted-foreground">No structures in this view.</p>
+            {/* STABILIZATION — honest configuration-needed state. The
+                seeded per-class structures (tuition/transport bands)
+                never represented real school configuration and were
+                retired; what you see is the school's ACTUAL state:
+                no class fee structure configured. Billing continues to
+                work — fee items are created per student (Student
+                Accounts / Collect Fee) and land in the canonical
+                ledger. Configure a structure here only if you want
+                structure-based billing. */}
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
+              <Layers className="h-5 w-5" aria-hidden />
+            </div>
+            <p className="text-sm font-semibold text-foreground">No fee structures configured</p>
+            <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
+              This school has no class fee structure yet. Fee billing still works — fee items are
+              created per student (see Student Accounts) and tracked in the school&apos;s ledger.
+              {' '}Create a structure above to configure per-class fee heads for structure-based billing.
+            </p>
           </div>
         )}
         {visibleStructures.map((f, i) => {

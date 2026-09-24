@@ -30,8 +30,8 @@ interface NotificationsDropdownProps {
   liveAlertCount: number
   totalBadgeCount: number
   unreadCount: number
-  /** 'live' = real DB feed, 'demo' = static demo data */
-  source?: 'live' | 'demo'
+  /** 'live' = real DB feed synced (even if empty), 'loading' = syncing, 'error' = fetch failed */
+  source?: 'live' | 'loading' | 'error'
   /** Optional banner content rendered above the list (e.g. platform-scope note) */
   children?: React.ReactNode
 }
@@ -53,7 +53,7 @@ export function NotificationsDropdown({
   liveAlertCount,
   totalBadgeCount,
   unreadCount,
-  source = 'demo',
+  source = 'loading',
   children,
 }: NotificationsDropdownProps) {
   const [filter, setFilter] = useState<FeedFilter>('all')
@@ -138,18 +138,35 @@ export function NotificationsDropdown({
             <div className="flex items-center gap-1.5">
               <Bell className="h-4 w-4 text-primary" />
               <span className="font-bold text-xs text-foreground">Notifications</span>
-              {/* Feed source indicator */}
+              {/* Feed source indicator — STABILIZATION: no 'Demo' state;
+                  the feed is either synced (even when empty), syncing, or
+                  offline. Fabricated notifications are never shown. */}
               <span
                 className={cn(
                   'inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide',
                   source === 'live'
                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                    : source === 'error'
+                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
                 )}
-                title={source === 'live' ? 'Synced from database' : 'Showing demo data'}
+                title={
+                  source === 'live'
+                    ? 'Synced from database'
+                    : source === 'error'
+                      ? 'Feed unavailable — will retry automatically'
+                      : 'Syncing your feed…'
+                }
               >
-                <span className={cn('h-1.5 w-1.5 rounded-full', source === 'live' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500')} />
-                {source === 'live' ? 'Live' : 'Demo'}
+                <span className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  source === 'live'
+                    ? 'bg-emerald-500 animate-pulse'
+                    : source === 'error'
+                      ? 'bg-rose-500'
+                      : 'bg-amber-500 animate-pulse',
+                )} />
+                {source === 'live' ? 'Live' : source === 'error' ? 'Offline' : 'Syncing'}
               </span>
               {totalBadgeCount > 0 && (
                 <span className={cn(
@@ -236,10 +253,22 @@ export function NotificationsDropdown({
                   <Bell className="h-4 w-4 text-primary" />
                 </div>
                 <p className="text-xs font-bold text-foreground">
-                  {filter === 'unread' ? 'Nothing unread' : filter === 'messages' ? 'No messages' : filter === 'announcements' ? 'No notices' : 'You&rsquo;re all caught up'}
+                  {source === 'error'
+                    ? 'Feed unavailable'
+                    : filter === 'unread'
+                      ? 'Nothing unread'
+                      : filter === 'messages'
+                        ? 'No messages'
+                        : filter === 'announcements'
+                          ? 'No notices'
+                          : 'You&rsquo;re all caught up'}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {filter === 'all' ? 'No new notifications right now.' : 'Try a different filter above.'}
+                  {source === 'error'
+                    ? 'The notification feed could not load — it will retry automatically.'
+                    : filter === 'all'
+                      ? 'No new notifications right now.'
+                      : 'Try a different filter above.'}
                 </p>
               </div>
             ) : visibleList.map((n) => {

@@ -63,7 +63,10 @@ export interface DashboardFees {
   nearestDue: string | null
   items: { title: string; balance: number; dueDate: string | null }[]
   /** Round-7 — the principal's latest fee-reminder message (Outreach
-   *  workflow writes it); null when none exists or dues are settled. */
+   *  workflow writes it); null when none exists or dues are settled.
+   *  `excerpt` is a LIVE itemisation of current dues re-derived from the
+   *  Fee rows at read time — the frozen send-time body is never quoted
+   *  on this live surface (it stays in the Messages archive). */
   reminder: {
     subject: string
     excerpt: string
