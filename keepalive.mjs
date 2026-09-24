@@ -58,16 +58,37 @@ function spawnDetached(cmd, args, cwd = ROOT) {
   log(`spawned detached: ${cmd} ${args.join(' ')} (pid ${child.pid}) in ${cwd}`)
 }
 
-async function killTree(patterns) {
-  for (const p of patterns) await sh(`pkill -f "${p}" || true`)
+/** Kill by pattern, but ONLY processes whose working directory matches.
+ *  (The next-dev wrapper and the event-stream wrapper share the cmdline
+ *  `bun run dev` — cwd is the only distinguishing fact.) */
+async function killTree(patterns, cwd) {
+  for (const p of patterns) {
+    if (cwd) {
+      await sh(`
+        for pid in $(pgrep -f "${p}" 2>/dev/null); do
+          [ "$(readlink /proc/$pid/cwd 2>/dev/null)" = "${cwd}" ] && kill $pid 2>/dev/null || true
+        done`)
+    } else {
+      await sh(`pkill -f "${p}" || true`)
+    }
+  }
 }
 
 /** Wait until the port is free (escalating to kill -9). */
-async function waitForFreePort(port, patterns, timeoutMs = 20_000) {
+async function waitForFreePort(port, patterns, cwd, timeoutMs = 20_000) {
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
     if (!(await listening(port))) return true
-    await sh(patterns.map((p) => `pkill -9 -f "${p}" || true`).join('; '))
+    for (const p of patterns) {
+      if (cwd) {
+        await sh(`
+          for pid in $(pgrep -f "${p}" 2>/dev/null); do
+            [ "$(readlink /proc/$pid/cwd 2>/dev/null)" = "${cwd}" ] && kill -9 $pid 2>/dev/null || true
+          done`)
+      } else {
+        await sh(`pkill -9 -f "${p}" || true`)
+      }
+    }
     await new Promise((r) => setTimeout(r, 1500))
   }
   return !(await listening(port))
@@ -109,9 +130,9 @@ async function ensureService(name, port, path, patterns, spawnArgs, cwd, st) {
     return
   }
   st.downProbes = 0
-  log(`:${port} is DOWN — killing the previous ${name} tree and respawning`)
-  await killTree(patterns)
-  const freed = await waitForFreePort(port, patterns)
+  log(`:${port} is DOWN — killing the previous ${name} tree (cwd ${cwd}) and respawning`)
+  await killTree(patterns, cwd)
+  const freed = await waitForFreePort(port, patterns, cwd)
   if (!freed) {
     log(`:${port} still held after force-kill — will retry next cycle`)
     return
@@ -125,12 +146,13 @@ async function tick() {
     await ensureService(
       'next dev', 3000, '/api/app-version',
       ['bun run dev', 'next dev -p 3000', 'tee dev.log'],
-      ['bun', 'run', 'dev'], ROOT, state.next,
+      ['--cwd', ROOT, 'bun', 'run', 'dev'], ROOT, state.next,
     )
     await ensureService(
       'event-stream', 3003, '/?EIO=4&transport=polling',
-      ['mini-services/event-stream'],
-      ['bun', 'run', 'dev'], `${ROOT}/mini-services/event-stream`, state.stream,
+      ['bun run dev', 'bun --hot index.ts'],
+      ['--cwd', `${ROOT}/mini-services/event-stream`, 'bun', 'run', 'dev'],
+      `${ROOT}/mini-services/event-stream`, state.stream,
     )
   } catch (e) {
     log(`tick error: ${e && e.message}`)
