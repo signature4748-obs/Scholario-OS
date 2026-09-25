@@ -162,8 +162,7 @@ const STATE_META: Record<
 
 // ── the SBS document palette (fixed hex — the sheet is a paper, never an
 //    app-theme surface; dark mode cannot leak into a printed document) ──
-const MAROON = '#8F1D1D' // primary identity — frame, grid, emphasis
-const MAROON_DEEP = '#6E1414' // display headings
+const MAROON = '#8F1D1D' // primary identity — frame, grid, headings, labels
 const PEACH = '#FCE7D2' // table-header / total-row fill
 const PEACH_DEEP = '#F7DCC2' // MM|OBT sub-header fill
 const CYAN = '#E3EFF5' // student-information + summary panels
@@ -247,6 +246,52 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
     })
   }
 
+  // summary strip cells — only the configured sections, rendered as
+  // EQUAL widths of ONE printed band (never a lone wrapped cell)
+  const summaryCells: { key: string; value: React.ReactNode; label: string }[] = [
+    {
+      key: 'max',
+      value: s.grandMax > 0 ? s.grandMax : '—',
+      label: `Total Maximum Marks${toDate ? ' (to date)' : ''}`,
+    },
+    {
+      key: 'obtained',
+      value: s.grandMax > 0 ? s.grandTotal : '—',
+      label: `Total Obtained${toDate ? ' (to date)' : ''}`,
+    },
+  ]
+  if (data.config.showPercentage) {
+    summaryCells.push({
+      key: 'pct',
+      value: s.percentage != null ? `${s.percentage}%` : '—',
+      label: `Percentage${toDate ? ' (to date)' : ''}`,
+    })
+  }
+  if (showGrade) {
+    summaryCells.push({ key: 'grade', value: s.grade ?? '—', label: 'Overall Grade' })
+  }
+
+  // footer signature columns — only the configured signatories, each an
+  // identical structure (value zone → line → label → printed name) so the
+  // three columns stay perfectly balanced
+  const signCells: { key: string; label: string; value: React.ReactNode; name?: string | null }[] = [
+    {
+      key: 'issue',
+      label: 'Date of Issue',
+      value: s.declaredAt ? (
+        formatDate(s.declaredAt)
+      ) : (
+        <span style={{ color: `${INK_SOFT}b0` }}>—</span>
+      ),
+    },
+  ]
+  if (data.config.showClassTeacherSign) {
+    signCells.push({ key: 'teacher', label: 'Class Teacher', value: null, name: data.classTeacherName })
+  }
+  if (data.config.showPrincipalSign) {
+    signCells.push({ key: 'principal', label: 'Principal / Authorised Signatory', value: null, name: data.principalName })
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -260,6 +305,10 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
             document prints (and paginates) as a real A4 sheet with exact
             colors — no React chrome, no clipping. */}
         <style>{`
+          /* typography contract — EVERY table cell of the document is
+             vertically centred, on screen and in print */
+          #student-marksheet-print table th,
+          #student-marksheet-print table td { vertical-align: middle; }
           @media print {
             @page { size: A4 portrait; margin: 8mm; }
             body > *:not(.marksheet-viewer-dialog) { display: none !important; }
@@ -340,30 +389,34 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
           >
             {/* ══ outer + inner MAROON double frame (SBS §4) ══ */}
             <div style={{ border: `3px solid ${MAROON}`, padding: '4px', background: '#fff' }}>
-              <div style={{ border: `1.5px solid ${MAROON}`, padding: '14px 16px 12px' }}>
+              <div style={{ border: `1.5px solid ${MAROON}`, padding: '15px 18px 13px' }}>
 
-                {/* 1 · school identity — crest directly in the header,
-                       large maroon school name, formal address block */}
-                <header className="flex items-center gap-3">
-                  {data.school.logoUrl ? (
-                    <img
-                      src={data.school.logoUrl}
-                      alt={`${data.school.name} crest`}
-                      className="h-[64px] w-auto max-w-[86px] shrink-0 object-contain sm:h-[78px]"
-                    />
-                  ) : (
-                    <span
-                      className="flex h-[64px] w-[64px] shrink-0 items-center justify-center text-[19px] font-bold sm:h-[78px] sm:w-[78px] sm:text-[22px]"
-                      style={{ border: `1.5px solid ${MAROON}`, color: MAROON_DEEP }}
-                      aria-hidden="true"
-                    >
-                      {monogram}
-                    </span>
-                  )}
+                {/* 1 · school identity — the crest sits in a FIXED square
+                       box (never stretched, perfectly aligned) mirrored by
+                       an identical invisible box on the right, so the name
+                       block is TRULY optically centred at every width */}
+                <header className="flex items-center gap-3 sm:gap-4">
+                  <span className="flex h-[62px] w-[62px] shrink-0 items-center justify-center sm:h-[76px] sm:w-[76px]">
+                    {data.school.logoUrl ? (
+                      <img
+                        src={data.school.logoUrl}
+                        alt={`${data.school.name} crest`}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    ) : (
+                      <span
+                        className="flex h-full w-full items-center justify-center text-[19px] font-bold sm:text-[22px]"
+                        style={{ border: `1.5px solid ${MAROON}`, color: MAROON }}
+                        aria-hidden="true"
+                      >
+                        {monogram}
+                      </span>
+                    )}
+                  </span>
                   <div className="min-w-0 flex-1 text-center">
                     <h2
                       className="text-balance text-[19px] font-bold uppercase leading-[1.12] tracking-[0.045em] sm:text-[25px]"
-                      style={{ color: MAROON_DEEP }}
+                      style={{ color: MAROON }}
                     >
                       {data.school.name}
                     </h2>
@@ -380,8 +433,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                       </p>
                     )}
                   </div>
-                  {/* spacer — keeps the name block optically centred like the SBS letterhead */}
-                  <span className="hidden w-[78px] shrink-0 sm:block" aria-hidden="true" />
+                  <span className="h-[62px] w-[62px] shrink-0 sm:h-[76px] sm:w-[76px]" aria-hidden="true" />
                 </header>
 
                 {/* 2 · report title badge (SBS §8) */}
@@ -434,7 +486,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                   ).map(([label, value, span2]) => (
                     <div
                       key={label}
-                      className={cn('px-2.5 py-[7px]', span2 && 'col-span-2')}
+                      className={cn('px-3 py-[8px]', span2 && 'col-span-2')}
                       style={{ background: CYAN }}
                     >
                       <p
@@ -477,7 +529,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                         className="px-2 py-[7px] text-left font-bold uppercase tracking-[0.08em]"
                         style={{
                           border: `1px solid ${MAROON}`,
-                          color: MAROON_DEEP,
+                          color: MAROON,
                           fontSize: compact ? '8.5px' : '10px',
                         }}
                       >
@@ -488,17 +540,25 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                           scope="col"
                           key={e.examId}
                           colSpan={2}
-                          className="break-words px-1 py-[6px] font-bold uppercase leading-[1.25] tracking-[0.05em]"
-                          style={{ border: `1px solid ${MAROON}`, color: MAROON_DEEP }}
+                          className="break-words px-1.5 py-[5px] font-bold uppercase leading-[1.25] tracking-[0.05em]"
+                          style={{ border: `1px solid ${MAROON}`, color: MAROON }}
                         >
                           {e.examName}
+                          {e.examDate && (
+                            <span
+                              className="mt-[2px] block text-[6.5px] font-semibold normal-case tracking-[0.02em] sm:text-[7px]"
+                              style={{ color: INK_SOFT }}
+                            >
+                              {formatDate(e.examDate)}
+                            </span>
+                          )}
                         </th>
                       ))}
                       <th
                         scope="col"
                         rowSpan={2}
-                        className="break-words px-1 py-[6px] font-bold uppercase leading-[1.25] tracking-[0.05em]"
-                        style={{ border: `1px solid ${MAROON}`, color: MAROON_DEEP }}
+                        className="break-words px-1.5 py-[6px] font-bold uppercase leading-[1.25] tracking-[0.05em]"
+                        style={{ border: `1px solid ${MAROON}`, color: MAROON }}
                       >
                         Grand Total{toDate && <span className="block text-[6.5px] font-medium normal-case tracking-normal" style={{ color: INK_SOFT }}>(to date)</span>}
                       </th>
@@ -506,8 +566,8 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                         <th
                           scope="col"
                           rowSpan={2}
-                          className="px-1 py-[6px] font-bold uppercase tracking-[0.05em]"
-                          style={{ border: `1px solid ${MAROON}`, color: MAROON_DEEP }}
+                          className="px-1.5 py-[6px] font-bold uppercase tracking-[0.05em]"
+                          style={{ border: `1px solid ${MAROON}`, color: MAROON }}
                         >
                           Grade
                         </th>
@@ -520,14 +580,14 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                           <th
                             scope="col"
                             className="py-[3px] font-bold uppercase"
-                            style={{ border: `1px solid ${MAROON}`, color: MAROON_DEEP, fontSize: compact ? '7px' : '8px', letterSpacing: '0.06em' }}
+                            style={{ border: `1px solid ${MAROON}`, color: MAROON, fontSize: compact ? '7px' : '8px', letterSpacing: '0.06em' }}
                           >
                             MM
                           </th>
                           <th
                             scope="col"
                             className="py-[3px] font-bold uppercase"
-                            style={{ border: `1px solid ${MAROON}`, color: MAROON_DEEP, fontSize: compact ? '7px' : '8px', letterSpacing: '0.06em' }}
+                            style={{ border: `1px solid ${MAROON}`, color: MAROON, fontSize: compact ? '7px' : '8px', letterSpacing: '0.06em' }}
                           >
                             OBT
                           </th>
@@ -540,9 +600,9 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                       <tr key={row.subjectId}>
                         <th
                           scope="row"
-                          className="break-words px-2 py-[5px] text-left font-semibold leading-snug"
+                          className="break-words px-2.5 py-[5px] text-left font-semibold leading-snug"
                           style={{
-                            border: `1px solid ${MAROON}b3`,
+                            border: `1px solid ${MAROON}`,
                             fontSize: compact ? '8.5px' : '10px',
                           }}
                         >
@@ -554,9 +614,9 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                             <td
                               className="tabular-nums"
                               style={{
-                                border: `1px solid ${MAROON}b3`,
+                                border: `1px solid ${MAROON}`,
                                 color: INK_SOFT,
-                                padding: compact ? '4px 1px' : '5px 2px',
+                                padding: compact ? '4.5px 2px' : '6px 3px',
                                 fontSize: compact ? '8px' : '9.5px',
                               }}
                             >
@@ -567,8 +627,8 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                             <td
                               className="tabular-nums"
                               style={{
-                                border: `1px solid ${MAROON}b3`,
-                                padding: compact ? '4px 1px' : '5px 2px',
+                                border: `1px solid ${MAROON}`,
+                                padding: compact ? '4.5px 2px' : '6px 3px',
                                 fontSize: compact ? '8.5px' : '10px',
                               }}
                             >
@@ -583,8 +643,8 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                         <td
                           className="tabular-nums"
                           style={{
-                            border: `1px solid ${MAROON}b3`,
-                            padding: compact ? '4px 1px' : '5px 2px',
+                            border: `1px solid ${MAROON}`,
+                            padding: compact ? '4.5px 2px' : '6px 3px',
                             fontSize: compact ? '8.5px' : '10px',
                           }}
                         >
@@ -601,8 +661,8 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                           <td
                             className="font-bold"
                             style={{
-                              border: `1px solid ${MAROON}b3`,
-                              padding: compact ? '4px 1px' : '5px 2px',
+                              border: `1px solid ${MAROON}`,
+                              padding: compact ? '4.5px 2px' : '6px 3px',
                               fontSize: compact ? '8.5px' : '10px',
                             }}
                           >
@@ -616,7 +676,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                       <th
                         scope="row"
                         className="px-2 py-[6px] text-left uppercase tracking-[0.08em]"
-                        style={{ border: `1.5px solid ${MAROON}`, color: MAROON_DEEP, fontSize: compact ? '8.5px' : '10px' }}
+                        style={{ border: `1.5px solid ${MAROON}`, color: MAROON, fontSize: compact ? '8.5px' : '10px' }}
                       >
                         Total
                       </th>
@@ -624,13 +684,13 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                         <Fragment key={e.examId}>
                           <td
                             className="tabular-nums"
-                            style={{ border: `1.5px solid ${MAROON}`, color: MAROON_DEEP, padding: compact ? '5px 1px' : '6px 2px', fontSize: compact ? '8px' : '9.5px' }}
+                            style={{ border: `1.5px solid ${MAROON}`, color: MAROON, padding: compact ? '5.5px 2px' : '7px 3px', fontSize: compact ? '8px' : '9.5px' }}
                           >
                             {e.subjectsSubmitted > 0 && e.maxTotal > 0 ? e.maxTotal : <span style={{ color: `${INK_SOFT}99` }}>—</span>}
                           </td>
                           <td
                             className="tabular-nums"
-                            style={{ border: `1.5px solid ${MAROON}`, color: MAROON_DEEP, padding: compact ? '5px 1px' : '6px 2px', fontSize: compact ? '8.5px' : '10px' }}
+                            style={{ border: `1.5px solid ${MAROON}`, color: MAROON, padding: compact ? '5.5px 2px' : '7px 3px', fontSize: compact ? '8.5px' : '10px' }}
                           >
                             {e.subjectsSubmitted > 0 ? (
                               <>
@@ -653,7 +713,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                       ))}
                       <td
                         className="tabular-nums"
-                        style={{ border: `1.5px solid ${MAROON}`, color: MAROON_DEEP, padding: compact ? '5px 1px' : '6px 2px', fontSize: compact ? '8.5px' : '10px' }}
+                        style={{ border: `1.5px solid ${MAROON}`, color: MAROON, padding: compact ? '5.5px 2px' : '7px 3px', fontSize: compact ? '8.5px' : '10px' }}
                       >
                         {s.grandMax > 0 ? (
                           <>
@@ -666,7 +726,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                       </td>
                       {showGrade && (
                         <td
-                          style={{ border: `1.5px solid ${MAROON}`, color: MAROON_DEEP, padding: compact ? '5px 1px' : '6px 2px', fontSize: compact ? '8.5px' : '10px' }}
+                          style={{ border: `1.5px solid ${MAROON}`, color: MAROON, padding: compact ? '5.5px 2px' : '7px 3px', fontSize: compact ? '8.5px' : '10px' }}
                         >
                           {s.grade ?? <span style={{ color: `${INK_SOFT}99` }}>—</span>}
                         </td>
@@ -676,65 +736,49 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                 </table>
 
                 {/* 6 · summary strip — TOTAL MAXIMUM MARKS / TOTAL OBTAINED /
-                       PERCENTAGE (+ grade) in the SBS bordered-cyan band */}
+                       PERCENTAGE (+ grade): ONE printed report-card band of
+                       equal-width sections, values centred above labels */}
                 <div
                   className="mt-3 grid"
                   style={{
                     border: `1px solid ${MAROON}`,
-                    gridTemplateColumns: `repeat(${showGrade ? 4 : 3}, minmax(0, 1fr))`,
+                    gridTemplateColumns: `repeat(${summaryCells.length}, minmax(0, 1fr))`,
                   }}
                 >
-                  <div className="px-2 py-2 text-center" style={{ background: CYAN, borderRight: `1px solid ${MAROON}80` }}>
-                    <p className="text-[14px] font-bold leading-none tabular-nums sm:text-[16px]" style={{ color: MAROON_DEEP }}>
-                      {s.grandMax > 0 ? s.grandMax : '—'}
-                    </p>
-                    <p className="mt-1 text-[7px] font-bold uppercase tracking-[0.14em] sm:text-[7.5px]" style={{ color: INK }}>
-                      Total Maximum Marks{toDate ? ' (to date)' : ''}
-                    </p>
-                  </div>
-                  <div className="px-2 py-2 text-center" style={{ background: CYAN, borderRight: `1px solid ${MAROON}80` }}>
-                    <p className="text-[14px] font-bold leading-none tabular-nums sm:text-[16px]" style={{ color: MAROON_DEEP }}>
-                      {s.grandMax > 0 ? s.grandTotal : '—'}
-                    </p>
-                    <p className="mt-1 text-[7px] font-bold uppercase tracking-[0.14em] sm:text-[7.5px]" style={{ color: INK }}>
-                      Total Obtained{toDate ? ' (to date)' : ''}
-                    </p>
-                  </div>
-                  {data.config.showPercentage && (
-                    <div className="px-2 py-2 text-center" style={{ background: CYAN, borderRight: showGrade ? `1px solid ${MAROON}80` : 'none' }}>
-                      <p className="text-[14px] font-bold leading-none tabular-nums sm:text-[16px]" style={{ color: MAROON_DEEP }}>
-                        {s.percentage != null ? `${s.percentage}%` : '—'}
+                  {summaryCells.map((cell, i) => (
+                    <div
+                      key={cell.key}
+                      className="flex flex-col items-center justify-center px-2 py-2.5 text-center"
+                      style={{
+                        background: CYAN,
+                        borderRight: i < summaryCells.length - 1 ? `1px solid ${MAROON}` : 'none',
+                      }}
+                    >
+                      <p className="text-[15px] font-bold leading-none tabular-nums sm:text-[17px]" style={{ color: MAROON }}>
+                        {cell.value}
                       </p>
-                      <p className="mt-1 text-[7px] font-bold uppercase tracking-[0.14em] sm:text-[7.5px]" style={{ color: INK }}>
-                        Percentage{toDate ? ' (to date)' : ''}
+                      <p className="mt-1.5 text-[7px] font-bold uppercase tracking-[0.14em] sm:text-[7.5px]" style={{ color: INK }}>
+                        {cell.label}
                       </p>
                     </div>
-                  )}
-                  {showGrade && (
-                    <div className="px-2 py-2 text-center" style={{ background: CYAN }}>
-                      <p className="text-[14px] font-bold leading-none sm:text-[16px]" style={{ color: MAROON_DEEP }}>
-                        {s.grade ?? '—'}
-                      </p>
-                      <p className="mt-1 text-[7px] font-bold uppercase tracking-[0.14em] sm:text-[7.5px]" style={{ color: INK }}>
-                        Overall Grade
-                      </p>
-                    </div>
-                  )}
+                  ))}
                 </div>
 
-                {/* honesty banners (§16/§17) — they PRINT with the document
-                    so a progressive result can never be mistaken for final */}
+                {/* honesty banner (§16/§17) — compact and always secondary
+                    to the document; it PRINTS with the document so a
+                    progressive result is never mistaken for final; the count
+                    is dynamic, never hardcoded */}
                 {s.partial && (
                   <p
-                    className="mt-2.5 px-3 py-[7px] text-center text-[8.5px] font-semibold leading-relaxed sm:text-[9.5px]"
+                    className="mt-2.5 px-3 py-[5px] text-center text-[8px] font-semibold leading-relaxed sm:text-[8.5px]"
                     style={{ border: '1px solid #B4530966', background: '#FFF8EE', color: '#92400E' }}
                   >
-                    {s.pendingExams > 0 &&
-                      `${s.pendingExams} examination${s.pendingExams === 1 ? '' : 's'} pending`}
-                    {s.pendingExams > 0 && s.pendingCells > 0 && ' · '}
+                    {s.pendingExams > 0
+                      ? `${s.pendingExams} examination${s.pendingExams === 1 ? '' : 's'} pending`
+                      : 'No examinations pending'}
                     {s.pendingCells > 0 &&
-                      `${s.pendingCells} subject mark${s.pendingCells === 1 ? '' : 's'} awaited`}
-                    {' '}— totals shown are to date; this document updates automatically as marks are submitted. Unentered marks appear as “—”, never as zero.
+                      ` · ${s.pendingCells} subject mark${s.pendingCells === 1 ? '' : 's'} awaited`}
+                    {' '}— totals to date; updates automatically as marks are submitted (unentered marks show “—”, never zero).
                   </p>
                 )}
                 {s.state === 'NOT_STARTED' && (
@@ -748,7 +792,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                 {s.state === 'FINALIZED' && (
                   <p
                     className="mt-2.5 px-3 py-[7px] text-center text-[8.5px] font-semibold sm:text-[9.5px]"
-                    style={{ border: `1px solid ${MAROON}66`, background: PEACH, color: MAROON_DEEP }}
+                    style={{ border: `1px solid ${MAROON}66`, background: PEACH, color: MAROON }}
                   >
                     Official result{data.summary.declaredAt ? ` · declared ${formatDate(data.summary.declaredAt)}` : ''}
                     {data.summary.outcome ? ` · ${data.summary.outcome}` : ''}
@@ -763,7 +807,7 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                       <p
                         className="text-[9px] font-bold uppercase tracking-[0.18em] sm:text-[10px]"
-                        style={{ color: MAROON_DEEP }}
+                        style={{ color: MAROON }}
                       >
                         Co-Scholastic Area
                       </p>
@@ -772,20 +816,24 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                       </p>
                     </div>
                     <div
-                      className="mt-1 grid"
+                      className="mt-1.5 grid"
                       style={{
                         border: `1px solid ${MAROON}`,
                         background: MAROON,
                         gap: '1px',
-                        gridTemplateColumns: `repeat(${Math.min(coScholastic.length, 4)}, minmax(0, 1fr))`,
+                        gridTemplateColumns: `repeat(${coScholastic.length}, minmax(0, 1fr))`,
                       }}
                     >
                       {coScholastic.map((area) => (
-                        <div key={area} className="px-1.5 py-[7px] text-center" style={{ background: '#fff' }}>
+                        <div
+                          key={area}
+                          className="flex flex-col items-center justify-center px-1.5 py-2 text-center"
+                          style={{ background: '#fff' }}
+                        >
                           <p className="break-words text-[8px] font-semibold uppercase leading-tight tracking-[0.06em] sm:text-[8.5px]">
                             {area}
                           </p>
-                          <p className="mt-[3px] text-[11px] font-bold" style={{ color: `${INK_SOFT}99` }}>
+                          <p className="mt-1 text-[11px] font-bold" style={{ color: `${INK_SOFT}b0` }}>
                             —
                           </p>
                         </div>
@@ -798,25 +846,28 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                        configured scheme (fallback clearly labelled) */}
                 {showGrade && (
                   <div
-                    className="mt-3 flex"
-                    style={{ border: `1px solid ${MAROON}` }}
+                    className="mt-3 grid"
+                    style={{
+                      border: `1px solid ${MAROON}`,
+                      gridTemplateColumns: `repeat(${data.gradeScale.rows.length}, minmax(0, 1fr))`,
+                    }}
                     role="group"
                     aria-label="Grading scale"
                   >
                     {data.gradeScale.rows.map((g, i) => (
                       <div
                         key={g.grade}
-                        className="flex-1 px-0.5 py-[6px] text-center"
+                        className="flex flex-col items-center justify-center px-0.5 py-[6px] text-center"
                         style={{
-                          borderRight: i < data.gradeScale.rows.length - 1 ? `1px solid ${MAROON}80` : 'none',
-                          background: `${PEACH}a6`,
+                          borderRight: i < data.gradeScale.rows.length - 1 ? `1px solid ${MAROON}` : 'none',
+                          background: `${PEACH}b3`,
                         }}
                       >
-                        <p className="text-[7px] font-semibold tabular-nums leading-none sm:text-[7.5px]" style={{ color: INK_SOFT }}>
+                        <p className="text-[7px] font-semibold tabular-nums leading-none sm:text-[7.5px]" style={{ color: INK }}>
                           {Math.round(g.minPct)}
                           {g.maxPct >= 100 ? '+' : `–${Math.floor(g.maxPct)}`}
                         </p>
-                        <p className="mt-[3px] text-[10px] font-bold leading-none sm:text-[11px]" style={{ color: MAROON_DEEP }}>
+                        <p className="mt-[3px] text-[10px] font-bold leading-none sm:text-[11px]" style={{ color: MAROON }}>
                           {g.grade}
                         </p>
                       </div>
@@ -831,65 +882,68 @@ export function StudentMarksheetViewer({ data, open, onOpenChange }: Props) {
                     className="mt-3 grid"
                     style={{
                       border: `1px solid ${MAROON}`,
-                      gridTemplateColumns: `repeat(${infoCells.length}, minmax(0, 1fr))`,
+                      /* intelligently proportional — prose (Remark) gets the
+                         room, numeric cells stay compact */
+                      gridTemplateColumns:
+                        infoCells.length === 3
+                          ? '1.5fr 1.15fr 0.95fr'
+                          : infoCells.length === 2
+                            ? '1.4fr 1fr'
+                            : '1fr',
                     }}
                   >
                     {infoCells.map((cell, i) => (
                       <div
                         key={cell.label}
-                        className="px-2.5 py-[7px]"
+                        className="px-3 py-[8px]"
                         style={{
-                          borderRight: i < infoCells.length - 1 ? `1px solid ${MAROON}80` : 'none',
+                          borderRight: i < infoCells.length - 1 ? `1px solid ${MAROON}` : 'none',
                           background: '#fff',
                         }}
                       >
                         <p
                           className="text-[7.5px] font-bold uppercase tracking-[0.16em] sm:text-[8px]"
-                          style={{ color: MAROON_DEEP }}
+                          style={{ color: MAROON }}
                         >
                           {cell.label} :
                         </p>
-                        <p className="mt-[3px] break-words text-[9px] leading-snug sm:text-[10px]">{cell.value}</p>
+                        <p className="mt-[3px] break-words text-[9px] leading-snug tabular-nums sm:text-[10px]">{cell.value}</p>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* 10 · signatures — Date of Issue · Class Teacher · Principal */}
-                <div className="mt-7 grid gap-3 text-center" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-                  <div>
-                    <p className="text-[9.5px] font-semibold tabular-nums sm:text-[10.5px]">
-                      {s.declaredAt ? formatDate(s.declaredAt) : <span style={{ color: `${INK_SOFT}99` }}>—</span>}
-                    </p>
-                    <div className="mx-auto mt-1 h-px w-full max-w-[7.5rem]" style={{ background: `${INK}80` }} aria-hidden="true" />
-                    <p className="mt-1 text-[8px] font-bold uppercase tracking-[0.14em] sm:text-[8.5px]" style={{ color: INK_SOFT }}>
-                      Date of Issue
-                    </p>
-                  </div>
-                  {data.config.showClassTeacherSign && (
-                    <div>
-                      <div className="h-[15px]" aria-hidden="true" />
-                      <div className="mx-auto mt-1 h-px w-full max-w-[7.5rem]" style={{ background: `${INK}80` }} aria-hidden="true" />
-                      <p className="mt-1 text-[8px] font-bold uppercase tracking-[0.14em] sm:text-[8.5px]" style={{ color: INK_SOFT }}>
-                        Class Teacher
+                {/* 10 · signatures — Date of Issue · Class Teacher ·
+                       Principal: equal columns of IDENTICAL structure —
+                       value zone → signature line → label → printed name */}
+                <div
+                  className="mt-7 grid gap-3 text-center"
+                  style={{ gridTemplateColumns: `repeat(${signCells.length}, minmax(0, 1fr))` }}
+                >
+                  {signCells.map((cell) => (
+                    <div key={cell.key} className="flex flex-col items-center">
+                      {/* value zone — the date sits on the line; blank space
+                          to sign for the signatories */}
+                      <p className="flex h-[15px] items-end justify-center text-[9.5px] font-semibold tabular-nums sm:text-[10.5px]">
+                        {cell.value ?? ''}
                       </p>
-                      {data.classTeacherName && (
-                        <p className="text-[8px] font-semibold sm:text-[8.5px]">{data.classTeacherName}</p>
-                      )}
-                    </div>
-                  )}
-                  {data.config.showPrincipalSign && (
-                    <div>
-                      <div className="h-[15px]" aria-hidden="true" />
-                      <div className="mx-auto mt-1 h-px w-full max-w-[7.5rem]" style={{ background: `${INK}80` }} aria-hidden="true" />
-                      <p className="mt-1 text-[8px] font-bold uppercase tracking-[0.14em] sm:text-[8.5px]" style={{ color: INK_SOFT }}>
-                        Principal / Authorised Signatory
+                      <div
+                        className="mx-auto mt-1 h-px w-full max-w-[7.5rem]"
+                        style={{ background: `${INK}99` }}
+                        aria-hidden="true"
+                      />
+                      <p
+                        className="mt-1.5 text-[8px] font-bold uppercase tracking-[0.14em] sm:text-[8.5px]"
+                        style={{ color: INK_SOFT }}
+                      >
+                        {cell.label}
                       </p>
-                      {data.principalName && (
-                        <p className="text-[8px] font-semibold sm:text-[8.5px]">{data.principalName}</p>
-                      )}
+                      {/* name zone — printed centred beneath the line */}
+                      <p className="mt-[3px] text-[8px] font-semibold leading-tight sm:text-[8.5px]">
+                        {cell.name ?? '\u00A0'}
+                      </p>
                     </div>
-                  )}
+                  ))}
                 </div>
 
                 {/* 11 · provenance footer */}

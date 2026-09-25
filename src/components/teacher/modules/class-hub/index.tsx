@@ -441,7 +441,6 @@ function ClassHubLoaded({
         <AttendanceReportTab
           cls={active}
           report={detail.data?.attendanceReport ?? null}
-          onNavigate={onNavigate}
           onOpenProfile={setProfileStudentId}
         />
       )}

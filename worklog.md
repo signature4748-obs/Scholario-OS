@@ -2769,3 +2769,37 @@ Stage Summary:
 - Schema change: `ReportCardConfig.coScholasticAreas` (JSON string[]). Demo school seeded with areas + crest; another school with no config hides the section cleanly and falls back to a monogram.
 - Critical print lesson (for every future dialog-print surface): Tailwind v4 uses the standalone `translate` property — always reset `translate/rotate/scale`, and prefer display:none + in-flow static printing over visibility+absolute.
 - Remaining/known: co-scholastic GRADES render "—" until a canonical co-scholastic marks source exists (honest by design); Mid-Term/UT2/Final have no ExamMark rows yet (legacy Result-model data) so they correctly show "—" — marksheet fills automatically as marks are entered.
+
+---
+Task ID: 3
+Agent: Z.ai Code (main orchestrator)
+Task: FINAL UI POLISH — (1) simplify My Class → Attendance to a read-only overview dominated by the "Attendance by student" table; (2) visual-quality refinement of the SBS marksheet (no redesign, no logic changes).
+
+Work Log:
+- PART 1 — REWROTE `src/components/teacher/modules/class-hub/attendance-report-tab.tsx` as the simple read-only page: compact "Attendance Overview" header (class · students · last 30 days · read-only + "N of M school days marked" meta) → ONE very small summary strip → "Attendance by student" as the PRIMARY section (unchanged canonical table: Student | Attendance | Present | Absent | Late | Leave | Status, roll/lowest sort, row click → canonical profile, mobile stacked list).
+  * Summary strip = Overall (rate %) | Present | Absent | Late | On Leave in a single `grid-cols-2 sm:grid-cols-5` row — the FOUR metrics NEVER leave a lone wrapped card on tablet/desktop (verified: 5 cells, 1 distinct row at 768px); mobile = overall full-width + clean 2×2 metrics.
+  * REMOVED per spec: the large "Attendance Report" hero, the "Mark in Class Attendance" action (also removed from the empty state — hint text only), the "Most recent attendance" / "Excellent attendance" / "Needs attention" cards. Dropped the now-unused `onNavigate` prop + caller update in `class-hub/index.tsx`.
+  * NO second attendance dataset: still reads the ONE detail payload (canonical CLASS+DATE+STUDENT records); Class Attendance module untouched in the sidebar; one-line provenance footer retained. Table max-height raised to `calc(100dvh-15rem)` so it occupies most of the page.
+- PART 2 — VISUAL POLISH of `src/components/teacher/modules/shared/student-marksheet-viewer.tsx` (same payload contract, zero business-logic changes):
+  * Palette: deleted MAROON_DEEP #6E1414 — all headings/labels/TOTAL text now the spec maroon #8F1D1D; all table/strip separators solidified (removed `b3`/`80` alpha) → crisp full-strength maroon borders everywhere; paper verified `rgb(255,255,255)` pure white.
+  * Typography: scoped CSS `#student-marksheet-print table th/td { vertical-align: middle }` (screen + print); consistent cell padding (body `6px 3px`, TOTAL `7px 3px`, compact variants); subject names left, everything else centered.
+  * School header: crest now in a FIXED 62/76px square box (never stretched) mirrored by an identical invisible right box → name/address/badge truly optically centered at every width (replaces the hidden sm-only spacer that skewed mobile).
+  * Marks table: exam headers now include the exam DATE (small centered line under each dynamic exam name — e.g. "PERIODIC ASSESSMENT 1 / 16 Sept 2026"); px-1.5 padding so no text touches borders; TOTAL row peach + 1.5px maroon.
+  * Summary strip: rebuilt from a `summaryCells` array — equal widths for exactly the configured sections (also FIXES a latent bug where showPercentage=false + grade=true left an empty 4th grid column); values centered above labels, flex-centered.
+  * Pending banner: compact one-liner, dynamic count ("N examinations pending" / "No examinations pending" · "N subject marks awaited").
+  * Co-scholastic: equal columns for ALL configured areas (removed the Math.min(·,4) cap that could orphan wrapped cells over the maroon gap-grid); grades centered "—".
+  * Grade scale: flex → `repeat(n, 1fr)` grid, solid separators, range-over-grade centered cells.
+  * Remark/Attendance/Rank: intelligently proportional columns (1.5fr/1.15fr/0.95fr for 3), maroon labels, tabular values.
+  * Footer: rebuilt from a `signCells` array — Date of Issue + configured signatories, each column identical structure (value zone h-15px → equal signature line → label → centered printed name / nbsp), so all columns stay balanced at any config.
+- QA (lint ✓ 0 errors, tsc ✓ 0 errors, dev.log clean, console clean, page errors none):
+  * Attendance E2E (agent-browser, rohan.mehta): 1440px — compact header + ONE-row 5-cell summary (95% · 91 · 5 · 4 · 0) + dominant 11-student table, VLM 6/6 checks PASS, no hero/action/duplicate cards; 768px — programmatic: 5 cells / 1 row; 390px — overall full-width + 2×2 metrics + stacked roster (VLM PASS); 320px — zero overflow.
+  * Marksheet E2E (Aarav Sharma 9-A, 4 dynamic exams): top half VLM 9.8/10 (pure white paper, double maroon frame, centered header, MM|OBT table, 4-section summary strip); bottom half VLM 10/10 (co-scholastic 4 equal cells, 7-cell grade scale, proportional info row, balanced 3-column signatures with names centered, compact dynamic "3 examinations pending" banner); programmatic — paperBg rgb(255,255,255), frameBorder rgb(143,29,29), cellVAligns ["middle"], examHeaders all carry dates; 390px — doc keeps 660px proportions in scroll viewport, no page overflow (VLM 9/10).
+  * Print PDF (`.qa/polish-marksheet-print.pdf`): single page, full document incl. exam dates, exact colors, no app chrome, nothing clipped — VLM print fidelity 10/10.
+  * Responsive sweep 320/390/768/1024/1440: body scrollWidth = viewport at every width.
+
+Stage Summary:
+- My Class → Attendance is now the simple read-only overview the spec asked for: small header + ONE-row summary (four metrics never orphan-wrapped) + the student table as the dominant content; marking stays exclusively in the global Class Attendance module over the same canonical records.
+- The marksheet is visually a premium printed report card: pure #FFFFFF paper, crisp #8F1D1D maroon everywhere, vertically-centered table cells, dated exam headers, equal-width summary/grade-scale/co-scholastic strips, proportional info row, balanced signature footer — with dynamic data flow, honesty rules and print mechanics fully untouched.
+- Fixed latent bugs along the way: summary-strip empty-column when showPercentage=false; co-scholastic orphan cells when >4 areas; school header off-center on mobile.
+- QA artifacts: `.qa/polish-attendance-1440.png`, `.qa/polish-attendance-390.png`, `.qa/polish-marksheet-print.pdf`, `.qa/polish-print-page-1.png`.
+- Known-remaining (unchanged from Task 2): no live FINALIZED exam yet; co-scholastic grades honest "—" until a canonical source exists; grade-scale fallback labelled "(school default)" when the school table is empty.
