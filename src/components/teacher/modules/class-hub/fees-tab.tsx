@@ -1,0 +1,476 @@
+'use client'
+
+/**
+ * class-hub/fees-tab — the GRADE-X FEE WORKSPACE inside My Class (spec
+ * §17–§19). This is NOT a new fee system: it renders the SAME canonical
+ * payload the Fees & Payments module uses (GET /api/teacher/fee-collection),
+ * scoped to the class-teacher's selected class. The Class Teacher
+ * immediately understands: billed / verified collected / awaiting
+ * verification / outstanding / overdue, then each student's fee standing,
+ * with the two-stage collection workflow (collect → Principal verifies →
+ * receipt) through the SAME CollectFeeDialog, StudentLedgerSheet and
+ * receipt viewer. No payment record is ever duplicated (§18).
+ */
+
+import { useMemo, useState } from 'react'
+import {
+  AlertTriangle, ArrowLeftRight, BadgeCheck, Banknote, CalendarDays, ChevronLeft,
+  ChevronRight, Clock3, Receipt, Search, Wallet,
+} from 'lucide-react'
+import { GradientAvatar } from '@/components/shared/ui'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import { formatINR } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
+import { methodLabel, sourceLabel, sourceStory, txnDate, txnStatusMeta } from '@/components/shared/fee-collection/txn-meta'
+import { useFeeCollection } from '../fee-collection/hooks'
+import type { FeeTxn } from '../fee-collection/types'
+import { CollectFeeDialog } from '../fee-collection/collect-dialog'
+import { StudentLedgerSheet } from '../fee-collection/student-ledger'
+import { TeacherStudentProfileSheet } from '../shared/student-profile-sheet'
+import { SectionCard } from '../shared/section-card'
+import { HubEmptyState, HubModuleSkeleton, HubSectionError, HubStatCards, type HubStat } from '../shared/hub-stat-cards'
+
+type StatusFilter = 'all' | 'pending' | 'verified' | 'rejected'
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'pending', label: 'Awaiting verification' },
+  { key: 'verified', label: 'Verified' },
+  { key: 'rejected', label: 'Rejected' },
+]
+
+export function FeesTab({ classId }: { classId: string }) {
+  const { data, loading, error, reload, month, changeMonth, collect } = useFeeCollection()
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [methodFilter, setMethodFilter] = useState<string>('ALL')
+  const [search, setSearch] = useState('')
+  const [collectOpen, setCollectOpen] = useState(false)
+  const [collectStudent, setCollectStudent] = useState<string | undefined>(undefined)
+  const [ledgerStudentId, setLedgerStudentId] = useState<string | null>(null)
+  const [profileStudentId, setProfileStudentId] = useState<string | null>(null)
+  const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
+  const [receiptOpen, setReceiptOpen] = useState(false)
+
+  const klass = useMemo(
+    () => data?.classes.find((c) => c.classId === classId) ?? null,
+    [data, classId],
+  )
+  const students = klass?.students ?? []
+  const studentById = useMemo(() => new Map(students.map((s) => [s.id, s])), [students])
+
+  /** Fee-standing list: outstanding first, then by amount (§17). */
+  const standing = useMemo(() => {
+    const rows = [...students]
+    rows.sort((a, b) => {
+      const ao = a.ledger?.outstanding ?? 0
+      const bo = b.ledger?.outstanding ?? 0
+      const aOver = a.ledger?.status === 'OVERDUE'
+      const bOver = b.ledger?.status === 'OVERDUE'
+      if (aOver !== bOver) return aOver ? -1 : 1
+      if (ao !== bo) return bo - ao
+      return (a.rollNo ?? '').localeCompare(b.rollNo ?? '')
+    })
+    return rows
+  }, [students])
+
+  const filteredTxns = useMemo(() => {
+    let rows = klass?.transactions ?? []
+    if (statusFilter === 'pending') rows = rows.filter((t) => t.status === 'UNDER_VERIFICATION')
+    else if (statusFilter === 'verified') rows = rows.filter((t) => t.status === 'SUCCESS')
+    else if (statusFilter === 'rejected') rows = rows.filter((t) => t.status === 'REJECTED')
+    if (methodFilter !== 'ALL') rows = rows.filter((t) => t.method === methodFilter)
+    const q = search.trim().toLowerCase()
+    if (q) {
+      rows = rows.filter((t) =>
+        (t.studentName ?? '').toLowerCase().includes(q) ||
+        (t.feeHeadName ?? '').toLowerCase().includes(q) ||
+        (t.receiptNo ?? '').toLowerCase().includes(q))
+    }
+    return rows
+  }, [klass, statusFilter, methodFilter, search])
+
+  const hasActiveFilter = statusFilter !== 'all' || methodFilter !== 'ALL' || search.trim() !== ''
+
+  if (loading) return <HubModuleSkeleton />
+  if (error) return <HubSectionError message={error} onRetry={reload} />
+  if (!klass) {
+    return (
+      <HubEmptyState
+        icon={Wallet}
+        title="No fee records for this class"
+        hint="Fee ledgers appear once fee structures are assigned to this class's students."
+      />
+    )
+  }
+
+  const s = klass.summary
+  const collectedPct = s.totalBilled > 0 ? Math.round((s.collected / s.totalBilled) * 100) : 0
+
+  const stats: HubStat[] = [
+    {
+      key: 'billed',
+      label: 'Total billed',
+      value: formatINR(s.totalBilled, true),
+      icon: Banknote,
+      tone: 'slate',
+      context: `${klass.studentCount} students`,
+    },
+    {
+      key: 'collected',
+      label: 'Verified collected',
+      value: formatINR(s.collected, true),
+      icon: BadgeCheck,
+      tone: 'emerald',
+      context: `${collectedPct}% of billed`,
+    },
+    {
+      key: 'awaiting',
+      label: 'Awaiting verification',
+      value: formatINR(s.awaitingVerificationAmount, true),
+      icon: Clock3,
+      tone: s.awaitingVerificationCount > 0 ? 'amber' : 'slate',
+      context:
+        s.awaitingVerificationCount > 0
+          ? `${s.awaitingVerificationCount} collection${s.awaitingVerificationCount === 1 ? '' : 's'} pending`
+          : 'All collections verified',
+    },
+    {
+      key: 'outstanding',
+      label: 'Outstanding',
+      value: formatINR(s.outstanding, true),
+      icon: ArrowLeftRight,
+      tone: s.outstanding > 0 ? 'rose' : 'emerald',
+      context: `${s.overdueStudents} overdue · ${s.fullyPaid} fully paid`,
+    },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* collect action + month activity */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+        <Button
+          size="sm"
+          className="h-9 w-full gap-1.5 lg:w-auto"
+          onClick={() => { setCollectStudent(undefined); setCollectOpen(true) }}
+        >
+          <Wallet className="h-3.5 w-3.5" aria-hidden="true" /> Collect Fee
+        </Button>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 lg:justify-end">
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeMonth(-1)} aria-label="Previous month">
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <p className="flex min-w-[9rem] items-center justify-center gap-1.5 text-sm font-semibold">
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              {klass.month.label}
+            </p>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeMonth(1)} aria-label="Next month">
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="text-muted-foreground">
+              Verified{' '}
+              <strong className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                {formatINR(klass.month.verifiedAmount, true)}
+              </strong>{' '}
+              <span className="text-muted-foreground/70">{klass.month.verifiedCount} payment{klass.month.verifiedCount === 1 ? '' : 's'}</span>
+            </span>
+            <span className="text-muted-foreground">
+              Awaiting{' '}
+              <strong className="font-semibold tabular-nums text-amber-700 dark:text-amber-400">
+                {formatINR(klass.month.pendingAmount, true)}
+              </strong>{' '}
+              <span className="text-muted-foreground/70">{klass.month.pendingCount} payment{klass.month.pendingCount === 1 ? '' : 's'}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* CLASS FEE PICTURE (§17) */}
+      <HubStatCards
+        stats={stats}
+        className="grid-cols-2 md:grid-cols-4"
+      />
+
+      {/* STUDENT FEE STATUS (§17) */}
+      <SectionCard
+        icon={Wallet}
+        title="Student Fee Status"
+        subtitle={`${standing.filter((x) => (x.ledger?.outstanding ?? 0) > 0).length} of ${students.length} students have outstanding fees`}
+        contentClassName=""
+      >
+        <div className="max-h-[26rem] overflow-y-auto divide-y divide-border/50">
+          {standing.map((st) => {
+            const l = st.ledger
+            const outstanding = l?.outstanding ?? 0
+            const awaiting = l?.awaitingVerification ?? 0
+            return (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => setLedgerStudentId(st.id)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
+              >
+                <GradientAvatar name={st.name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {st.name}
+                    <span className="ml-1.5 text-[11px] font-semibold text-muted-foreground">#{st.rollNo ?? '—'}</span>
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {l == null || l.items.length === 0
+                      ? 'No fees billed'
+                      : `${l.items.length} fee item${l.items.length === 1 ? '' : 's'} · ${formatINR(l.totalBilled, true)} billed`}
+                    {awaiting > 0 && (
+                      <span className="ml-1.5 font-medium text-amber-600 dark:text-amber-400">
+                        {formatINR(awaiting, true)} awaiting verification
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {outstanding > 0 ? (
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2.5 py-1 text-xs font-bold tabular-nums',
+                      l?.status === 'OVERDUE'
+                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                    )}
+                  >
+                    {formatINR(outstanding)}
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Paid
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </SectionCard>
+
+      {/* PAYMENT RECORDS (canonical transactions) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 sm:max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-9 pl-8 text-sm"
+            placeholder="Search student, fee, receipt…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search payments"
+          />
+        </div>
+        <Select value={methodFilter} onValueChange={setMethodFilter}>
+          <SelectTrigger className="h-9 w-[8rem] text-xs" aria-label="Payment method"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All methods</SelectItem>
+            {['CASH', 'UPI', 'CARD', 'NET_BANKING', 'BANK_TRANSFER'].map((m) => (
+              <SelectItem key={m} value={m}>{methodLabel(m)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto sm:flex-1 sm:pb-0">
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setStatusFilter(f.key)}
+              className={cn(
+                'h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors',
+                statusFilter === f.key
+                  ? 'border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
+                  : 'bg-card text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+          <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground">
+            Showing {filteredTxns.length} of {klass.transactions.length}
+          </span>
+        </div>
+      </div>
+
+      <SectionCard
+        icon={Receipt}
+        title="Payment Records"
+        subtitle="Every collection for this class — status, collector, verifier and receipt"
+        meta={hasActiveFilter ? `${filteredTxns.length} of ${klass.transactions.length} shown` : `${klass.transactions.length} total`}
+        className="hidden lg:block"
+        contentClassName=""
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                <th className="px-4 py-2.5 font-semibold">Student</th>
+                <th className="px-4 py-2.5 font-semibold">Fee</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Amount</th>
+                <th className="px-4 py-2.5 font-semibold">Date</th>
+                <th className="px-4 py-2.5 font-semibold">Method</th>
+                <th className="px-4 py-2.5 font-semibold">Source</th>
+                <th className="px-4 py-2.5 font-semibold">Status</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {filteredTxns.map((t) => (
+                <TxnRow
+                  key={t.id}
+                  txn={t}
+                  onLedger={() => t.studentId && setLedgerStudentId(t.studentId)}
+                  onReceipt={() => { setReceiptTxnId(t.id); setReceiptOpen(true) }}
+                />
+              ))}
+              {filteredTxns.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-xs text-muted-foreground">
+                    {hasActiveFilter ? 'No payments match these filters.' : 'No payments recorded for this class yet — collect your first fee.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      {/* Transaction cards — mobile + tablet */}
+      <div className="space-y-2.5 lg:hidden">
+        {filteredTxns.map((t) => (
+          <MobileTxnCard
+            key={t.id}
+            txn={t}
+            onLedger={() => t.studentId && setLedgerStudentId(t.studentId)}
+            onReceipt={() => { setReceiptTxnId(t.id); setReceiptOpen(true) }}
+          />
+        ))}
+        {filteredTxns.length === 0 && (
+          <div className="rounded-xl border border-border bg-card px-4 py-8 text-center text-xs text-muted-foreground">
+            {hasActiveFilter ? 'No payments match these filters.' : 'No payments recorded for this class yet.'}
+          </div>
+        )}
+      </div>
+
+      {/* Collect Fee (STAGE 1 of the canonical workflow) */}
+      {collectOpen && (
+        <CollectFeeDialog
+          open={collectOpen}
+          onOpenChange={setCollectOpen}
+          klass={klass}
+          studentId={collectStudent}
+          onCollect={collect}
+        />
+      )}
+
+      {/* Student ledger — the canonical per-student sheet */}
+      <StudentLedgerSheet
+        student={ledgerStudentId ? (studentById.get(ledgerStudentId) ?? null) : null}
+        open={!!ledgerStudentId}
+        onOpenChange={(o) => { if (!o) setLedgerStudentId(null) }}
+        txns={klass?.transactions ?? []}
+        onCollect={(sid) => { setCollectStudent(sid); setCollectOpen(true) }}
+        onViewReceipt={(id) => { setLedgerStudentId(null); setReceiptTxnId(id); setReceiptOpen(true) }}
+        onViewProfile={(id) => setProfileStudentId(id)}
+      />
+
+      {/* The ONE shared student profile */}
+      <TeacherStudentProfileSheet
+        studentId={profileStudentId}
+        onOpenChange={(o) => { if (!o) setProfileStudentId(null) }}
+        initialTab={profileStudentId != null && ledgerStudentId != null ? 'fees' : undefined}
+      />
+
+      {/* Shared receipt viewer */}
+      <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} />
+    </div>
+  )
+}
+
+function TxnRow({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => void; onReceipt: () => void }) {
+  const meta = txnStatusMeta(txn.status)
+  return (
+    <tr className="group transition-colors hover:bg-muted/40">
+      <td className="px-4 py-2.5">
+        <button className="flex items-center gap-2.5 text-left" onClick={onLedger}>
+          <GradientAvatar name={txn.studentName ?? 'Student'} size="sm" />
+          <span className="min-w-0">
+            <span className="block max-w-[10rem] truncate text-sm font-medium group-hover:text-emerald-700 dark:group-hover:text-emerald-400">
+              {txn.studentName ?? 'Student'}
+            </span>
+            <span className="block truncate text-[11px] text-muted-foreground">{txn.className ?? ''}</span>
+          </span>
+        </button>
+      </td>
+      <td className="max-w-[9rem] truncate px-4 py-2.5 text-xs text-muted-foreground" title={txn.feeHeadName ?? undefined}>{txn.feeHeadName ?? '—'}</td>
+      <td className="px-4 py-2.5 text-right text-sm font-semibold tabular-nums">{formatINR(txn.amount, true)}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{txnDate(txn.collectedAt ?? txn.createdAt)}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 text-xs">{methodLabel(txn.method)}</td>
+      <td className="max-w-[10rem] px-4 py-2.5">
+        <span className="block truncate text-xs font-medium">{sourceLabel(txn.source)}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{sourceStory(txn)}</span>
+      </td>
+      <td className="px-4 py-2.5">
+        <span className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium', meta.chip)}>
+          <span className={cn('h-1 w-1 rounded-full', meta.dot)} />
+          {meta.short}
+        </span>
+        {txn.status === 'SUCCESS' && txn.receiptNo && (
+          <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">{txn.receiptNo}</span>
+        )}
+        {txn.status === 'REJECTED' && txn.rejectionReason && (
+          <span className="mt-0.5 block max-w-[10rem] truncate text-[10px] text-rose-600 dark:text-rose-400" title={txn.rejectionReason}>
+            “{txn.rejectionReason}”
+          </span>
+        )}
+      </td>
+      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] gap-1" onClick={onReceipt}>
+          <Receipt className="h-3 w-3" />
+          {txn.status === 'SUCCESS' ? 'Receipt' : 'View'}
+        </Button>
+      </td>
+    </tr>
+  )
+}
+
+function MobileTxnCard({ txn, onLedger, onReceipt }: { txn: FeeTxn; onLedger: () => void; onReceipt: () => void }) {
+  const meta = txnStatusMeta(txn.status)
+  return (
+    <div className="rounded-xl border border-border bg-card p-3">
+      <div className="flex items-start justify-between gap-2">
+        <button className="flex min-w-0 items-center gap-2.5 text-left" onClick={onLedger}>
+          <GradientAvatar name={txn.studentName ?? 'Student'} size="sm" />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{txn.studentName ?? 'Student'}</span>
+            <span className="block truncate text-[11px] text-muted-foreground">
+              {txn.className} · {txnDate(txn.collectedAt ?? txn.createdAt)}
+            </span>
+          </span>
+        </button>
+        <span className="shrink-0 text-sm font-semibold tabular-nums">{formatINR(txn.amount, true)}</span>
+      </div>
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium', meta.chip)}>
+            <span className={cn('h-1 w-1 rounded-full', meta.dot)} />
+            {meta.label}
+          </span>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+            {txn.feeHeadName ?? '—'} · {methodLabel(txn.method)} · {sourceStory(txn)}
+          </p>
+          {txn.receiptNo && <p className="truncate font-mono text-[10px] text-muted-foreground">{txn.receiptNo}</p>}
+        </div>
+        <Button variant="outline" size="sm" className="h-7 shrink-0 px-2.5 text-[11px] gap-1" onClick={onReceipt}>
+          <Receipt className="h-3 w-3" />
+          {txn.status === 'SUCCESS' ? 'Receipt' : 'View'}
+        </Button>
+      </div>
+    </div>
+  )
+}

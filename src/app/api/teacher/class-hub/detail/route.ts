@@ -264,6 +264,25 @@ export async function GET(request: Request) {
             .sort((a, b) => b.avgPct - a.avgPct)
         : []
 
+      // per-exam subject averages (§14 — the Academics tab's examination
+      // selector drives subject-wise performance for ANY exam with marks,
+      // not just the latest; same canonical rows, grouped per exam)
+      const subjectAveragesByExam: Record<string, { subjectId: string; subjectName: string; avgPct: number }[]> =
+        Object.fromEntries(
+          examsWithMarks.slice(0, 6).map((e) => {
+            const rows = markRows.filter((m) => m.examId === e.id && m.marksObtained != null)
+            const avgs = [...new Set(rows.map((r) => r.subjectId))]
+              .map((sid) => {
+                const subjectRows = rows.filter((r) => r.subjectId === sid)
+                const mm = maxMarksOf.get(`${e.id}:${sid}`) ?? subjectMax.get(sid) ?? 100
+                const avg = subjectRows.reduce((a, r) => a + (r.marksObtained ?? 0) / mm * 100, 0) / subjectRows.length
+                return { subjectId: sid, subjectName: subjectName.get(sid) ?? 'Subject', avgPct: Math.round(avg) }
+              })
+              .sort((a, b) => b.avgPct - a.avgPct)
+            return [e.id, avgs]
+          }),
+        )
+
       const studentRankList = [...latestStats.entries()]
         .sort((a, b) => b[1].pct - a[1].pct || (a[0] < b[0] ? -1 : 1))
         .map(([sid, st], i) => ({
@@ -316,6 +335,8 @@ export async function GET(request: Request) {
                 name: nameById.get(sid) ?? 'Student',
                 rollNo: rollById.get(sid) ?? null,
                 pct: Math.round(st.pct * 10) / 10,
+                total: st.total,
+                maxTotal: st.maxTotal,
               }))
             return [e.id, rows]
           })
@@ -359,6 +380,30 @@ export async function GET(request: Request) {
 
       // ── canonical growth scores ───────────────────────────────────────
       const growthScores = await growthScoresFor(schoolId, studentIds)
+
+      // ── the class's 8-week growth trend (§20/§22) — the average of the
+      // members' weekly snapshots, exactly like the growth workspace's
+      // per-class trend. Presented INSIDE My Class, never a second engine.
+      const memberGrowth = studentIds
+        .map((id) => growthScores.get(id))
+        .filter((g): g is NonNullable<typeof g> => !!g)
+      const trendLen = Math.max(0, ...memberGrowth.map((g) => g.trend.length), 0)
+      const growthTrend: { label: string; value: number | null }[] = []
+      for (let i = 0; i < trendLen; i++) {
+        const vals: number[] = []
+        let label = `W${i + 1}`
+        for (const g of memberGrowth) {
+          const p = g.trend[i]
+          if (p) {
+            label = p.label
+            if (p.value != null) vals.push(p.value)
+          }
+        }
+        growthTrend.push({
+          label,
+          value: vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null,
+        })
+      }
 
       // ── directory rows ────────────────────────────────────────────────
       const directory = students.map((s) => {
@@ -414,10 +459,12 @@ export async function GET(request: Request) {
         studentCount: students.length,
         directory,
         performance,
+        subjectAveragesByExam,
         ranking,
         attendanceReport,
         marksheets,
         taughtSubjects,
+        growthTrend,
       }
     },
     { roles: ['TEACHER'] }

@@ -128,6 +128,9 @@ export interface HubDetailPayload {
     needsAttention: HubRankRow[]
     trend: { examId: string; examName: string; avgPct: number }[]
   }
+  /** per-exam subject averages (§14 — the Academics tab's examination
+   *  selector drives subject-wise performance for any exam with marks) */
+  subjectAveragesByExam: Record<string, { subjectId: string; subjectName: string; avgPct: number }[]>
   ranking: {
     exams: { examId: string; examName: string; examDate: string | null }[]
     rowsByExam: Record<string, HubRankRow[]>
@@ -162,6 +165,9 @@ export interface HubDetailPayload {
     avgPct: number | null
   }[]
   taughtSubjects: { subjectId: string; subjectName: string }[]
+  /** the class's 8-week growth trend (average of members' weekly
+   *  snapshots — the SAME canonical growth engine, §20–§22) */
+  growthTrend: { label: string; value: number | null }[]
 }
 
 // ─── Marksheet matrix payload (GET /api/teacher/class-hub/marksheet) ────

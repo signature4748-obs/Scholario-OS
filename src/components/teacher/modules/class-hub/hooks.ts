@@ -102,6 +102,28 @@ export function useClassHub() {
     }
   }, [reload])
 
+  // Automatic role synchronization (spec §31): a Principal appointment
+  // change must update My Class automatically. A quiet refetch on window
+  // focus keeps the class list in sync with the server truth (the same
+  // natural-refresh contract as the sidebar's role hook). Existing data
+  // stays on screen while the refresh resolves — no flicker.
+  useEffect(() => {
+    const onFocus = () => {
+      classHubFetch()
+        .then((payload) => {
+          setData(payload)
+          setError(null)
+        })
+        .catch(() => {
+          /* keep the current data — the explicit reload surfaces errors */
+        })
+    }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
   return { data, error, reload: () => setReload((r) => r + 1) }
 }
 

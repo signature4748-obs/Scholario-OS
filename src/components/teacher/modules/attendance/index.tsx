@@ -1,22 +1,30 @@
 'use client'
 
 /**
- * Class Attendance (TWC-FE-2) — the module composition root.
+ * Class Attendance — the module composition root.
  *
- * Server-backed on the two-layer model:
- *   · CLASS TEACHER → the official daily baseline for her class (the
- *     canonical rows students and parents see). One Save writes the day.
- *   · SUBJECT TEACHER → the class teacher's baseline arrives PREFILLED;
- *     she changes only exceptions and explicitly submits her OWN subject
- *     the SAME canonical record (spec §K — Class+Section+Date+Student).
+ * OWNERSHIP MODEL (spec §7–§11, FINAL):
+ *   · CLASS TEACHER → manages the official daily record for her class
+ *     (the canonical rows students and parents see). One Save writes the
+ *     day; edits autosave as a server draft and finalize explicitly or
+ *     at the school's end-of-day boundary.
+ *   · SUBJECT TEACHER → VIEW ONLY. The same roster, the same saved
+ *     record, read-only status chips — no edit controls, no Save, no
+ *     Submit. The context line says who manages the record.
+ *
+ * The module also powers My Class → Attendance through the `fixedClass`
+ * prop: the board is pinned to that class (the hub header carries the
+ * class identity), so the workspace stays inside the My Class context —
+ * a compact date bar replaces the full toolbar.
  *
  * Composition (My-Timetable design language):
- *   ModuleToolbar (class + subject + date nav) → week strip
- *   (lightweight nav control) → 4 compact HubStatCards (value / total +
- *   hairline progress) → roster/insights SectionCard (segmented):
+ *   ModuleToolbar (class + date nav) — or the embedded date bar →
+ *   week strip → 4 compact HubStatCards (value / total + hairline
+ *   progress) → roster/insights SectionCard (segmented):
  *   · Roster   — hairline `divide-y` rows with a colored left border
  *     accent per status; labeled action buttons on tablet+, a compact
- *     4-up control on mobile. Search, bulk "mark all present".
+ *     4-up control on mobile (class teacher); read-only chips for the
+ *     subject teacher. Search, bulk "mark all present" (class teacher).
  *   · Insights — 10-day present-rate trend, attention-needed absentees,
  *     perfect-record students (hairline lists, no nested boxes).
  *
@@ -38,8 +46,9 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock,
   CloudUpload,
+  Clock,
+  Eye,
   History,
   Loader2,
   Plane,
@@ -96,19 +105,23 @@ import {
 
 /** House <input type="date"> — matches the h-9 controls around it. */
 const DATE_INPUT_CLASS =
-  'h-9 w-[118px] rounded-none border-0 bg-transparent px-2 text-xs font-medium text-foreground shadow-none outline-none [color-scheme:light] focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-input/30 dark:[color-scheme:dark]'
+  'h-9 w-[128px] rounded-none border-0 bg-transparent px-2 text-xs font-medium text-foreground shadow-none outline-none [color-scheme:light] focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-input/30 dark:[color-scheme:dark]'
 
 // ─── module ───────────────────────────────────────────────────────────
 
-export function AttendanceModule() {
+export function AttendanceModule({
+  fixedClass,
+}: {
+  /** My Class → Attendance: pin the board to this class and swap the full
+   *  toolbar for the compact in-hub date bar (§5 — stay in context). */
+  fixedClass?: { classId: string; label: string }
+} = {}) {
   const {
     classes,
     classesError,
     reloadClasses,
     classId,
     selectClass,
-    subjectId,
-    selectSubject,
     date,
     selectDate,
     board,
@@ -126,15 +139,20 @@ export function AttendanceModule() {
     saving,
     justSaved,
     save,
-  } = useAttendanceModule()
+    readOnly,
+    embedded,
+  } = useAttendanceModule({ fixedClassId: fixedClass?.classId ?? null })
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'roster' | 'insights'>('roster')
 
   const classOptions = classes ?? []
   const total = board?.students.length ?? 0
-  const isSubjectMode = board != null && !board.isClassTeacher
   const canSave =
-    board != null && total > 0 && !saving && !boardLoading && (board.isClassTeacher || subjectId != null)
+    !readOnly && board != null && total > 0 && !saving && !boardLoading
+  /** The official record exists for the viewed date. */
+  const marked = source === 'baseline' || source === 'draft'
+  /** View-only + nothing saved yet → honest pending state (§10). */
+  const pendingView = readOnly && board != null && !board.baseline.exists
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -150,7 +168,8 @@ export function AttendanceModule() {
     [board],
   )
 
-  /** The 4 compact summary metrics — one shared system with My Timetable. */
+  /** The 4 compact summary metrics — the SAVED day (or the open sheet).
+   *  Hidden in the view-only pending state (all-PRESENT would lie). */
   const stats: HubStat[] = useMemo(
     () => [
       {
@@ -200,9 +219,58 @@ export function AttendanceModule() {
   }
   const goToday = () => selectDate(todayKey())
 
+  /** The Save control — shared by the toolbar and the embedded date bar. */
+  const saveButton = (
+    <Button
+      onClick={save}
+      disabled={!canSave}
+      className="hidden h-9 sm:inline-flex"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {saving ? (
+          <motion.span
+            key="saving"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-1.5"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
+          </motion.span>
+        ) : justSaved ? (
+          <motion.span
+            key="saved"
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex items-center gap-1.5"
+          >
+            <CheckCircle2 className="h-4 w-4" /> Saved
+          </motion.span>
+        ) : (
+          <motion.span
+            key="save"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-1.5"
+          >
+            <Save className="h-3.5 w-3.5" />
+            Save attendance
+            {dirty && (
+              <span
+                className="ml-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400"
+                aria-label="Unsaved changes"
+              />
+            )}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </Button>
+  )
+
   // ── module-level states (all hooks above run unconditionally) ──────
 
-  if (classes == null) {
+  if (!embedded && classes == null) {
     return (
       <PageTransition className="space-y-4">
         {classesError != null ? (
@@ -214,7 +282,7 @@ export function AttendanceModule() {
     )
   }
 
-  if (classes.length === 0) {
+  if (!embedded && classes != null && classes.length === 0) {
     return (
       <PageTransition className="space-y-4">
         <HubEmptyState
@@ -228,134 +296,61 @@ export function AttendanceModule() {
 
   return (
     <PageTransition className="space-y-4">
-      {/* quiet toolbar: scope line + class / subject / date nav + Save */}
-      <ModuleToolbar
-        context={`Mark attendance · ${longDate(date)}`}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={classId ?? undefined} onValueChange={selectClass}>
-              <SelectTrigger className="h-9 w-[120px] sm:w-[132px]" aria-label="Class">
-                <SelectValue placeholder="Class" />
-              </SelectTrigger>
-              <SelectContent>
-                {classOptions.map((c) => (
-                  <SelectItem key={c.classId} value={c.classId}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {isSubjectMode && (
-              <Select value={subjectId ?? undefined} onValueChange={selectSubject}>
-                <SelectTrigger className="h-9 w-[120px] sm:w-[136px]" aria-label="Subject">
-                  <SelectValue placeholder="Subject" />
+      {/* quiet toolbar: scope line + class / date nav + Save — OR the
+          embedded date bar when pinned inside My Class (§5) */}
+      {embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+          <DateNav
+            date={date}
+            goPrevDay={goPrevDay}
+            goNextDay={goNextDay}
+            goToday={goToday}
+            onPick={selectDate}
+          />
+          {board != null && !readOnly && saveButton}
+          {readOnly && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              View only — managed by the class teacher
+            </span>
+          )}
+        </div>
+      ) : (
+        <ModuleToolbar
+          context={`Mark attendance · ${longDate(date)}`}
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={classId ?? undefined} onValueChange={selectClass}>
+                <SelectTrigger className="h-9 w-[120px] sm:w-[132px]" aria-label="Class">
+                  <SelectValue placeholder="Class" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(board?.subjects ?? []).map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
+                  {classOptions.map((c) => (
+                    <SelectItem key={c.classId} value={c.classId}>
+                      {c.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
 
-            {/* date stepper + Today — ONE semantic group so a wrapped
-                toolbar keeps the day controls together */}
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 items-center rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-                <button
-                  type="button"
-                  onClick={goPrevDay}
-                  aria-label="Previous day"
-                  title="Previous day"
-                  className="flex h-full w-7 items-center justify-center rounded-l-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <span className="h-5 w-px bg-border" aria-hidden="true" />
-                <input
-                  type="date"
-                  value={date}
-                  max={todayKey()}
-                  onChange={(e) => selectDate(e.target.value)}
-                  aria-label="Attendance date"
-                  className={DATE_INPUT_CLASS}
-                />
-                <span className="h-5 w-px bg-border" aria-hidden="true" />
-                <button
-                  type="button"
-                  onClick={goNextDay}
-                  disabled={date >= todayKey()}
-                  aria-label="Next day"
-                  title="Next day"
-                  className="flex h-full w-7 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={goToday}
-                disabled={date === todayKey()}
-                className="h-9 px-2.5 text-xs"
-              >
-                Today
-              </Button>
+              {/* date stepper + Today — ONE semantic group so a wrapped
+                  toolbar keeps the day controls together */}
+              <DateNav
+                date={date}
+                goPrevDay={goPrevDay}
+                goNextDay={goNextDay}
+                goToday={goToday}
+                onPick={selectDate}
+              />
+
+              {/* Save — tablet/desktop toolbar slot (mobile heads the page
+                  in its own row instead; see MobileSaveRow). Hidden while
+                  the board loads and for view-only subject teachers (§9/§10). */}
+              {board != null && !readOnly && saveButton}
             </div>
-
-            {/* Save — tablet/desktop toolbar slot (mobile heads the page
-                in its own row instead; see MobileSaveRow) */}
-            <Button
-              onClick={save}
-              disabled={!canSave}
-              className="hidden h-9 sm:inline-flex"
-            >
-              <AnimatePresence mode="wait" initial={false}>
-                {saving ? (
-                  <motion.span
-                    key="saving"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-1.5"
-                  >
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
-                  </motion.span>
-                ) : justSaved ? (
-                  <motion.span
-                    key="saved"
-                    initial={{ scale: 0.7, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="h-4 w-4" /> Saved
-                  </motion.span>
-                ) : (
-                  <motion.span
-                    key="save"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-1.5"
-                  >
-                    <Save className="h-3.5 w-3.5" />
-                    'Save attendance'
-                    {dirty && (
-                      <span
-                        className="ml-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400"
-                        aria-label="Unsaved changes"
-                      />
-                    )}
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </Button>
-          </div>
-        }
-      />
+          }
+        />
+      )}
 
       {boardError != null ? (
         <HubSectionError message={boardError} onRetry={reloadBoard} />
@@ -377,25 +372,45 @@ export function AttendanceModule() {
         <>
           {/* mobile: Save heads the page — one in-flow row directly under
               the class/date controls, before any roster content; it never
-              floats over, covers or obscures student rows while scrolling */}
-          <MobileSaveRow
-            save={save}
-            canSave={canSave}
-            saving={saving}
-            justSaved={justSaved}
-            dirty={dirty}
-            marked={source === 'baseline' || source === 'session'}
-            isSubjectMode={isSubjectMode}
-            draftSavedAt={draftSavedAt}
-            autosaveBoundary={
-              board.autosave?.autosaveFinalize && date === todayKey() && !board.baseline.exists
-                ? boundaryLabel(board.autosave.endOfDayMinutes)
-                : null
-            }
-          />
+              floats over, covers or obscures student rows while scrolling.
+              View-only boards never render it (§9/§10). */}
+          {!readOnly && (
+            <MobileSaveRow
+              save={save}
+              canSave={canSave}
+              saving={saving}
+              justSaved={justSaved}
+              dirty={dirty}
+              marked={marked}
+              draftSavedAt={draftSavedAt}
+              autosaveBoundary={
+                board.autosave?.autosaveFinalize && date === todayKey() && !board.baseline.exists
+                  ? boundaryLabel(board.autosave.endOfDayMinutes)
+                  : null
+              }
+            />
+          )}
 
-          {/* §19 draft resume — one quiet amber line so an open sheet is
-              never mistaken for the official record */}
+          {/* view-only pending state (§10) — honest, subtle, no fake counts */}
+          {pendingView && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-xl border border-border bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground"
+            >
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <p className="min-w-0">
+                Attendance pending
+                <span className="text-muted-foreground/80">
+                  {' '}— the class teacher
+                  {board.classTeacherName ? ` (${board.classTeacherName})` : ''} marks the daily
+                  attendance for {board.label}.
+                </span>
+              </p>
+            </div>
+          )}
+
+          {/* §11 draft resume — one quiet amber line so an open sheet is
+              never mistaken for the official record (class teacher only) */}
           {resumedFromDraft && (
             <div
               role="status"
@@ -422,13 +437,13 @@ export function AttendanceModule() {
           />
 
           {/* live summary metrics — one shared system with My Timetable */}
-          <HubStatCards stats={stats} />
+          {!pendingView && <HubStatCards stats={stats} />}
 
           {/* roster + insights */}
           <SectionCard
             icon={Users}
             title={`${board.label} · Student roster`}
-            subtitle={rosterContextLine(board, subjectId, source)}
+            subtitle={rosterContextLine(board, null, source)}
             className={cn('transition-opacity', boardLoading && 'opacity-60')}
             actions={
               <>
@@ -444,14 +459,16 @@ export function AttendanceModule() {
                         className="h-9 w-36 pl-8 sm:w-44"
                       />
                     </div>
-                    <Button
-                      variant="outline"
-                      onClick={markAllPresent}
-                      disabled={saving}
-                      className="h-9"
-                    >
-                      <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Mark all present
-                    </Button>
+                    {!readOnly && (
+                      <Button
+                        variant="outline"
+                        onClick={markAllPresent}
+                        disabled={saving}
+                        className="h-9"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Mark all present
+                      </Button>
+                    )}
                   </>
                 )}
                 <div
@@ -512,6 +529,8 @@ export function AttendanceModule() {
                         disabled={saving}
                         onSetStatus={setStatus}
                         history={board.history}
+                        readOnly={readOnly}
+                        pending={!readOnly ? false : !board.baseline.exists}
                       />
                     ))}
                   </ul>
@@ -526,38 +545,44 @@ export function AttendanceModule() {
                       <span className="font-semibold text-foreground">
                         {total} student{total === 1 ? '' : 's'}
                       </span>
-                      <span className="mx-1.5">·</span>
-                      Attendance rate:{' '}
-                      <span className="font-semibold text-foreground">
-                        {total > 0 ? ((counts.present / total) * 100).toFixed(1) : '0.0'}%
-                      </span>
+                      {!pendingView && (
+                        <>
+                          <span className="mx-1.5">·</span>
+                          Attendance rate:{' '}
+                          <span className="font-semibold text-foreground">
+                            {total > 0 ? ((counts.present / total) * 100).toFixed(1) : '0.0'}%
+                          </span>
+                        </>
+                      )}
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                     <HistoryLegend />
-                    <p className="text-[11px] text-muted-foreground">
-                      {dirty ? (
-                        <span className="font-medium text-amber-600 dark:text-amber-400">
-                          Unsaved — kept as a draft
-                          {draftSavedAt && (
-                            <span className='font-normal text-muted-foreground'>
-                              {' '}(saved {savedAtLabel(draftSavedAt, date)})
-                            </span>
-                          )}
-                          {board.autosave?.autosaveFinalize && date === todayKey() && !board.baseline.exists && (
-                            <span className="font-normal text-muted-foreground">
-                              {' '}· auto-submits {boundaryLabel(board.autosave.endOfDayMinutes)}
-                            </span>
-                          )}
-                        </span>
-                      ) : source === 'present' ? (
-                        'Nothing saved for this date yet'
-                      ) : (
-                        <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                          In sync with the saved record
-                        </span>
-                      )}
-                    </p>
+                    {!readOnly && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {dirty ? (
+                          <span className="font-medium text-amber-600 dark:text-amber-400">
+                            Unsaved — kept as a draft
+                            {draftSavedAt && (
+                              <span className='font-normal text-muted-foreground'>
+                                {' '}(saved {savedAtLabel(draftSavedAt, date)})
+                              </span>
+                            )}
+                            {board.autosave?.autosaveFinalize && date === todayKey() && !board.baseline.exists && (
+                              <span className="font-normal text-muted-foreground">
+                                {' '}· auto-submits {boundaryLabel(board.autosave.endOfDayMinutes)}
+                              </span>
+                            )}
+                          </span>
+                        ) : source === 'present' ? (
+                          'Nothing saved for this date yet'
+                        ) : (
+                          <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                            In sync with the saved record
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
               </>
@@ -571,6 +596,67 @@ export function AttendanceModule() {
 }
 
 // ─── local pieces ─────────────────────────────────────────────────────
+
+/** Date stepper + Today — one semantic group shared by the toolbar and
+ *  the embedded (My Class) date bar. */
+function DateNav({
+  date,
+  goPrevDay,
+  goNextDay,
+  goToday,
+  onPick,
+}: {
+  date: string
+  goPrevDay: () => void
+  goNextDay: () => void
+  goToday: () => void
+  onPick: (date: string) => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex h-9 items-center rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+        <button
+          type="button"
+          onClick={goPrevDay}
+          aria-label="Previous day"
+          title="Previous day"
+          className="flex h-full w-7 items-center justify-center rounded-l-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <span className="h-5 w-px bg-border" aria-hidden="true" />
+        <input
+          type="date"
+          value={date}
+          max={todayKey()}
+          onChange={(e) => onPick(e.target.value)}
+          aria-label="Attendance date"
+          className={DATE_INPUT_CLASS}
+        />
+        <span className="h-5 w-px bg-border" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={goNextDay}
+          disabled={date >= todayKey()}
+          aria-label="Next day"
+          title="Next day"
+          className="flex h-full w-7 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={goToday}
+        disabled={date === todayKey()}
+        className="h-9 px-2.5 text-xs"
+      >
+        Today
+      </Button>
+    </div>
+  )
+}
 
 /** Mon–Sun of the viewed week: quick jumps, marked dots, today ring. */
 function WeekStrip({
@@ -673,6 +759,9 @@ function HistoryLegend() {
  * border accent for the current status. Tablet+: roll tile + labeled
  * action buttons on the right. Mobile: roll folded into the name line
  * and a compact 4-up action control under the identity block.
+ *
+ * VIEW-ONLY rows (subject teacher, §9/§10): the buttons are replaced by
+ * one quiet read-only chip — same visual language, zero edit affordance.
  */
 function RosterRow({
   student,
@@ -681,6 +770,8 @@ function RosterRow({
   disabled,
   onSetStatus,
   history,
+  readOnly,
+  pending,
 }: {
   student: AttendanceStudent
   index: number
@@ -688,6 +779,9 @@ function RosterRow({
   disabled: boolean
   onSetStatus: (studentId: string, status: AttendanceStatus) => void
   history: AttendanceHistory | undefined
+  readOnly: boolean
+  /** view-only + nothing saved for the date → honest pending chip */
+  pending: boolean
 }) {
   const recent = recentStatusesFor(student.id, history, 5)
   const stat = historyStatsFor(student.id, history)
@@ -701,7 +795,7 @@ function RosterRow({
       transition={{ delay: Math.min(index, 10) * 0.025, duration: 0.25 }}
       className={cn(
         'border-l-2 py-2.5 pl-3 pr-4 transition-colors sm:py-2',
-        cfg.accent,
+        pending ? 'border-l-muted-foreground/20' : cfg.accent,
         disabled && 'opacity-60',
       )}
     >
@@ -746,8 +840,50 @@ function RosterRow({
             )}
           </div>
         </div>
-        {/* actions — tablet+ labeled buttons */}
-        <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+        {/* read-only chip (subject teacher, §9/§10) — same status language,
+            zero edit affordance */}
+        {readOnly && (
+          <span className="shrink-0">
+            {pending ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
+                <Clock className="h-3 w-3" aria-hidden="true" /> Pending
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold',
+                  cfg.inactive,
+                )}
+                title={`Attendance is managed by the class teacher — ${cfg.label}`}
+              >
+                <cfg.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {cfg.label}
+              </span>
+            )}
+          </span>
+        )}
+        {/* actions — tablet+ labeled buttons (class teacher only) */}
+        {!readOnly && (
+          <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+            {ATTENDANCE_STATUSES.map((status) => (
+              <StatusButton
+                key={status}
+                status={status}
+                studentName={student.name}
+                isActive={current === status}
+                disabled={disabled}
+                onSetStatus={onSetStatus}
+                studentId={student.id}
+                labeled
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      {/* actions — mobile compact control (one row, four equal parts),
+          class teacher only */}
+      {!readOnly && (
+        <div className="mt-2 grid grid-cols-4 gap-1.5 sm:hidden">
           {ATTENDANCE_STATUSES.map((status) => (
             <StatusButton
               key={status}
@@ -757,25 +893,10 @@ function RosterRow({
               disabled={disabled}
               onSetStatus={onSetStatus}
               studentId={student.id}
-              labeled
             />
           ))}
         </div>
-      </div>
-      {/* actions — mobile compact control (one row, four equal parts) */}
-      <div className="mt-2 grid grid-cols-4 gap-1.5 sm:hidden">
-        {ATTENDANCE_STATUSES.map((status) => (
-          <StatusButton
-            key={status}
-            status={status}
-            studentName={student.name}
-            isActive={current === status}
-            disabled={disabled}
-            onSetStatus={onSetStatus}
-            studentId={student.id}
-          />
-        ))}
-      </div>
+      )}
     </motion.li>
   )
 }
@@ -826,15 +947,12 @@ function StatusButton({
 /**
  * MobileSaveRow — the phone-screen replacement for the toolbar Save slot.
  *
- * The old toolbar row could not fit class + subject + date + Save inside a
- * 358px column and pushed Save out of the visible range, and a later
- * sticky-bottom variant floated the action over the roster. The settled
- * pattern: Save HEADS the page — one plain in-flow row directly under the
- * class/date controls and BEFORE the week strip / roster, so the action is
- * visible before marking begins, scrolls naturally with the content and
- * can never cover a student row. A live status line (unsaved / in sync /
- * saved / not marked) sits beside the full-width 44px-touch button — no
- * extra chrome, no extra empty space.
+ * The settled pattern: Save HEADS the page — one plain in-flow row
+ * directly under the class/date controls and BEFORE the week strip /
+ * roster, so the action is visible before marking begins, scrolls
+ * naturally with the content and can never cover a student row. A live
+ * status line (unsaved / in sync / saved / not marked) sits beside the
+ * full-width 44px-touch button — no extra chrome, no extra empty space.
  *
  * `sm:hidden` — tablet/desktop keeps the toolbar Save slot instead.
  */
@@ -845,7 +963,6 @@ function MobileSaveRow({
   justSaved,
   dirty,
   marked,
-  isSubjectMode,
   draftSavedAt,
   autosaveBoundary,
 }: {
@@ -855,7 +972,6 @@ function MobileSaveRow({
   justSaved: boolean
   dirty: boolean
   marked: boolean
-  isSubjectMode: boolean
   draftSavedAt: string | null
   autosaveBoundary: string | null
 }) {
@@ -926,9 +1042,7 @@ function MobileSaveRow({
               className="flex min-w-0 items-center gap-1.5"
             >
               <Save className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                'Save attendance'
-              </span>
+              <span className="truncate">Save attendance</span>
               {dirty && (
                 <span
                   className="ml-0.5 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-400"
@@ -1095,7 +1209,7 @@ function InsightsView({
           )}
         </div>
 
-        {/* recent changes — the §18 audit journal, hairline list */}
+        {/* recent changes — the audit journal, hairline list */}
         <div>
           <div className="mb-1 flex items-center gap-2">
             <History className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />

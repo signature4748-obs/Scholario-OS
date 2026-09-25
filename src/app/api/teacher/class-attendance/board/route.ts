@@ -3,6 +3,7 @@ import { withUser, schoolScoped } from '@/lib/api'
 import {
   parseDateParam,
   resolveClassScope,
+  resolveClassScopeOrNull,
   attendanceSettingsFor,
 } from '@/lib/class-attendance'
 import { classLabelOf } from '@/lib/teacher-hub'
@@ -29,6 +30,10 @@ export async function GET(request: Request) {
       const nextDay = new Date(day.getTime() + 86_400_000)
 
       const { isClassTeacher, subjects } = await resolveClassScope(user, schoolId, classId)
+      // The appointed class teacher's name — the subject-teacher view uses
+      // it for the honest “managed by {name}” context (§9–§10).
+      const scopeInfo = await resolveClassScopeOrNull(user, schoolId, classId)
+      const classTeacherName = scopeInfo?.classTeacherName ?? null
       const cls = await db.class.findUnique({
         where: { id: classId },
         select: { name: true, section: true },
@@ -197,6 +202,7 @@ export async function GET(request: Request) {
         label: cls ? classLabelOf(cls) : 'Class',
         date: url.searchParams.get('date') ?? new Date().toISOString().slice(0, 10),
         isClassTeacher,
+        classTeacherName,
         subjects,
         students: students.map((s) => ({ id: s.id, rollNo: s.rollNo, name: s.user?.name ?? 'Student' })),
         baseline,

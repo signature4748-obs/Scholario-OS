@@ -15,20 +15,22 @@ export const runtime = 'nodejs'
 interface DraftBody {
   classId?: string
   date?: string
-  /** subjectId — required only when a SUBJECT teacher drafts (provenance) */
+  /** legacy field — subject-teacher drafts are retired (§7–§10) */
   subjectId?: string
   entries?: { studentId: string; status: string }[]
 }
 
 /**
- * PUT /api/teacher/class-attendance/draft — persist the teacher's
- * OPEN, NOT-YET-SUBMITTED attendance sheet (spec §19 autosave). This
- * never writes the canonical Attendance rows: a draft is a draft. The
- * roster is validated server-side (entries may be partial — a half-marked
- * sheet is honest progress, it just can never auto-finalize), statuses
- * are validated, and the draft is keyed one-per-class+date. An explicit
- * Save/Submit (baseline/session) deletes the draft; the school's
- * end-of-day boundary finalizes it when policy allows.
+ * PUT /api/teacher/class-attendance/draft — persist the CLASS TEACHER'S
+ * OPEN, NOT-YET-SUBMITTED attendance sheet (spec §11 autosave + §7–§10
+ * ownership). Only the appointed class teacher may keep a draft: a subject
+ * teacher is view-only and can never stage attendance, not even for her
+ * own subject. This never writes the canonical Attendance rows: a draft
+ * is a draft. The roster is validated server-side (entries may be partial
+ * — a half-marked sheet is honest progress, it just can never
+ * auto-finalize), statuses are validated, and the draft is keyed
+ * one-per-class+date. An explicit Save/Submit (baseline) deletes the
+ * draft; the school's end-of-day boundary finalizes it when policy allows.
  */
 export async function PUT(request: Request) {
   return withUser(
@@ -41,12 +43,12 @@ export async function PUT(request: Request) {
       const day = parseDateParam(body.date)
       if (day.getTime() > Date.now() + 86_400_000) throw new Error('Future dates cannot be marked')
 
-      const { isClassTeacher, subjects } = await resolveClassScope(user, schoolId, body.classId)
-      const subjectTaught = body.subjectId ? subjects.find((s) => s.id === body.subjectId) : undefined
-      if (!isClassTeacher && !subjectTaught) {
-        throw new Error('FORBIDDEN — you are not assigned to this class')
+      const { isClassTeacher } = await resolveClassScope(user, schoolId, body.classId)
+      if (!isClassTeacher) {
+        throw new Error(
+          'Attendance is managed by the class teacher. Subject teachers have view-only access.',
+        )
       }
-      const source = isClassTeacher ? 'BASELINE' : 'SUBJECT_SESSION'
 
       const students = await db.student.findMany({
         where: { classId: body.classId, user: { status: 'ACTIVE' } },
@@ -78,13 +80,13 @@ export async function PUT(request: Request) {
           entries: JSON.stringify(entries),
           updatedById: user.id,
           updatedByName: user.name ?? 'Teacher',
-          source,
+          source: 'BASELINE',
         },
         update: {
           entries: JSON.stringify(entries),
           updatedById: user.id,
           updatedByName: user.name ?? 'Teacher',
-          source,
+          source: 'BASELINE',
         },
       })
       return { saved: entries.length }
@@ -95,10 +97,11 @@ export async function PUT(request: Request) {
 
 /**
  * POST /api/teacher/class-attendance/draft?classId=&date= — the
- * end-of-school-hours AUTOSAVE (spec §19): finalize an open draft into
- * the canonical record once the school's configured end-of-day boundary
- * has passed (policy permitting). Idempotent — no draft / already
- * submitted / before the boundary all return honest outcomes.
+ * end-of-school-hours AUTOSAVE (spec §11): finalize the CLASS TEACHER'S
+ * open draft into the canonical record once the school's configured
+ * end-of-day boundary has passed (policy permitting). Idempotent — no
+ * draft / already submitted / before the boundary all return honest
+ * outcomes. Subject teachers are view-only (§7–§10) and never finalize.
  */
 export async function POST(request: Request) {
   return withUser(
@@ -110,9 +113,11 @@ export async function POST(request: Request) {
       if (!classId || !date) throw new Error('classId and date are required')
       parseDateParam(date)
 
-      const { isClassTeacher, subjects } = await resolveClassScope(user, schoolId, classId)
-      if (!isClassTeacher && subjects.length === 0) {
-        throw new Error('FORBIDDEN — you are not assigned to this class')
+      const { isClassTeacher } = await resolveClassScope(user, schoolId, classId)
+      if (!isClassTeacher) {
+        throw new Error(
+          'Attendance is managed by the class teacher. Subject teachers have view-only access.',
+        )
       }
 
       const settings = await attendanceSettingsFor(schoolId)

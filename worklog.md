@@ -2575,3 +2575,44 @@ Stage Summary:
 - Honest states everywhere: 0-of-N scored growth, "—" class average with no marks, Building students never averaged, below-threshold lists only with ≥3 marked days.
 - Login matrix unchanged (rohan.mehta both · arjun.nair CT-only · priya.iyer subject-only @greenwood.edu.in · teacher123; principal@greenwood.edu.in · principal123).
 - Known-remaining / suggestions for next phase: (a) AttendanceSetting editing UI for the Principal (boundary + autosave policy — schema + enforcement ready); (b) subject-teacher draft writes are allowed but resume currently keys on class+date regardless of author — acceptable per canonical class-day model, could show author name more prominently; (c) marksheet print verified structurally (scoped stylesheet + print header) but a real-paper print can't be exercised in sandbox; (d) performance drawer trend limited to exams with marks (honest — no invented trend); (e) certificates section is read-only from the existing store (generation stays with the office per §13 — a teacher-facing "request certificate" flow could be a future feature.
+
+---
+Task ID: 1
+Agent: Z.ai Code (main orchestrator)
+Task: MY CLASS FINAL ARCHITECTURE — class-scoped tabbed workspace (spec §1–§36) + attendance ownership (subject teacher = VIEW ONLY, FINAL) + role sync hardening
+
+Work Log:
+- AUDIT: read the prior deep-link-out hub (sections opened GLOBAL modules via openModuleForClass), the two-layer attendance model (subject teachers could complete/save sessions), fee-collection module/APIs, class-hub APIs (overview/detail/marksheet), growth API, nav-registry, module-router.
+- BACKEND · attendance ownership (§7–§10/§30 — supersedes the old §16/§17 session-completion rule):
+  · session/route.ts RETIRED → always rejects with "Attendance is managed by the class teacher ({name}). Subject teachers have view-only access." (names the CT via new resolveClassScopeOrNull helper in lib/class-attendance.ts).
+  · draft/route.ts PUT+POST → CT-only (subject teachers can no longer stage or finalize drafts; source always BASELINE).
+  · board/route.ts → added classTeacherName to the payload for the ST's honest "managed by {name}" context.
+- BACKEND · class-hub detail: added growthTrend (8-week class average from growthScoresFor weekly snapshots) + subjectAveragesByExam (per-exam subject averages for the Academics tab examination selector) + ranking rows now carry total/maxTotal.
+- FRONTEND · attendance module (hooks/shared/index rewritten):
+  · SUBJECT TEACHER = VIEW ONLY: no Save (toolbar+mobile), no Mark-all-present, no subject selector, read-only status chips per row ("Pending" chips when unmarked), honest pending banner, rosterContextLine shows "Submitted by {who}" / "Attendance pending · managed by the class teacher".
+  · new fixedClass embedding prop → My Class Attendance tab pins the board to the class (compact date bar replaces ModuleToolbar; key=classId).
+  · CT-only draft autosave/finalize; save() = baseline only; canSave requires !readOnly.
+  · Fixed literal-quote 'Save attendance' label bug (pre-existing) + widened date input + Save hidden during board load (was briefly disabled-visible).
+- FRONTEND · My Class REWRITTEN as a CLASS-SCOPED TABBED WORKSPACE (index.tsx):
+  · Header: identity + meta + search (auto-jumps to Students tab) + compact ClassSelect (CT classes only, >1 only) + REAL quick actions (Mark Attendance / View Students / Collect Fee / View Results → all switch tabs, nothing navigates away).
+  · Underline tab bar (scrollable mobile): Overview / Students / Attendance / Academics / Fees.
+  · Overview: 7 KPI tiles + §24 sections (Attendance, Performance, Directory preview(5), Ranking, Fees, Class Growth w/ trend sparkline + top improver, Class Reports (4 rows), Marksheets & Certificates) — every "View …" stays in-hub (tab switch or class-scoped drawer).
+  · Students tab (NEW students-tab.tsx): full Grade-X class directory (table ≥lg / stacked rows), opens the ONE canonical Student Profile sheet.
+  · Academics tab (NEW academics-tab.tsx): examination selector + class average (w/ prev-exam delta) + subject-wise performance + ranked student performance (rank badges, total/max) + Result Completion (permission-aware: "Your subject" only for taught subjects, others status-only) + academic trends + marksheets. §15 enforced: NO marks entry inside My Class (global Marks Entry stays the subject-scoped surface — verified scope: Rohan = Mathematics only).
+  · Fees tab (NEW fees-tab.tsx): reuses the canonical fee-collection payload filtered by classId — KPI tiles (billed/verified/awaiting/outstanding), month activity nav, student fee status list → StudentLedgerSheet, CollectFeeDialog (two-stage workflow), payment records table + mobile cards + receipt viewer.
+  · GrowthDrawer (NEW growth-drawer.tsx): class-scoped detail — bands, 8-week trend, top improving, needs attention, full class list w/ canonical scores. NEVER opens the global Student Growth.
+  · ReportDrawer rebuilt: 4 class-scoped reports (Attendance/Academics/Fees/Growth) with a segmented picker + initialKind.
+  · Removed PerformanceDrawer/RankingDrawer (superseded by Academics tab).
+- ROLE SYNC (§31): useClassHub now quietly refetches on window focus (same contract as the sidebar role hook); ClassHubLoaded keeps the teacher on the class they were viewing across background refreshes (lastActiveRef corrector, explicit selections record themselves).
+
+Stage Summary:
+- VERIFIED in-browser (agent-browser, fresh loads):
+  · Rohan (CT 9-A + Math 9-A/10-A/10-B): My Class → Grade 9-A; all 5 tabs in-context; attendance saved end-to-end (toast + "Official record · marked by Rohan Mehta"); Result Completion shows Mathematics="Your subject", Science/English/Hindi status-only; marksheet drawer (CSV/print); fees workspace (₹41.4K billed, ₹100 awaiting, ledger sheet); growth drawer; 4-report drawer.
+  · Priya (subject-only, English): NO My Class/sidebar group; SAME 9-A attendance ("Submitted by Rohan Mehta", read-only chips, no save/mark-all); API rejections verified for session/baseline/draft writes (with CT named); fee-collection + class-hub APIs return 0 classes.
+  · Role sync: appointed Rohan CT of 8-A via DB → focus sync → class selector appeared w/ both classes; selected 9-A → persisted through syncs; removed 8-A → selector disappeared, stayed on 9-A. (Seeded state restored: Rohan = CT 9-A only.)
+  · Responsive: 320/390/768(via screenshots)/1280/1920 — scrollWidth === clientWidth everywhere (no page overflow); VLM verdicts PASS on hub/attendance/fees/academics/growth views.
+  · tsc 0 errors · ESLint 0 errors/0 warnings · fresh-load console/page errors: 0 · dev.log endpoints all 200.
+- §32 GLOBAL MODULES INTACT: Class Attendance (toolbar variant) works for CT; Student Directory/Growth/Marks Entry untouched; fee-collection module kept (module-router) — hub Fees tab is now its primary class-scoped surface.
+- Attendance canonical record for Grade 9-A · 25 Sept 2026 was legitimately written by Rohan via the UI (11 present) — real canonical data, audit-clean.
+- Login matrix unchanged: rohan.mehta / arjun.nair (CT-only 10-B) / priya.iyer (subject-only) @greenwood.edu.in · teacher123; principal@greenwood.edu.in · principal123.
+- Known-remaining / next-phase suggestions: (a) AttendanceSetting editing UI for the Principal (schema + enforcement ready); (b) marksheet print verified structurally only (no real paper in sandbox); (c) academics tab exam selector lists only exams WITH marks (honest); (d) certificates section remains read-only from the office store — a teacher-facing "request certificate" flow is a future feature; (e) subject-teacher "pending" roster shows muted Pending chips — could add a per-student historical rate chip prominence pass later.

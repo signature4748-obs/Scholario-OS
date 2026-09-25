@@ -65,6 +65,58 @@ export function schoolIdOf(user: { schoolId: string | null }): string {
   return schoolScoped(user as never)
 }
 
+/**
+ * A READ-ONLY scope probe for honest rejection/annotation copy: returns
+ * null when the caller has no relationship with the class, otherwise the
+ * class-teacher flag, her subjects, and the appointed class teacher's
+ * name (attendance is managed by HER — spec §7–§10). Never throws, never
+ * writes.
+ */
+export async function resolveClassScopeOrNull(
+  user: { id: string; name: string | null },
+  schoolId: string,
+  classId: string
+): Promise<
+  | (ClassScope & { classTeacherName: string | null })
+  | null
+> {
+  const cls = await db.class.findUnique({
+    where: { id: classId },
+    select: {
+      id: true,
+      schoolId: true,
+      classTeacherId: true,
+    },
+  })
+  if (!cls || cls.schoolId !== schoolId) return null
+  const classTeacherName = cls.classTeacherId
+    ? ((await db.user.findUnique({ where: { id: cls.classTeacherId }, select: { name: true } }))?.name ?? null)
+    : null
+
+  const teacherName = (user.name || '').trim().toLowerCase()
+  const rows = teacherName
+    ? await db.timetable.findMany({
+        where: { schoolId, classId, teacherName: { not: null }, subjectId: { not: null } },
+        select: { subjectId: true, subject: { select: { name: true } }, teacherName: true },
+      })
+    : []
+  const subjects = [
+    ...new Map(
+      rows
+        .filter((r) => (r.teacherName || '').trim().toLowerCase() === teacherName)
+        .map((r) => [r.subjectId as string, { id: r.subjectId as string, name: r.subject!.name }])
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name))
+
+  const isClassTeacher = cls.classTeacherId === user.id
+  if (!isClassTeacher && subjects.length === 0) return null
+  return {
+    isClassTeacher,
+    subjects,
+    classTeacherName,
+  }
+}
+
 // ─── Canonical write + audit + draft workflow (spec §18/§19) ───────────
 
 export type AttendanceWriteSource = 'BASELINE' | 'SUBJECT_SESSION' | 'AUTOSAVE'
