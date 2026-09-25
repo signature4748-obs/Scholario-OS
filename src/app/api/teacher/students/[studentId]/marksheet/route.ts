@@ -2,36 +2,53 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withUser } from '@/lib/api'
 import { requireTeacher, assertStudentInScope, classLabelOf } from '@/lib/teacher-hub'
+import { getGradeForPercentage } from '@/lib/exams/types'
 
 export const runtime = 'nodejs'
 
 /**
- * GET /api/teacher/students/[studentId]/marksheet?examId= — the PERSONAL
- * DIGITAL MARKSHEET document for ONE student + ONE examination (digital
- * record §7–§12). A pure READ surface over the canonical rows — the SAME
- * ExamMark / ExamSubjectConfig / Attendance / School records Marks Entry,
- * Academics, Results Submission and every report use. There is no second
- * marks table and no manually generated duplicate result: when teachers
- * submit more subject marks, this document updates automatically.
+ * GET /api/teacher/students/[studentId]/marksheet — the STUDENT'S FORMAL
+ * DIGITAL MARKSHEET: ONE consolidated document covering the WHOLE academic
+ * session (every examination the school configured for the student's
+ * class), in the supplied A4 template's design language.
  *
- * HONESTY RULES (§8/§11):
- *   · every subject configured for the exam + class is listed — a subject
- *     without an outcome for this student renders "—", never an invented
- *     mark;
- *   · total / percentage are computed over SUBMITTED subjects only and
- *     are labeled PARTIAL while required subjects are still pending;
- *   · state machine: NOT_STARTED → IN_PROGRESS → READY (all subjects
- *     in) → FINALIZED (exam resultStatus "Declared"). Print / PDF is
- *     unlocked only when every required subject is in (§12 history row)
- *     and the document's RESULT STATUS line always states the truth.
+ * PURE PRESENTATION LAYER (§8/§32): there is no second marks database.
+ * Every number is read from the SAME canonical rows Marks Entry /
+ * Academics / Results Submission use —
+ *   Exam + ExamClass (the Principal's examination configuration),
+ *   ExamSubjectConfig (per-exam subject + maxMarks),
+ *   ExamMark (canonical marks), GradeScale (school grading),
+ *   ReportCardConfig (document sections), Attendance (canonical),
+ *   School + Class + User (branding, class teacher, principal).
+ * When teachers submit more marks the document reflects them on the next
+ * open — no regeneration step (§11 progressive).
  *
- * PERMISSIONS (§13): the teacher must have this student in scope
- * (assertStudentInScope — class teacher ∪ subject-taught ∪ hub
- * relations); fee data is never part of this document, so the
- * class-teacher-only boundary is untouched.
+ * DYNAMIC EXAMINATION STRUCTURE (§5/§6/§9): the exam columns come from the
+ * ExamClass links for the student's class in the ACTIVE session — 2 exams
+ * render 2 columns, 6 exams render 6. Nothing is hardcoded.
+ *
+ * HONESTY RULES (§10/§17): unentered marks render "—" — never 0, never
+ * invented; totals/percentages are computed over SUBMITTED marks only and
+ * labeled "(to date)" while any examination is still pending; the final
+ * percentage appears without qualification only when every configured
+ * examination is complete.
+ *
+ * STATE MACHINE (§24): per exam NOT_STARTED → IN_PROGRESS → READY →
+ * FINALIZED (exam declared). Print/PDF is offered only when at least one
+ * examination is complete (summary.canPrint).
+ *
+ * MULTI-TENANT SAFETY (§27): every query is scoped by the session's
+ * schoolId (server-side) and by the student's OWN class/exam links.
+ * Client-supplied ids are never trusted for tenancy — a School A student
+ * can never receive School B branding, subjects, exams or marks.
+ *
+ * PERMISSIONS (§13 of the prior record spec, unchanged): the teacher must
+ * have this student in scope (class-teacher ∪ subject-taught ∪ hub
+ * relations) — the same visibility the Academics tab always had. Fee data
+ * is never part of this document.
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> },
 ) {
   return withUser(
@@ -39,14 +56,11 @@ export async function GET(
       const ctx = await requireTeacher(user)
       const { studentId } = await params
       const student = await assertStudentInScope(ctx, studentId)
-      const examId = new URL(request.url).searchParams.get('examId')
-      if (!examId) throw new Error('examId is required')
       if (!student.classId) throw new Error('Student is not assigned to a class')
 
-      // the exam must belong to the student's class (ExamClass link) —
-      // the same canonical link every class results surface uses
-      const link = await db.examClass.findFirst({
-        where: { examId, classId: student.classId },
+      // ── the school's examination structure for this class ────────────
+      const links = await db.examClass.findMany({
+        where: { classId: student.classId },
         select: {
           exam: {
             select: {
@@ -56,25 +70,9 @@ export async function GET(
           },
         },
       })
-      if (!link) throw new Error('This examination is not configured for the student’s class')
-      const exam = link.exam
-
-      const [cfgRows, markRows, csaRows, school, principalUser] = await Promise.all([
-        db.examSubjectConfig.findMany({
-          where: { examId, classId: student.classId },
-          select: {
-            subjectId: true, maxMarks: true, sortOrder: true,
-            subject: { select: { id: true, name: true, fullMarks: true } },
-          },
-        }),
-        db.examMark.findMany({
-          where: { examId, studentId: student.id },
-          select: { subjectId: true, marksObtained: true, status: true },
-        }),
-        db.classSubjectAssignment.findMany({
-          where: { classId: student.classId, isActive: true },
-          select: { subjectId: true, displayOrder: true },
-        }),
+      // active session: the school's configured academic year when the
+      // class has exams in it, else the session of the latest exam
+      const [school, classRow, principalUser] = await Promise.all([
         db.school.findUnique({
           where: { id: ctx.schoolId },
           select: {
@@ -82,90 +80,274 @@ export async function GET(
             academicYear: true, board: true, logoUrl: true,
           },
         }),
+        db.class.findUnique({
+          where: { id: student.classId },
+          select: { classTeacherId: true },
+        }),
         db.user.findFirst({
           where: { schoolId: ctx.schoolId, role: 'PRINCIPAL', status: 'ACTIVE' },
           select: { name: true },
         }),
       ])
+      const allExams = links.map((l) => l.exam)
+      const session =
+        (school?.academicYear && allExams.some((e) => e.session === school.academicYear)
+          ? school.academicYear
+          : null) ??
+        [...allExams].sort(
+          (a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0),
+        )[0]?.session ??
+        school?.academicYear ??
+        null
+      // session-timeline order (earliest → latest) — how the year reads
+      const exams = allExams
+        .filter((e) => e.session === session)
+        .sort((a, b) => (a.startDate?.getTime() ?? 0) - (b.startDate?.getTime() ?? 0))
 
-      // required subjects: the exam's configured set; honest fallback for
-      // exams without a config = the subjects the CLASS has marks in
-      let required: { subjectId: string; subjectName: string; maxMarks: number }[]
-      if (cfgRows.length > 0) {
-        required = cfgRows.map((c) => ({
-          subjectId: c.subjectId,
-          subjectName: c.subject.name,
-          maxMarks: c.maxMarks,
-        }))
-      } else {
-        const classRows = await db.examMark.findMany({
-          where: { examId, classId: student.classId, marksObtained: { not: null } },
-          select: { subjectId: true, subject: { select: { name: true, fullMarks: true } } },
+      const examIds = exams.map((e) => e.id)
+
+      // ── canonical configuration + marks (parallel reads) ─────────────
+      const [cfgRows, ownMarkRows, classMarkRows, csaRows, gradeScaleRows, reportCfg, attRows, outcomeRows] =
+        await Promise.all([
+          db.examSubjectConfig.findMany({
+            where: { examId: { in: examIds }, classId: student.classId },
+            select: {
+              examId: true, subjectId: true, maxMarks: true, sortOrder: true,
+              subject: { select: { id: true, name: true, fullMarks: true } },
+            },
+          }),
+          db.examMark.findMany({
+            where: { examId: { in: examIds }, studentId: student.id },
+            select: { examId: true, subjectId: true, marksObtained: true, status: true },
+          }),
+          // fallback "required subjects" for exams without a config: the
+          // subjects the class has marks in (same convention as the
+          // previous per-exam document + the students API)
+          db.examMark.findMany({
+            where: { examId: { in: examIds }, classId: student.classId },
+            select: { examId: true, subjectId: true, subject: { select: { fullMarks: true } } },
+          }),
+          db.classSubjectAssignment.findMany({
+            where: { classId: student.classId, isActive: true },
+            select: { subjectId: true, displayOrder: true },
+          }),
+          db.gradeScale.findMany({
+            where: { schoolId: ctx.schoolId },
+            select: { grade: true, minPct: true, maxPct: true, color: true, sortOrder: true },
+            orderBy: { minPct: 'desc' },
+          }),
+          db.reportCardConfig.findUnique({ where: { schoolId: ctx.schoolId } }),
+          db.attendance.findMany({
+            where: { studentId: student.id },
+            select: { status: true },
+          }),
+          db.examResultOutcome.findMany({
+            where: { examId: { in: examIds }, studentId: student.id },
+            select: { examId: true, outcome: true, notes: true, reason: true },
+          }),
+        ])
+
+      // per-exam maps
+      const cfgByExam = new Map<string, Map<string, number>>() // examId -> subjectId -> maxMarks
+      for (const c of cfgRows) {
+        if (!cfgByExam.has(c.examId)) cfgByExam.set(c.examId, new Map())
+        cfgByExam.get(c.examId)!.set(c.subjectId, c.maxMarks)
+      }
+      const fallbackByExam = new Map<string, Map<string, number>>() // examId -> subjectId -> maxMarks
+      for (const r of classMarkRows) {
+        if (cfgByExam.get(r.examId)?.size) continue // configured exams don't use the fallback
+        if (!fallbackByExam.has(r.examId)) fallbackByExam.set(r.examId, new Map())
+        const map = fallbackByExam.get(r.examId)!
+        if (!map.has(r.subjectId)) map.set(r.subjectId, r.subject.fullMarks ?? 100)
+      }
+      const ownByExam = new Map<string, Map<string, { obtained: number | null; status: string }>>()
+      for (const m of ownMarkRows) {
+        if (!ownByExam.has(m.examId)) ownByExam.set(m.examId, new Map())
+        ownByExam.get(m.examId)!.set(m.subjectId, {
+          obtained: m.marksObtained ?? null,
+          status: m.status,
         })
-        const seen = new Map<string, { subjectId: string; subjectName: string; maxMarks: number }>()
-        for (const r of classRows) {
-          if (!seen.has(r.subjectId)) {
-            seen.set(r.subjectId, {
-              subjectId: r.subjectId,
-              subjectName: r.subject.name,
-              maxMarks: r.subject.fullMarks ?? 100,
-            })
-          }
-        }
-        required = [...seen.values()]
       }
 
-      // class display order first (same order the class marksheet uses),
-      // then the config's own sort, then name
+      // ── the union of subjects across every exam (dynamic rows, §7) ────
+      const subjectIds = new Set<string>()
+      for (const e of exams) {
+        for (const sid of cfgByExam.get(e.id)?.keys() ?? []) subjectIds.add(sid)
+        for (const sid of fallbackByExam.get(e.id)?.keys() ?? []) subjectIds.add(sid)
+        for (const sid of ownByExam.get(e.id)?.keys() ?? []) subjectIds.add(sid)
+      }
+      const subjectRows = await db.subject.findMany({
+        where: { id: { in: [...subjectIds] } },
+        select: { id: true, name: true, fullMarks: true },
+      })
+      const subjectById = new Map(subjectRows.map((s) => [s.id, s]))
       const csaOrder = new Map(csaRows.map((c) => [c.subjectId, c.displayOrder]))
-      const cfgOrder = new Map(cfgRows.map((c) => [c.subjectId, c.sortOrder]))
-      required.sort(
-        (a, b) =>
-          (csaOrder.get(a.subjectId) ?? 999) - (csaOrder.get(b.subjectId) ?? 999) ||
-          (cfgOrder.get(a.subjectId) ?? 999) - (cfgOrder.get(b.subjectId) ?? 999) ||
-          a.subjectName.localeCompare(b.subjectName),
-      )
+      const orderedSubjectIds = [...subjectIds].sort((a, b) => {
+        const sa = subjectById.get(a)
+        const sb = subjectById.get(b)
+        return (
+          (csaOrder.get(a) ?? 999) - (csaOrder.get(b) ?? 999) ||
+          (sa && sb ? sa.name.localeCompare(sb.name) : a.localeCompare(b))
+        )
+      })
 
-      const ownBySubject = new Map(markRows.map((r) => [r.subjectId, r]))
-      const subjects = required.map((s) => {
-        const row = ownBySubject.get(s.subjectId)
-        const isSubmitted = !!row && (row.marksObtained != null || row.status === 'ABSENT')
+      // ── per-exam summaries + the subject × exam matrix ───────────────
+      const isDeclared = (status: string) => status === 'Declared' || status === 'Result Declared'
+      type ExamDto = {
+        examId: string
+        examName: string
+        type: string
+        examDate: string | null
+        resultStatus: string
+        declaredAt: string | null
+        state: 'NOT_STARTED' | 'IN_PROGRESS' | 'READY' | 'FINALIZED'
+        subjectsSubmitted: number
+        subjectsTotal: number
+        total: number
+        maxTotal: number
+        percentage: number | null
+        partial: boolean
+      }
+      const examDtos: ExamDto[] = exams.map((e) => {
+        const cfg = cfgByExam.get(e.id)
+        const required =
+          cfg && cfg.size > 0
+            ? cfg
+            : fallbackByExam.get(e.id) ?? new Map<string, number>()
+        const own = ownByExam.get(e.id) ?? new Map()
+        let submitted = 0
+        let total = 0
+        let maxTotal = 0
+        for (const [subjectId, maxMarks] of required) {
+          const row = own.get(subjectId)
+          const isOutcome = !!row && (row.obtained != null || row.status === 'ABSENT')
+          if (isOutcome) {
+            submitted += 1
+            total += row!.obtained ?? 0
+            maxTotal += maxMarks
+          }
+        }
+        const subjectsTotal = required.size
+        const declared = isDeclared(e.resultStatus)
+        const state: ExamDto['state'] =
+          subjectsTotal === 0 || submitted === 0
+            ? 'NOT_STARTED'
+            : submitted < subjectsTotal
+              ? 'IN_PROGRESS'
+              : declared
+                ? 'FINALIZED'
+                : 'READY'
         return {
-          subjectId: s.subjectId,
-          subjectName: s.subjectName,
-          maxMarks: s.maxMarks,
-          obtained: row?.marksObtained ?? null,
-          /** PRESENT / ABSENT / … — the canonical mark row status */
-          markStatus: row?.status ?? null,
-          isSubmitted,
+          examId: e.id,
+          examName: e.name,
+          type: e.type,
+          examDate: e.startDate ? e.startDate.toISOString().slice(0, 10) : null,
+          resultStatus: e.resultStatus,
+          declaredAt: e.declaredAt ? e.declaredAt.toISOString().slice(0, 10) : null,
+          state,
+          subjectsSubmitted: submitted,
+          subjectsTotal,
+          total,
+          maxTotal,
+          percentage:
+            submitted > 0 && maxTotal > 0
+              ? Math.round((total / maxTotal) * 1000) / 10
+              : null,
+          partial: submitted > 0 && submitted < subjectsTotal,
         }
       })
 
-      const subjectsSubmitted = subjects.filter((s) => s.isSubmitted).length
-      const subjectsTotal = subjects.length
-      const total = subjects.reduce((sum, s) => sum + (s.isSubmitted ? s.obtained ?? 0 : 0), 0)
-      const maxTotal = subjects.reduce((sum, s) => sum + (s.isSubmitted ? s.maxMarks : 0), 0)
-      const percentage = subjectsSubmitted > 0 && maxTotal > 0 ? Math.round((total / maxTotal) * 1000) / 10 : null
-      // the canonical declare flow writes "Result Declared"; the seeded /
-      // student-results convention is "Declared" — both mean the official
-      // final result is out
-      const isDeclared = exam.resultStatus === 'Declared' || exam.resultStatus === 'Result Declared'
-      const state =
-        subjectsSubmitted === 0 || subjectsTotal === 0
-          ? 'NOT_STARTED'
-          : subjectsSubmitted < subjectsTotal
-            ? 'IN_PROGRESS'
-            : isDeclared
-              ? 'FINALIZED'
-              : 'READY'
-
-      // canonical attendance % (same derivation as the profile header)
-      const attRows = await db.attendance.findMany({
-        where: { studentId: student.id },
-        select: { status: true },
+      type CellDto = {
+        /** configured for this exam (or has marks) — null = not part of it */
+        maxMarks: number | null
+        obtained: number | null
+        markStatus: string | null
+        isSubmitted: boolean
+      }
+      const subjects = orderedSubjectIds.map((sid) => {
+        const cells: CellDto[] = exams.map((e) => {
+          const cfgMax = cfgByExam.get(e.id)?.get(sid)
+          const fallbackMax = fallbackByExam.get(e.id)?.get(sid)
+          const own = ownByExam.get(e.id)?.get(sid)
+          const maxMarks =
+            cfgMax != null ? cfgMax : own || fallbackMax != null ? (fallbackMax ?? subjectById.get(sid)?.fullMarks ?? 100) : null
+          const isSubmitted = !!own && (own.obtained != null || own.status === 'ABSENT')
+          return {
+            maxMarks,
+            obtained: own?.obtained ?? null,
+            markStatus: own?.status ?? null,
+            isSubmitted,
+          }
+        })
+        // row grand total only when every cell of this row that belongs to
+        // an exam has an outcome (progressive honesty: no exam counted as 0)
+        let pending = false
+        let grandTotal = 0
+        let grandMax = 0
+        let anySubmitted = false
+        for (const c of cells) {
+          if (c.maxMarks == null && !c.isSubmitted) continue // subject not in that exam
+          if (!c.isSubmitted) {
+            pending = true
+          } else {
+            anySubmitted = true
+            grandTotal += c.obtained ?? 0
+            grandMax += c.maxMarks ?? 0
+          }
+        }
+        const complete = anySubmitted && !pending
+        const pct = complete && grandMax > 0 ? (grandTotal / grandMax) * 100 : null
+        return {
+          subjectId: sid,
+          subjectName: subjectById.get(sid)?.name ?? 'Subject',
+          cells,
+          complete,
+          grandTotal: complete ? grandTotal : null,
+          grandMax: complete ? grandMax : null,
+          grade: pct != null ? getGradeForPercentage(pct, gradeScaleRows).grade : null,
+        }
       })
+
+      // ── document-level summary ───────────────────────────────────────
+      const pendingCells = examDtos.reduce(
+        (n, e) => n + Math.max(0, e.subjectsTotal - e.subjectsSubmitted),
+        0,
+      )
+      const anySubmitted = examDtos.some((e) => e.subjectsSubmitted > 0)
+      const allComplete =
+        examDtos.length > 0 && examDtos.every((e) => e.state === 'READY' || e.state === 'FINALIZED')
+      const anyDeclared = examDtos.some((e) => e.state === 'FINALIZED')
+      const docState: 'NOT_STARTED' | 'IN_PROGRESS' | 'READY' | 'FINALIZED' =
+        allComplete ? (anyDeclared ? 'FINALIZED' : 'READY') : anySubmitted ? 'IN_PROGRESS' : 'NOT_STARTED'
+      // the year is still open → every total is "to date" (§10/§17: never
+      // silently treat a missing examination as zero)
+      const partial = !allComplete
+      const grandTotal = subjects.reduce((n, s) => n + (s.grandTotal ?? 0), 0)
+      const grandMax = subjects.reduce((n, s) => n + (s.grandMax ?? 0), 0)
+      const percentage = grandMax > 0 ? Math.round((grandTotal / grandMax) * 1000) / 10 : null
+      // date of issue — only a genuinely FINALIZED exam (declared AND all
+      // marks in) may issue the document; never a declared-but-empty exam
+      const declaredAt =
+        [...examDtos]
+          .filter((e) => e.state === 'FINALIZED' && e.declaredAt)
+          .sort((a, b) => (a.declaredAt! < b.declaredAt! ? 1 : -1))[0]?.declaredAt ?? null
+      const outcome = outcomeRows.find((o) => isDeclared(examDtos.find((e) => e.examId === o.examId)?.resultStatus ?? ''))
+
       const attended = attRows.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length
-      const attendancePct = attRows.length > 0 ? Math.round((attended / attRows.length) * 100) : null
+      const scaleUsed =
+        gradeScaleRows.length > 0
+          ? gradeScaleRows.map((g) => ({ grade: g.grade, minPct: g.minPct, maxPct: g.maxPct }))
+          : // the app-wide default the exams module renders everywhere —
+            // used only until the school configures its own scale
+            [
+              { grade: 'A1', minPct: 90, maxPct: 100 },
+              { grade: 'A2', minPct: 80, maxPct: 89.99 },
+              { grade: 'B1', minPct: 70, maxPct: 79.99 },
+              { grade: 'B2', minPct: 60, maxPct: 69.99 },
+              { grade: 'C1', minPct: 50, maxPct: 59.99 },
+              { grade: 'C2', minPct: 33, maxPct: 49.99 },
+              { grade: 'E', minPct: 0, maxPct: 32.99 },
+            ]
 
       return {
         school: {
@@ -174,7 +356,6 @@ export async function GET(
           city: school?.city ?? null,
           phone: school?.phone ?? null,
           email: school?.email ?? null,
-          academicYear: school?.academicYear ?? exam.session ?? null,
           board: school?.board ?? null,
           logoUrl: school?.logoUrl ?? null,
         },
@@ -183,32 +364,62 @@ export async function GET(
           admissionNo: student.admissionNo,
           rollNo: student.rollNo,
           classLabel: classLabelOf(student.class),
+          gender: student.gender,
+          dob: student.dob,
+          guardianName: student.guardianName,
         },
-        exam: {
-          examId: exam.id,
-          examName: exam.name,
-          type: exam.type,
-          session: exam.session,
-          examDate: exam.startDate ? exam.startDate.toISOString().slice(0, 10) : null,
-          resultStatus: exam.resultStatus,
-          declaredAt: exam.declaredAt ? exam.declaredAt.toISOString().slice(0, 10) : null,
-        },
+        session,
+        classTeacherName: classRow?.classTeacherId
+          ? ((await db.user.findUnique({
+              where: { id: classRow.classTeacherId },
+              select: { name: true },
+            }))?.name ?? null)
+          : null,
+        principalName: principalUser?.name ?? null,
+        exams: examDtos,
         subjects,
         summary: {
-          state,
-          subjectsSubmitted,
-          subjectsTotal,
-          total,
-          maxTotal,
+          state: docState,
+          totalExams: examDtos.length,
+          examsComplete: examDtos.filter((e) => e.state === 'READY' || e.state === 'FINALIZED')
+            .length,
+          examsWithMarks: examDtos.filter((e) => e.subjectsSubmitted > 0).length,
+          grandTotal,
+          grandMax,
           percentage,
-          /** honest flag: required subjects are still pending */
-          partial: subjectsSubmitted > 0 && subjectsSubmitted < subjectsTotal,
-          pendingSubjects: Math.max(0, subjectsTotal - subjectsSubmitted),
-          /** print / PDF unlocked only when every required subject is in */
-          canPrint: subjectsTotal > 0 && subjectsSubmitted === subjectsTotal,
+          grade:
+            allComplete && percentage != null
+              ? getGradeForPercentage(percentage, gradeScaleRows).grade
+              : null,
+          partial,
+          pendingExams: examDtos.filter((e) => e.state === 'NOT_STARTED' || e.state === 'IN_PROGRESS')
+            .length,
+          pendingCells,
+          /** print / PDF unlocked once at least one examination's full
+           *  result is in — the document honestly labels what is pending */
+          canPrint: examDtos.some((e) => e.state === 'READY' || e.state === 'FINALIZED'),
+          declaredAt,
+          remark: outcome?.notes ?? outcome?.reason ?? null,
+          outcome: outcome?.outcome ?? null,
         },
-        attendancePct,
-        principalName: principalUser?.name ?? null,
+        attendance: {
+          presentDays: attended,
+          totalDays: attRows.length,
+          pct: attRows.length > 0 ? Math.round((attended / attRows.length) * 100) : null,
+        },
+        gradeScale: {
+          source: gradeScaleRows.length > 0 ? ('school' as const) : ('default' as const),
+          rows: scaleUsed,
+        },
+        config: {
+          showAttendance: reportCfg?.showAttendance ?? true,
+          showPercentage: reportCfg?.showPercentage ?? true,
+          showGrade: reportCfg?.showGrade ?? true,
+          showCoScholastic: reportCfg?.showCoScholastic ?? false,
+          showRemarks: reportCfg?.showRemarks ?? true,
+          showClassTeacherSign: reportCfg?.showClassTeacherSign ?? true,
+          showPrincipalSign: reportCfg?.showPrincipalSign ?? true,
+        },
         generatedAt: new Date().toISOString(),
       }
     },

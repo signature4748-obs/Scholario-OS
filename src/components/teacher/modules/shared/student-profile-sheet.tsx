@@ -43,7 +43,6 @@ import {
   MessagesSquare,
   Phone,
   Plus,
-  Printer,
   Receipt,
   TrendingUp,
   User,
@@ -52,8 +51,9 @@ import {
 } from 'lucide-react'
 import { GradientAvatar, StatusBadge } from '@/components/shared/ui'
 import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
-import { StudentMarksheetViewer } from './student-marksheet-viewer'
+import { StudentMarksheetViewer, type MarksheetDocumentPayload } from './student-marksheet-viewer'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
   SheetContent,
@@ -296,14 +296,65 @@ export function TeacherStudentProfileSheet({
   const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [receiptAutoPrint, setReceiptAutoPrint] = useState(false)
-  const [marksheetExamId, setMarksheetExamId] = useState<string | null>(null)
+  const [marksheetDoc, setMarksheetDoc] = useState<MarksheetDocumentPayload | null>(null)
+  const [marksheetLoading, setMarksheetLoading] = useState(false)
+  const [marksheetError, setMarksheetError] = useState<string | null>(null)
+  const [marksheetFetchedFor, setMarksheetFetchedFor] = useState<string | null>(null)
   const [marksheetOpen, setMarksheetOpen] = useState(false)
-  const [marksheetAutoPrint, setMarksheetAutoPrint] = useState(false)
   const [addPointsOpen, setAddPointsOpen] = useState(false)
 
   useEffect(() => {
     setTab(initialTab ?? 'overview')
   }, [studentId, initialTab])
+
+  // ── Marks & Results (§12/§29): the ONE canonical marksheet payload feeds
+  // BOTH the drawer's read-only exam-wise summary AND the formal A4
+  // document — one fetch, zero duplication. Lazy: loads when the tab is
+  // first opened (or immediately when opened straight to it).
+  useEffect(() => {
+    if (!studentId || marksheetFetchedFor === studentId) return
+    if (tab !== 'marksheets' && !marksheetOpen) return
+    let cancelled = false
+    setMarksheetLoading(true)
+    setMarksheetError(null)
+    fetch(`/api/teacher/students/${studentId}/marksheet`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    })
+      .then(async (res) => {
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean
+          error?: string
+          data?: MarksheetDocumentPayload
+        } | null
+        if (!res.ok || !json || json.ok !== true || !json.data) {
+          throw new Error(json?.error || `Request failed (${res.status})`)
+        }
+        return json.data
+      })
+      .then((d) => {
+        if (cancelled) return
+        setMarksheetDoc(d)
+        setMarksheetFetchedFor(studentId)
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setMarksheetError(e.message)
+      })
+      .finally(() => {
+        if (!cancelled) setMarksheetLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [studentId, tab, marksheetOpen, marksheetFetchedFor])
+
+  // reset the marksheet document when another student opens
+  useEffect(() => {
+    setMarksheetDoc(null)
+    setMarksheetError(null)
+    setMarksheetFetchedFor(null)
+    setMarksheetOpen(false)
+  }, [studentId])
 
   useEffect(() => {
     if (!studentId) return
@@ -332,7 +383,7 @@ export function TeacherStudentProfileSheet({
     const list: { key: ProfileTab; label: string }[] = [
       { key: 'overview', label: 'Overview' },
       { key: 'attendance', label: 'Attendance' },
-      { key: 'marksheets', label: 'Marksheets' },
+      { key: 'marksheets', label: 'Marks & Results' },
     ]
     if (data?.fees && data.fees.status !== 'NONE') list.push({ key: 'fees', label: 'Fee & Receipts' })
     list.push({ key: 'growth', label: 'Growth' })
@@ -553,80 +604,91 @@ export function TeacherStudentProfileSheet({
             )
           )}
 
-          {/* ── MARKSHEETS — the personal digital result record (§7–§12).
-              EVERY examination configured for the class with its honest
-              state; the digital marksheet document opens on demand. */}
+          {/* ── MARKS & RESULTS (§1/§12/§29) — the student's current academic
+              data, READ-ONLY and exam-wise: every subject with its real
+              marks ("—" when not yet entered), no per-exam print buttons,
+              no duplicate viewers. ONE action below opens the formal A4
+              digital marksheet document. */}
           {data && tab === 'marksheets' && (
-            data.academics.exams.length === 0 ? (
+            marksheetLoading && !marksheetDoc ? (
+              <div className="space-y-2" aria-busy="true">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-32 w-full" />
+              </div>
+            ) : marksheetError && !marksheetDoc ? (
+              <div className="rounded-xl border border-border bg-card/40 px-3 py-4 text-center">
+                <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{marksheetError}</p>
+                <Button variant="outline" size="sm" className="mt-3 h-8 text-xs" onClick={() => setMarksheetFetchedFor(null)}>
+                  Try again
+                </Button>
+              </div>
+            ) : !marksheetDoc || marksheetDoc.exams.length === 0 ? (
               <p className="rounded-xl border border-border bg-card/40 px-3 py-3 text-xs text-muted-foreground">
                 No examinations are configured for this student&rsquo;s class yet — the result record builds as exams and marks are set up.
               </p>
             ) : (
               <>
                 <p className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  <span>Examinations · {data.academics.exams[0]?.session ?? 'session'}</span>
-                  <span>{data.academics.exams.length} on record</span>
+                  <span>Examinations · {marksheetDoc.session ?? 'session'}</span>
+                  <span>{marksheetDoc.exams.length} on record</span>
                 </p>
-                <ul className="divide-y divide-border/50 rounded-xl border border-border bg-card/40">
-                  {data.academics.exams.map((ex) => (
-                    <li key={ex.examId} className="px-3 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-semibold">{ex.examName}</p>
-                          <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-                            {ex.subjectsTotal > 0
-                              ? `${ex.subjectsSubmitted}/${ex.subjectsTotal} subject${ex.subjectsTotal === 1 ? '' : 's'} submitted`
-                              : 'No subject marks yet'}
-                            {ex.percentage != null && (
-                              <>
-                                {' · '}
-                                <span className="font-semibold tabular-nums text-foreground">
-                                  {ex.percentage}%
-                                </span>
-                                {ex.partial && <span className="text-amber-600 dark:text-amber-400"> (partial)</span>}
-                              </>
-                            )}
-                            {ex.examDate ? ` · ${formatDate(ex.examDate)}` : ''}
-                          </p>
+                <div className="space-y-2">
+                  {marksheetDoc.exams.map((ex, i) => {
+                    const rows = marksheetDoc.subjects
+                      .map((s) => ({ name: s.subjectName, cell: s.cells[i] }))
+                      .filter((r) => r.cell != null)
+                    return (
+                      <div key={ex.examId} className="rounded-xl border border-border bg-card/40 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-xs font-semibold">{ex.examName}</p>
+                          <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold', EXAM_STATE_META[ex.state].cls)}>
+                            {EXAM_STATE_META[ex.state].label}
+                          </span>
                         </div>
-                        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold', EXAM_STATE_META[ex.state].cls)}>
-                          {EXAM_STATE_META[ex.state].label}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex items-center gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 gap-1 px-2.5 text-[11px]"
-                          onClick={() => {
-                            setMarksheetExamId(ex.examId)
-                            setMarksheetAutoPrint(false)
-                            setMarksheetOpen(true)
-                          }}
-                        >
-                          <Eye className="h-3 w-3" aria-hidden="true" /> View
-                        </Button>
-                        {(ex.state === 'READY' || ex.state === 'FINALIZED') && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 gap-1 px-2.5 text-[11px]"
-                            onClick={() => {
-                              setMarksheetExamId(ex.examId)
-                              setMarksheetAutoPrint(true)
-                              setMarksheetOpen(true)
-                            }}
-                          >
-                            <Printer className="h-3 w-3" aria-hidden="true" /> {ex.state === 'FINALIZED' ? 'Download PDF' : 'Print / PDF'}
-                          </Button>
+                        {rows.length > 0 && (
+                          <ul className="mt-2 space-y-1">
+                            {rows.map((r) => (
+                              <li key={r.name} className="flex items-baseline justify-between gap-2 text-xs">
+                                <span className="min-w-0 truncate text-muted-foreground">{r.name}</span>
+                                <span
+                                  className={cn(
+                                    'shrink-0 tabular-nums',
+                                    r.cell.isSubmitted ? 'font-semibold text-foreground' : 'text-muted-foreground/50',
+                                  )}
+                                >
+                                  {r.cell.isSubmitted
+                                    ? `${r.cell.obtained != null ? r.cell.obtained : 'AB'}${r.cell.maxMarks != null ? ` / ${r.cell.maxMarks}` : ''}`
+                                    : '—'}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {ex.percentage != null && (
+                          <p className="mt-2 text-[11px] text-muted-foreground">
+                            Percentage{' '}
+                            <span className="font-semibold tabular-nums text-foreground">{ex.percentage}%</span>
+                            {ex.partial && <span className="text-amber-600 dark:text-amber-400"> (partial)</span>}
+                          </p>
                         )}
                       </div>
-                    </li>
-                  ))}
-                </ul>
+                    )
+                  })}
+                </div>
+
+                {/* §2/§29 — ONE action: open the formal marksheet document */}
+                <Button
+                  className="w-full gap-1.5"
+                  onClick={() => setMarksheetOpen(true)}
+                >
+                  <GraduationCap className="h-4 w-4" aria-hidden="true" />
+                  View Marksheet
+                </Button>
                 <p className="text-[10px] leading-relaxed text-muted-foreground">
-                  Built from the same canonical marks as Marks Entry and Results Submission — submitted marks appear here
-                  automatically, pending subjects are shown as &ldquo;—&rdquo; and never invented.
+                  Read-only view of the same canonical marks used by Marks Entry and Results Submission — pending
+                  subjects show &ldquo;—&rdquo; and are never invented. The formal marksheet opens as its own document
+                  with print / PDF controls.
                 </p>
               </>
             )
@@ -909,15 +971,17 @@ export function TeacherStudentProfileSheet({
           download shortcut when opened via "Download" (§6) */}
       <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} autoPrint={receiptAutoPrint} />
 
-      {/* the personal DIGITAL MARKSHEET document (§10) — same canonical
-          marks, document layout, print/PDF only when complete */}
-      <StudentMarksheetViewer
-        studentId={studentId}
-        examId={marksheetExamId}
-        open={marksheetOpen}
-        onOpenChange={setMarksheetOpen}
-        autoPrint={marksheetAutoPrint}
-      />
+      {/* the student's FORMAL DIGITAL MARKSHEET (§25) — the ONE canonical
+          A4 document viewer, fed by the same payload as the read-only
+          Marks & Results tab. Print / Save PDF lives INSIDE it, gated by
+          the result state (§24). */}
+      {marksheetDoc && (
+        <StudentMarksheetViewer
+          data={marksheetDoc}
+          open={marksheetOpen}
+          onOpenChange={setMarksheetOpen}
+        />
+      )}
 
       {/* Add Points — the same compact sheet the Growth module uses, with
           this student preselected (presets ride along with the payload) */}
