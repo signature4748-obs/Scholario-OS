@@ -298,27 +298,17 @@ export async function attachCurriculumForAssignment(
 
 function buildSyllabusInfo(
   curriculum: SubjectCurriculum,
-  planTopicNames: Set<string>,
+  planTopicNames: string[],
 ): SyllabusInfo {
-  const missingTopics: SyllabusMissingTopic[] = []
-  const unitMap = new Map<number, { unitNo: number; unitName: string; topicCount: number; coveredCount: number }>()
-  for (const u of curriculum.units) {
-    unitMap.set(u.unitNo, { unitNo: u.unitNo, unitName: u.unitName, topicCount: u.topics.length, coveredCount: 0 })
-  }
-  for (const chapter of flattenCurriculum(curriculum)) {
-    const unit = unitMap.get(chapter.unitNo)
-    if (planTopicNames.has(normalizeTopicName(chapter.name))) {
-      if (unit) unit.coveredCount += 1
-    } else {
-      missingTopics.push({
-        unitNo: chapter.unitNo,
-        unitName: chapter.unitName,
-        topicName: chapter.name,
-        description: chapter.description,
-        periodsNeeded: chapter.periods,
-      })
-    }
-  }
+  const missingTopics = missingChaptersOf(curriculum, planTopicNames)
+  const missingByUnit = new Map<number, number>()
+  for (const m of missingTopics) missingByUnit.set(m.unitNo, (missingByUnit.get(m.unitNo) ?? 0) + 1)
+  const units = curriculum.units.map((u) => ({
+    unitNo: u.unitNo,
+    unitName: u.unitName,
+    topicCount: u.topics.length,
+    coveredCount: u.topics.length - (missingByUnit.get(u.unitNo) ?? 0),
+  }))
   const totalTopics = flattenCurriculum(curriculum).length
   return {
     board: 'CBSE',
@@ -327,9 +317,40 @@ function buildSyllabusInfo(
     subjectLabel: curriculum.subjectLabel,
     totalTopics,
     coveredTopics: totalTopics - missingTopics.length,
-    units: [...unitMap.values()],
+    units,
     missingTopics,
   }
+}
+
+/** Multiset chapter diff — the Nth same-named library chapter only counts
+ *  as present when the plan carries at least N same-named rows. NCERT
+ *  legitimately reuses chapter titles across a subject's books (Class 11
+ *  Economics has "Introduction" in BOTH Statistics for Economics U1 and
+ *  Introductory Microeconomics U2); a plain name-set would mark the second
+ *  one "covered" forever, even after the teacher deletes it. */
+function missingChaptersOf(
+  curriculum: SubjectCurriculum,
+  planTopicNames: string[],
+): SyllabusMissingTopic[] {
+  const counts = new Map<string, number>()
+  for (const n of planTopicNames) counts.set(n, (counts.get(n) ?? 0) + 1)
+  const missing: SyllabusMissingTopic[] = []
+  for (const chapter of flattenCurriculum(curriculum)) {
+    const key = normalizeTopicName(chapter.name)
+    const seen = counts.get(key) ?? 0
+    if (seen > 0) {
+      counts.set(key, seen - 1)
+    } else {
+      missing.push({
+        unitNo: chapter.unitNo,
+        unitName: chapter.unitName,
+        topicName: chapter.name,
+        description: chapter.description,
+        periodsNeeded: chapter.periods,
+      })
+    }
+  }
+  return missing
 }
 
 // ─── Custom topic authoring (LP-2: “very easy to add”) ───────────────────
@@ -518,7 +539,9 @@ export async function deleteCustomTopic(user: AuthUser, topicId: string): Promis
   await rewriteOrderIndexes(siblings, orderedIds)
 }
 
-/** Add every library chapter the plan is missing (LP-2 syllabus merge). */
+/** Add every library chapter the plan is missing (LP-2 syllabus merge).
+ *  Multiset-aware: same-named chapters are matched by count (see
+ *  missingChaptersOf). */
 export async function mergeSyllabusTemplate(
   user: AuthUser,
   classId: string,
@@ -533,8 +556,10 @@ export async function mergeSyllabusTemplate(
     orderBy: { orderIndex: 'asc' },
     select: { orderIndex: true, topicNo: true, topicName: true },
   })
-  const existingNames = new Set(existing.map((t) => normalizeTopicName(t.topicName)))
-  const missing = flattenCurriculum(curriculum).filter((t) => !existingNames.has(normalizeTopicName(t.name)))
+  const missing = missingChaptersOf(
+    curriculum,
+    existing.map((t) => normalizeTopicName(t.topicName)),
+  )
   if (missing.length === 0) return { added: 0 }
 
   const added = await instantiateCurriculum(
@@ -543,7 +568,13 @@ export async function mergeSyllabusTemplate(
     subjectId,
     curriculum,
     existing.map((t) => ({ orderIndex: t.orderIndex, topicNo: t.topicNo })),
-    missing,
+    missing.map((m) => ({
+      unitNo: m.unitNo,
+      unitName: m.unitName,
+      name: m.topicName,
+      description: m.description,
+      periods: m.periodsNeeded,
+    })),
   )
   return { added }
 }
@@ -670,8 +701,7 @@ export async function getLessonPlan(
   {
     const curriculum = await resolveCurriculumFor(schoolId, assignment.classLabel, assignment.subjectName)
     if (curriculum) {
-      const planNames = new Set(topicRows.map((t) => normalizeTopicName(t.topicName)))
-      syllabus = buildSyllabusInfo(curriculum, planNames)
+      syllabus = buildSyllabusInfo(curriculum, topicRows.map((t) => normalizeTopicName(t.topicName)))
     }
   }
 

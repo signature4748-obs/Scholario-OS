@@ -97,7 +97,12 @@ function TopicRow({
 
       <p
         className={cn(
-          'min-w-0 flex-1 text-sm font-medium',
+          // min-w floor: on narrow phones the flex-1 name can otherwise be
+          // squeezed below a single word's width (raw mid-word clipping).
+          // The row wraps (flex-wrap) so the date/pill/actions move to a
+          // second line instead; break-words is the last-resort net for
+          // tokens longer than the floor.
+          'min-w-[8rem] flex-1 break-words text-sm font-medium',
           done && 'text-muted-foreground',
         )}
         title={`${topic.topicNo}. ${topic.topicName}`}
