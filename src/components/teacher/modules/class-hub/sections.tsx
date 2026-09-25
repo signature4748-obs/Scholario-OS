@@ -2,34 +2,36 @@
 
 /**
  * class-hub/sections — the OVERVIEW sections of the Class Teacher Hub
- * (spec §24 structure). Every section follows the ONE anatomy:
- * SectionCard header + hairline rows/lists inside (§30 — tables and
- * lists for students, payments, marks, rankings and reports; cards only
- * for the KPI row). All numbers come from the canonical payloads:
+ * (FINAL UX refinement §12: Overview = the command center). Every section
+ * has ONE distinct purpose — no number is repeated in multiple large
+ * cards. Anatomy: SectionCard header + hairline rows/lists inside
+ * (§30 — tables and lists for students, payments, marks, rankings and
+ * reports; cards only for the KPI row). All numbers come from the
+ * canonical payloads:
  *   · overview  (GET /api/teacher/class-hub)        — today / fees / growth
  *   · detail    (GET /api/teacher/class-hub/detail) — directory /
- *     performance / ranking / attendance report / marksheets / growth trend
+ *     performance / attendance report / growth trend
  *
- * THE CONTEXT RULE (§3–§5): every "View …" action stays INSIDE My Class —
- * it switches to the class-scoped tab or opens a class-scoped drawer.
- * Nothing navigates to a global module.
+ * THE CONTEXT RULE: every "View …" action stays INSIDE My Class — it
+ * switches to the class-scoped tab or opens a class-scoped drawer. The
+ * ONE exception is attendance MARKING, which belongs to the global Class
+ * Attendance module and is reached only through a small contextual link.
  */
 
 import { useMemo } from 'react'
 import {
-  ArrowRight, Award, BarChart3, CalendarCheck, CheckCircle2,
-  ChevronRight, Clock, FileText, GraduationCap, IndianRupee,
-  Search, TrendingUp, Users, Wallet, X,
+  AlertTriangle, ArrowRight, Award, BarChart3, CalendarCheck,
+  CheckCircle2, ChevronRight, Clock, FileText, IndianRupee,
+  TrendingUp, Wallet,
 } from 'lucide-react'
 import { GradientAvatar } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useCertificatesStore } from '@/lib/store/certificates-store'
 import { SectionCard } from '../shared/section-card'
 import { HubEmptyState } from '../shared/hub-stat-cards'
 import type {
-  ClassHubClass, HubDetailPayload, HubDirectoryStudent,
+  ClassHubClass, HubDetailPayload,
 } from './types'
 
 /** The shared "View …" header action — one quiet link-styled button. */
@@ -46,30 +48,6 @@ export function ViewLink({ label, onClick, icon: Icon }: { label: string; onClic
   )
 }
 
-/** Quiet percentage chip with tone. */
-function PctChip({ pct, tone = 'auto' }: { pct: number | null; tone?: 'auto' | 'emerald' | 'amber' | 'rose' }) {
-  if (pct == null) return <span className="text-xs text-muted-foreground/70">—</span>
-  const t =
-    tone === 'auto'
-      ? pct >= 85
-        ? 'emerald'
-        : pct >= 75
-          ? 'amber'
-          : 'rose'
-      : tone
-  const cls =
-    t === 'emerald'
-      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-      : t === 'amber'
-        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-        : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-  return (
-    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums', cls)}>
-      {pct}%
-    </span>
-  )
-}
-
 function StatTile({ label, value, tone, className }: { label: string; value: string | number; tone: string; className?: string }) {
   return (
     <div className={cn('bg-card px-4 py-3', className)}>
@@ -79,64 +57,100 @@ function StatTile({ label, value, tone, className }: { label: string; value: str
   )
 }
 
-// ─── 1. ATTENDANCE — today's status + 30-day overview (§24) ───────────
+// ─── 1. ATTENDANCE — today's summary + 30-day rate + trend (§12) ──────
+// A READ-ONLY summary of the canonical records. Marking happens in the
+// global Class Attendance module — reachable here through ONE small
+// contextual action when today is still unmarked.
 
 export function AttendanceSection({
-  cls, report, onOpenAttendance,
+  cls, report, onOpenReport, onNavigate,
 }: {
   cls: ClassHubClass
   report: HubDetailPayload['attendanceReport'] | null
-  /** stays INSIDE My Class — switches to the Attendance tab */
-  onOpenAttendance: () => void
+  /** stays INSIDE My Class — switches to the Attendance REPORT tab */
+  onOpenReport: () => void
+  /** ONE small contextual action — opens the GLOBAL Class Attendance
+   *  module, the ONE place attendance is created/edited/submitted */
+  onNavigate: (moduleKey: string) => void
 }) {
   const att = cls.attendanceToday
   const rate = report?.overall.ratePct ?? null
+  const weekly = report?.weekly ?? []
   return (
     <SectionCard
       icon={CalendarCheck}
       title="Attendance"
       subtitle={
         att.marked
-          ? `Today · ${att.present + att.late} of ${cls.studentCount} attended`
+          ? `Today · ${att.present + att.late} of ${cls.studentCount} attended${rate != null ? ` · ${rate}% last 30 days` : ''}`
           : "Today's attendance hasn't been marked yet"
       }
-      actions={<ViewLink label="View attendance" onClick={onOpenAttendance} />}
+      actions={<ViewLink label="View report" onClick={onOpenReport} />}
       contentClassName=""
     >
-      <div className="grid grid-cols-2 gap-px bg-border/50 sm:grid-cols-5">
-        {att.marked ? (
-          <>
-            <StatTile label="Present" value={att.present} tone="text-emerald-600 dark:text-emerald-400" />
-            <StatTile label="Absent" value={att.absent} tone="text-rose-600 dark:text-rose-400" />
-            <StatTile label="Late" value={att.late} tone="text-amber-600 dark:text-amber-400" />
-            <StatTile label="On Leave" value={att.leave} tone="text-sky-600 dark:text-sky-400" />
-            <StatTile
-              label="30-day rate"
-              value={rate != null ? `${rate}%` : '—'}
-              tone="text-foreground"
-              className="col-span-2 sm:col-span-1"
-            />
-          </>
-        ) : (
-          <>
-            <StatTile label="Students" value={cls.studentCount} tone="text-foreground" />
-            <StatTile label="30-day rate" value={rate != null ? `${rate}%` : '—'} tone="text-foreground" />
-            <div className="col-span-2 flex flex-col justify-center gap-1.5 bg-card px-4 py-3 sm:col-span-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-muted-foreground">
-                As class teacher, marking the daily attendance is your morning duty.
-              </p>
-              <Button size="sm" onClick={onOpenAttendance} className="h-8 shrink-0 text-xs">
-                <CalendarCheck className="h-3.5 w-3.5" aria-hidden="true" /> Mark attendance
-              </Button>
-            </div>
-          </>
+      <div className="divide-y divide-border/50">
+        <div className="grid grid-cols-2 gap-px bg-border/50 sm:grid-cols-5">
+          {att.marked ? (
+            <>
+              <StatTile label="Present" value={att.present} tone="text-emerald-600 dark:text-emerald-400" />
+              <StatTile label="Absent" value={att.absent} tone="text-rose-600 dark:text-rose-400" />
+              <StatTile label="Late" value={att.late} tone="text-amber-600 dark:text-amber-400" />
+              <StatTile label="On Leave" value={att.leave} tone="text-sky-600 dark:text-sky-400" />
+              <StatTile
+                label="30-day rate"
+                value={rate != null ? `${rate}%` : '—'}
+                tone="text-foreground"
+                className="col-span-2 sm:col-span-1"
+              />
+            </>
+          ) : (
+            <>
+              <StatTile label="Students" value={cls.studentCount} tone="text-foreground" />
+              <StatTile label="30-day rate" value={rate != null ? `${rate}%` : '—'} tone="text-foreground" />
+              <div className="col-span-2 flex flex-col justify-center gap-1.5 bg-card px-4 py-3 sm:col-span-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Attendance is marked in Class Attendance — this workspace reports on the same records.
+                </p>
+                <Button size="sm" onClick={() => onNavigate('attendance')} className="h-8 shrink-0 text-xs">
+                  <CalendarCheck className="h-3.5 w-3.5" aria-hidden="true" /> Mark in Class Attendance
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+        {/* weekly trend — the same 8-week series the report tab shows */}
+        {weekly.length > 1 && (
+          <div className="flex items-end gap-1 px-4 py-3" aria-label="Weekly attendance trend">
+            {weekly.map((w) => (
+              <div
+                key={w.week}
+                className="flex min-w-0 flex-1 flex-col items-center gap-1"
+                title={`Week of ${w.week} — ${w.ratePct != null ? `${w.ratePct}%` : 'no data'}`}
+              >
+                <div className="flex h-9 w-full items-end justify-center">
+                  <div
+                    className={cn(
+                      'w-full max-w-6 rounded-t',
+                      (w.ratePct ?? 0) >= 90
+                        ? 'bg-emerald-500/80'
+                        : (w.ratePct ?? 0) >= 75
+                          ? 'bg-amber-500/80'
+                          : 'bg-rose-500/80',
+                    )}
+                    style={{ height: `${Math.max(w.ratePct ?? 6, 6)}%` }}
+                  />
+                </div>
+                <span className="text-[9px] font-medium tabular-nums text-muted-foreground">{w.ratePct ?? '—'}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </SectionCard>
   )
 }
 
-// ─── 2. CLASS PERFORMANCE — averages + top + attention (§24) ──────────
+// ─── 2. ACADEMIC PERFORMANCE — class average + subject comparison ─────
 
 export function PerformanceSection({
   detail, onOpenAcademics,
@@ -149,20 +163,20 @@ export function PerformanceSection({
   return (
     <SectionCard
       icon={BarChart3}
-      title="Class Performance"
+      title="Academic Performance"
       subtitle={
         p?.latestExam
           ? `${p.latestExam.examName} · class average ${p.overallAvgPct != null ? `${p.overallAvgPct}%` : '—'}`
           : 'Academic averages appear once exam marks are entered'
       }
-      actions={p && p.subjectAverages.length > 0 ? <ViewLink label="View academic details" onClick={onOpenAcademics} /> : undefined}
+      actions={p && p.subjectAverages.length > 0 ? <ViewLink label="View academics" onClick={onOpenAcademics} /> : undefined}
       contentClassName=""
     >
       {!p || p.subjectAverages.length === 0 ? (
         <HubEmptyState
           icon={BarChart3}
           title="No exam marks yet"
-          hint="Subject averages, top performers and trends come from the marks your subject teachers enter."
+          hint="Subject averages and trends come from the marks your subject teachers enter."
           className="py-8"
         />
       ) : (
@@ -224,163 +238,7 @@ export function PerformanceSection({
   )
 }
 
-// ─── 3. STUDENT DIRECTORY — the class preview (§24; full list = Students tab) ──
-
-export function DirectorySection({
-  directory,
-  search,
-  onOpenProfile,
-  onOpenStudents,
-  preview,
-}: {
-  directory: HubDirectoryStudent[]
-  search: string
-  onOpenProfile: (studentId: string) => void
-  /** stays INSIDE My Class — switches to the Students tab */
-  onOpenStudents: () => void
-  /** overview shows a preview; the Students tab renders the full list */
-  preview?: number
-}) {
-  const q = search.trim().toLowerCase()
-  const filtered = useMemo(
-    () =>
-      q
-        ? directory.filter(
-            (s) => s.name.toLowerCase().includes(q) || (s.rollNo ?? '').toLowerCase().includes(q) || (s.admissionNo ?? '').toLowerCase().includes(q),
-          )
-        : directory,
-    [directory, q],
-  )
-  const rows = preview != null ? filtered.slice(0, preview) : filtered
-  return (
-    <SectionCard
-      icon={Users}
-      title="Student Directory"
-      subtitle={
-        q
-          ? `${filtered.length} of ${directory.length} students match “${search.trim()}”`
-          : `${directory.length} students · ${preview != null && filtered.length > preview ? `first ${rows.length} · ` : ''}full authorized class view`
-      }
-      actions={<ViewLink label="View all students" onClick={onOpenStudents} />}
-      contentClassName=""
-    >
-      {rows.length === 0 ? (
-        <HubEmptyState
-          icon={Search}
-          title={q ? `No students match “${search.trim()}”` : 'No students enrolled'}
-          hint={q ? 'Try a different name, roll number or admission number.' : 'Active students enrolled in this class will appear here.'}
-          className="py-8"
-        />
-      ) : (
-        <>
-          <ul className="divide-y divide-border/50">
-            {rows.map((s) => (
-              <li key={s.studentId}>
-                <button
-                  type="button"
-                  onClick={() => onOpenProfile(s.studentId)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
-                >
-                  <GradientAvatar name={s.name} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {s.name}
-                      <span className="ml-1.5 text-[11px] font-semibold text-muted-foreground">#{s.rollNo ?? '—'}</span>
-                    </p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                      <span>Att {s.attendancePct != null ? `${s.attendancePct}%` : '—'}</span>
-                      <span aria-hidden>·</span>
-                      <span>Growth {s.growthScore != null ? s.growthScore : 'Building'}</span>
-                      <span aria-hidden>·</span>
-                      <span>Acad {s.academicPct != null ? `${s.academicPct}%` : '—'}</span>
-                      {s.feeOutstanding > 0 && (
-                        <>
-                          <span aria-hidden>·</span>
-                          <span className={s.feeOverdue ? 'font-semibold text-rose-600 dark:text-rose-400' : 'font-semibold text-amber-600 dark:text-amber-400'}>
-                            {formatINR(s.feeOutstanding)} due
-                          </span>
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          {preview != null && filtered.length > preview && (
-            <button
-              type="button"
-              onClick={onOpenStudents}
-              className="flex w-full items-center justify-center gap-1 border-t border-border bg-muted/20 px-4 py-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/5"
-            >
-              + {filtered.length - preview} more student{filtered.length - preview === 1 ? '' : 's'} — open the class directory
-            </button>
-          )}
-        </>
-      )}
-    </SectionCard>
-  )
-}
-
-// ─── 4. STUDENT RANKING — academic only, NEVER growth (§24) ───────────
-
-export function RankingSection({
-  detail, onOpenAcademics,
-}: {
-  detail: HubDetailPayload | null
-  /** stays INSIDE My Class — switches to the Academics tab (full ranking) */
-  onOpenAcademics: () => void
-}) {
-  const exams = detail?.ranking.exams ?? []
-  const latest = exams[0]
-  const rows = latest ? detail?.ranking.rowsByExam[latest.examId] ?? [] : []
-  return (
-    <SectionCard
-      icon={Award}
-      title="Student Ranking"
-      subtitle={
-        latest
-          ? `${latest.examName} · academic performance only`
-          : 'Rankings appear once exam marks are entered'
-      }
-      actions={latest ? <ViewLink label="View ranking" onClick={onOpenAcademics} /> : undefined}
-      contentClassName=""
-    >
-      {rows.length === 0 ? (
-        <HubEmptyState
-          icon={Award}
-          title="No ranked exam yet"
-          hint="Rankings use canonical exam marks — the growth score is a different concept and never used here."
-          className="py-8"
-        />
-      ) : (
-        <ul className="divide-y divide-border/50">
-          {rows.slice(0, 5).map((r) => (
-            <li key={r.studentId} className="flex items-center gap-3 px-4 py-2.5">
-              <span
-                className={cn(
-                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums',
-                  r.rank === 1 && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-                  r.rank === 2 && 'bg-slate-500/15 text-slate-600 dark:text-slate-300',
-                  r.rank === 3 && 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
-                  r.rank > 3 && 'bg-muted text-muted-foreground',
-                )}
-              >
-                {String(r.rank).padStart(2, '0')}
-              </span>
-              <GradientAvatar name={r.name} size="sm" />
-              <p className="min-w-0 flex-1 truncate text-sm font-medium">{r.name}</p>
-              <span className="text-sm font-bold tabular-nums">{r.pct}%</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </SectionCard>
-  )
-}
-
-// ─── 5. FEES & PAYMENTS — collection + outstanding + verification (§24) ─
+// ─── 3. FEE STATUS — collection + outstanding + verification (§12) ────
 
 export function FeesSection({
   cls, onOpenFees, onOpenProfile,
@@ -395,7 +253,7 @@ export function FeesSection({
   return (
     <SectionCard
       icon={Wallet}
-      title="Fees & Payments"
+      title="Fee Status"
       subtitle={
         f.awaitingVerificationCount > 0
           ? `${formatINR(f.awaitingVerificationAmount)} awaiting the Principal's verification`
@@ -403,7 +261,7 @@ export function FeesSection({
             ? `${collectionPct}% of ${formatINR(f.totalBilled)} collected`
             : 'No fees billed for this class yet'
       }
-      actions={<ViewLink label="View fee details" onClick={onOpenFees} />}
+      actions={<ViewLink label="Manage fees" onClick={onOpenFees} />}
       contentClassName=""
     >
       <div className="grid grid-cols-2 gap-px bg-border/50 sm:grid-cols-4">
@@ -422,7 +280,7 @@ export function FeesSection({
       </div>
       {f.defaulters.length > 0 && (
         <ul className="divide-y divide-border/50 border-t border-border">
-          {f.defaulters.slice(0, 4).map((d) => (
+          {f.defaulters.slice(0, 3).map((d) => (
             <li key={d.studentId}>
               <button
                 type="button"
@@ -446,9 +304,9 @@ export function FeesSection({
               </button>
             </li>
           ))}
-          {f.defaulters.length > 4 && (
+          {f.defaulters.length > 3 && (
             <li className="px-4 py-2 text-center text-[11px] text-muted-foreground">
-              + {f.defaulters.length - 4} more students with outstanding fees
+              + {f.defaulters.length - 3} more student{f.defaulters.length - 3 === 1 ? '' : 's'} with outstanding fees
             </li>
           )}
         </ul>
@@ -457,7 +315,7 @@ export function FeesSection({
   )
 }
 
-// ─── 6. CLASS GROWTH — the canonical growth summary + trend (§20–§22) ─
+// ─── 4. STUDENT GROWTH — class growth summary + trend (§12/§14) ───────
 
 export function GrowthSection({
   cls,
@@ -481,13 +339,13 @@ export function GrowthSection({
   return (
     <SectionCard
       icon={TrendingUp}
-      title="Class Growth"
+      title="Student Growth"
       subtitle={
         g.average != null
-          ? `${g.average} average${g.scoredCount < cls.studentCount ? ` · ${g.scoredCount} of ${cls.studentCount} scored` : ` · all ${cls.studentCount} scored`}`
+          ? `${g.average} class growth${g.scoredCount < cls.studentCount ? ` · ${g.scoredCount} of ${cls.studentCount} scored` : ` · all ${cls.studentCount} scored`}`
           : 'Growth scores build as attendance and marks accumulate'
       }
-      actions={<ViewLink label="View class growth" onClick={onOpenGrowth} />}
+      actions={<ViewLink label="Class growth" onClick={onOpenGrowth} />}
       contentClassName=""
     >
       <div className="grid grid-cols-2 gap-px bg-border/50 sm:grid-cols-4">
@@ -500,7 +358,7 @@ export function GrowthSection({
         <StatTile label="Steady" value={g.steady} tone="text-amber-600 dark:text-amber-400" />
         <StatTile label="Need attention" value={g.needsAttention} tone="text-rose-600 dark:text-rose-400" />
       </div>
-      {/* 8-week trend (§22) — a compact inline sparkline, no second fetch */}
+      {/* 8-week trend — a compact inline sparkline, no second fetch */}
       {trend.length > 1 && (
         <div className="flex items-end gap-1 border-t border-border px-4 py-3" aria-label="8-week class growth trend">
           {trend.map((p) => (
@@ -545,11 +403,136 @@ export function GrowthSection({
   )
 }
 
-// ─── 7. CLASS REPORTS — 4 class-scoped report summaries (§23/§24) ────
+// ─── 5. STUDENT ATTENTION — ONE consolidated concern list (§12) ───────
+// Flags from four canonical systems, deduplicated per student: attendance
+// (below the 85% threshold, ≥3 marked days — server-filtered), academics
+// (significantly below the class average), growth (the engine's
+// needs-attention band) and fees (overdue). Each student appears ONCE.
 
-export interface ReportKindInfo {
-  key: 'attendance' | 'academics' | 'fees' | 'growth'
+export interface ClassAttentionRow {
+  studentId: string
+  name: string
+  rollNo: string | null
+  reasons: { label: string; cls: string }[]
 }
+
+/** The consolidated attention rows — ONE definition shared by the
+ *  Overview "Open Concerns" KPI and the Student Attention section. */
+export function classAttentionOf(cls: ClassHubClass, detail: HubDetailPayload | null): ClassAttentionRow[] {
+  const byId = new Map<string, ClassAttentionRow>()
+  const push = (studentId: string, name: string, rollNo: string | null, reason: { label: string; cls: string }) => {
+    const entry = byId.get(studentId) ?? { studentId, name, rollNo, reasons: [] }
+    entry.reasons.push(reason)
+    byId.set(studentId, entry)
+  }
+  for (const s of detail?.attendanceReport.belowThreshold ?? []) {
+    push(s.studentId, s.name, s.rollNo, {
+      label: `Attendance ${s.ratePct}%`,
+      cls: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    })
+  }
+  for (const s of detail?.performance.needsAttention ?? []) {
+    push(s.studentId, s.name, s.rollNo, {
+      label: `Academics ${s.pct}%`,
+      cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    })
+  }
+  // the growth engine's needs-attention band, mirrored client-side for
+  // display only (same rule as the growth drawer)
+  for (const s of detail?.directory ?? []) {
+    if (s.growthScore != null && (s.growthScore < 55 || s.growthMonthDelta <= -4)) {
+      push(s.studentId, s.name, s.rollNo, {
+        label: 'Growth',
+        cls: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+      })
+    }
+  }
+  for (const d of cls.fees.defaulters) {
+    if (d.hasOverdue) {
+      push(d.studentId, d.name, d.rollNo, {
+        label: 'Fees overdue',
+        cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+      })
+    }
+  }
+  return [...byId.values()].sort(
+    (a, b) =>
+      b.reasons.length - a.reasons.length ||
+      (a.rollNo ?? '').localeCompare(b.rollNo ?? '', undefined, { numeric: true }),
+  )
+}
+
+export function StudentAttentionSection({
+  cls, detail, onOpenProfile, onOpenStudents,
+}: {
+  cls: ClassHubClass
+  detail: HubDetailPayload | null
+  onOpenProfile: (studentId: string) => void
+  /** stays INSIDE My Class — switches to the Students tab */
+  onOpenStudents: () => void
+}) {
+  const rows = useMemo(() => classAttentionOf(cls, detail), [cls, detail])
+
+  return (
+    <SectionCard
+      icon={AlertTriangle}
+      title="Student Attention"
+      subtitle={
+        rows.length > 0
+          ? `${rows.length} student${rows.length === 1 ? '' : 's'} flagged across attendance, academics, growth or fees`
+          : 'No open concerns'
+      }
+      actions={rows.length > 0 ? <ViewLink label="View students" onClick={onOpenStudents} /> : undefined}
+      contentClassName=""
+    >
+      {rows.length === 0 ? (
+        <div className="flex items-center gap-3 px-4 py-5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="h-4.5 w-4.5" aria-hidden="true" />
+          </span>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Nothing needs your attention right now — attendance, academics, growth and fees are all clear for this class.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border/50">
+          {rows.slice(0, 4).map((r) => (
+            <li key={r.studentId}>
+              <button
+                type="button"
+                onClick={() => onOpenProfile(r.studentId)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
+              >
+                <GradientAvatar name={r.name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {r.name}
+                    <span className="ml-1.5 text-[11px] font-semibold text-muted-foreground">#{r.rollNo ?? '—'}</span>
+                  </p>
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {r.reasons.map((reason, i) => (
+                      <span key={i} className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', reason.cls)}>
+                        {reason.label}
+                      </span>
+                    ))}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+          {rows.length > 4 && (
+            <li className="px-4 py-2 text-center text-[11px] text-muted-foreground">
+              + {rows.length - 4} more student{rows.length - 4 === 1 ? '' : 's'} with open concerns
+            </li>
+          )}
+        </ul>
+      )}
+    </SectionCard>
+  )
+}
+
+// ─── 6. CLASS REPORTS — 4 class-scoped reports (§12/§15) ──────────────
 
 export function ReportsSection({
   cls,
@@ -584,7 +567,7 @@ export function ReportsSection({
       title: 'Academic Report',
       summary:
         p?.overallAvgPct != null
-          ? `${p.latestExam?.examName ?? 'Latest exam'} · class average ${p.overallAvgPct}% · ${p.trend.length} exams with marks`
+          ? `${p.latestExam?.examName ?? 'Latest exam'} · class average ${p.overallAvgPct}% · ${p.trend.length} exam${p.trend.length === 1 ? '' : 's'} with marks`
           : 'Builds as exam marks are entered',
       tone: p?.overallAvgPct != null && p.overallAvgPct < 60 ? 'rose' : 'emerald',
     },
@@ -646,90 +629,6 @@ export function ReportsSection({
           </li>
         ))}
       </ul>
-    </SectionCard>
-  )
-}
-
-// ─── 8. MARKSHEETS & CERTIFICATES (§24; detail = MarksheetDrawer) ─────
-
-export function DocumentsSection({
-  detail, onOpenMarksheet, rosterIds,
-}: {
-  detail: HubDetailPayload | null
-  onOpenMarksheet: (examId: string) => void
-  rosterIds: string[]
-}) {
-  const allDocuments = useCertificatesStore((s) => s.documents)
-  const documents = useMemo(
-    () => allDocuments.filter((d) => d.studentId != null && rosterIds.includes(d.studentId)),
-    [allDocuments, rosterIds],
-  )
-  const marksheets = detail?.marksheets ?? []
-  return (
-    <SectionCard
-      icon={GraduationCap}
-      title="Marksheets & Certificates"
-      subtitle={
-        marksheets.length > 0
-          ? `${marksheets.length} exam${marksheets.length === 1 ? '' : 's'} with entered marks${documents.length > 0 ? ` · ${documents.length} certificates issued` : ''}`
-          : 'Documents appear once marks are entered'
-      }
-      contentClassName=""
-    >
-      {marksheets.length === 0 && documents.length === 0 ? (
-        <HubEmptyState
-          icon={GraduationCap}
-          title="No documents yet"
-          hint="Class marksheets build from the canonical exam marks; certificates are issued by the school office."
-          className="py-8"
-        />
-      ) : (
-        <div className="divide-y divide-border/50">
-          {marksheets.map((m) => (
-            <div key={m.examId} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{m.examName}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {m.studentsScored} scored · {m.subjectsWithMarks} subject{m.subjectsWithMarks === 1 ? '' : 's'}
-                  {m.avgPct != null && ` · avg ${m.avgPct}%`}
-                  {m.resultStatus === 'Declared' && ' · results declared'}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => onOpenMarksheet(m.examId)}>
-                  <FileText className="h-3.5 w-3.5" aria-hidden="true" /> View
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs"
-                  onClick={() => onOpenMarksheet(m.examId)}
-                  aria-label={`Print ${m.examName} marksheet`}
-                >
-                  <FileText className="h-3.5 w-3.5" aria-hidden="true" /> Print
-                </Button>
-              </div>
-            </div>
-          ))}
-          {documents.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3 bg-muted/20 px-4 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Certificates issued</p>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {documents.slice(0, 3).map((d) => `${d.studentName} · ${d.docType}`).join(' · ')}
-                  {documents.length > 3 && ` · +${documents.length - 3} more`}
-                </p>
-              </div>
-              <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {documents.length}
-              </span>
-            </div>
-          )}
-          <p className="bg-muted/20 px-4 py-2 text-[11px] leading-relaxed text-muted-foreground">
-            Marksheets read the canonical marks — the same numbers every other module uses. Certificate generation stays with the school office.
-          </p>
-        </div>
-      )}
     </SectionCard>
   )
 }

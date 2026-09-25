@@ -12,13 +12,13 @@
  *     record, read-only status chips — no edit controls, no Save, no
  *     Submit. The context line says who manages the record.
  *
- * The module also powers My Class → Attendance through the `fixedClass`
- * prop: the board is pinned to that class (the hub header carries the
- * class identity), so the workspace stays inside the My Class context —
- * a compact date bar replaces the full toolbar.
+ * This is the ONE place attendance is created, edited and submitted.
+ * My Class → Attendance is a separate READ-ONLY class attendance REPORT
+ * (attendance-report-tab) that summarizes the same canonical records —
+ * it never embeds this board and holds no editing control.
  *
  * Composition (My-Timetable design language):
- *   ModuleToolbar (class + date nav) — or the embedded date bar →
+ *   ModuleToolbar (class + date nav) →
  *   week strip → 4 compact HubStatCards (value / total + hairline
  *   progress) → roster/insights SectionCard (segmented):
  *   · Roster   — hairline `divide-y` rows with a colored left border
@@ -109,13 +109,7 @@ const DATE_INPUT_CLASS =
 
 // ─── module ───────────────────────────────────────────────────────────
 
-export function AttendanceModule({
-  fixedClass,
-}: {
-  /** My Class → Attendance: pin the board to this class and swap the full
-   *  toolbar for the compact in-hub date bar (§5 — stay in context). */
-  fixedClass?: { classId: string; label: string }
-} = {}) {
+export function AttendanceModule() {
   const {
     classes,
     classesError,
@@ -141,7 +135,7 @@ export function AttendanceModule({
     save,
     readOnly,
     embedded,
-  } = useAttendanceModule({ fixedClassId: fixedClass?.classId ?? null })
+  } = useAttendanceModule()
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'roster' | 'insights'>('roster')
 
