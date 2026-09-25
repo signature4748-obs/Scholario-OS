@@ -16,8 +16,11 @@ export const runtime = 'nodejs'
  *   · performance — overall + subject averages, top performers, students
  *                   needing attention and the per-exam trend (ExamMark);
  *   · ranking     — per-exam academic ranking (NEVER the growth score);
- *   · attendance  — 30-day overall + monthly + weekly trend + students
- *                   below the 85% threshold (canonical Attendance);
+ *   · attendance  — 30-day overall + monthly + weekly trend + the most
+ *                   recent marked day + per-student breakdown + students
+ *                   below the 85% threshold (canonical Attendance — this
+ *                   is a READ/summarize surface; marking happens only in
+ *                   the global Class Attendance module);
  *   · marksheets  — exams with entered marks for the class (view surface
  *                   over ExamMark — marks are never duplicated);
  *   · taughtSubjects — the class teacher's OWN subjects in this class, so
@@ -142,10 +145,56 @@ export async function GET(request: Request) {
         late: attRows.filter((r) => r.status === 'LATE').length,
         leave: attRows.filter((r) => r.status === 'LEAVE').length,
       }
+
+      // school operational days in the window — distinct dates ANY class of
+      // this school has canonical attendance for. The honest denominator
+      // behind "marked days" (this class) vs "school days" (the school).
+      const schoolDayRows = await db.attendance.findMany({
+        where: { schoolId, date: { gte: since, lte: todayEnd } },
+        select: { date: true },
+        distinct: ['date'],
+      })
+      const schoolDays = new Set(schoolDayRows.map((r) => r.date.toISOString().slice(0, 10))).size
+
+      // the most recent marked day for THIS class, with per-status counts
+      // (the report's "most recent attendance summary")
+      const dayStatusAgg = new Map<string, { present: number; absent: number; late: number; leave: number }>()
+      for (const r of attRows) {
+        const key = r.date.toISOString().slice(0, 10)
+        const agg =
+          dayStatusAgg.get(key) ?? { present: 0, absent: 0, late: 0, leave: 0 }
+        if (r.status === 'PRESENT') agg.present++
+        else if (r.status === 'ABSENT') agg.absent++
+        else if (r.status === 'LATE') agg.late++
+        else if (r.status === 'LEAVE') agg.leave++
+        dayStatusAgg.set(key, agg)
+      }
+      const latestDayKey = [...dayStatusAgg.keys()].sort().at(-1) ?? null
+      const latestDay = latestDayKey ? { date: latestDayKey, ...dayStatusAgg.get(latestDayKey)! } : null
+
+      // per-student 30-day breakdown (the full roster, roll order) — the
+      // same canonical rows, never a second attendance state
+      const byStudent = students.map((s) => {
+        const st = attStat.get(s.id)!
+        const rate = rateOf(s.id)
+        return {
+          studentId: s.id,
+          name: s.user.name,
+          rollNo: s.rollNo,
+          ratePct: rate != null ? Math.round(rate * 100) : null,
+          present: st.attended - st.late,
+          absent: st.absent,
+          late: st.late,
+          leave: st.leave,
+          markedDays: st.eligible + st.leave,
+        }
+      })
+
       const attendanceReport = {
         overall: {
           ratePct: overallEligible > 0 ? Math.round((overallAttended / overallEligible) * 100) : null,
           markedDays: dayAgg.size,
+          schoolDays,
           ...counts30,
         },
         monthly: [...monthAgg.entries()]
@@ -156,6 +205,8 @@ export async function GET(request: Request) {
           .sort(([a], [b]) => a.localeCompare(b))
           .slice(-8)
           .map(([week, v]) => ({ week, ratePct: v.eligible > 0 ? Math.round((v.attended / v.eligible) * 100) : null })),
+        latestDay,
+        byStudent,
         belowThreshold: studentIds
           .map((id) => {
             const st = attStat.get(id)!

@@ -139,6 +139,9 @@ export interface HubDetailPayload {
     overall: {
       ratePct: number | null
       markedDays: number
+      /** school operational days in the window — distinct dates the school
+       * (any class) has canonical attendance for; the honest denominator */
+      schoolDays: number
       present: number
       absent: number
       late: number
@@ -146,6 +149,21 @@ export interface HubDetailPayload {
     }
     monthly: { month: string; ratePct: number | null }[]
     weekly: { week: string; ratePct: number | null }[]
+    /** the most recent marked day for THIS class (counts + ISO date) */
+    latestDay: { date: string; present: number; absent: number; late: number; leave: number } | null
+    /** per-student 30-day breakdown — the full roster in roll order */
+    byStudent: {
+      studentId: string
+      name: string
+      rollNo: string | null
+      ratePct: number | null
+      present: number
+      absent: number
+      late: number
+      leave: number
+      /** eligible days (LEAVE excluded) + leave days — the honesty floor */
+      markedDays: number
+    }[]
     belowThreshold: {
       studentId: string
       name: string
