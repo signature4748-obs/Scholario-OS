@@ -1,6 +1,12 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
-import { parseDateParam, resolveClassScope, isValidStatus } from '@/lib/class-attendance'
+import {
+  parseDateParam,
+  resolveClassScope,
+  isValidStatus,
+  writeCanonicalAttendance,
+  type AttendanceStatusValue,
+} from '@/lib/class-attendance'
 
 export const runtime = 'nodejs'
 
@@ -21,7 +27,8 @@ interface SessionBody {
  * There is NO separate teacher/subject-specific attendance record: a
  * subject teacher who opens the roster sees the class teacher's saved
  * baseline for that date (prefill) and, when she saves, updates the same
- * canonical rows (marked-by carries her name + subject for provenance).
+ * canonical rows (marked-by carries her name + subject for provenance,
+ * every edit is journaled to the audit log).
  *
  * Authorization: the teacher must actually teach the posted subject for
  * this class (timetable ∩ ACTIVE ClassSubjectAssignment — resolved
@@ -47,39 +54,27 @@ export async function POST(request: Request) {
         select: { id: true },
       })
       const rosterIds = new Set(students.map((s) => s.id))
-      const entries = body.entries.filter((e) => rosterIds.has(e.studentId) && isValidStatus(e.status))
+      const seen = new Set<string>()
+      const entries = body.entries.filter(
+        (e): e is { studentId: string; status: AttendanceStatusValue } =>
+          rosterIds.has(e.studentId) && isValidStatus(e.status) && !seen.has(e.studentId) && (seen.add(e.studentId), true)
+      )
       if (entries.length !== rosterIds.size) {
         throw new Error('Every student needs a valid status')
       }
 
-      // ONE canonical record per class-day (same as the class-teacher
-      // baseline): replace the day window and write one row per student.
-      // The marked-by line keeps the honest provenance of this save.
-      const nextDay = new Date(day.getTime() + 86_400_000)
-      await db.attendance.deleteMany({
-        where: { classId: body.classId, date: { gte: day, lt: nextDay } },
+      // ONE canonical record per class-day — the same writer the baseline
+      // uses, with the honest provenance of this save.
+      const result = await writeCanonicalAttendance({
+        schoolId,
+        classId: body.classId,
+        date: day,
+        entries,
+        actor: { id: user.id, name: user.name ?? 'Subject Teacher' },
+        source: 'SUBJECT_SESSION',
+        markedBy: `${user.name ?? 'Subject Teacher'} · ${teaches.name}`,
       })
-      const markedBy = `${user.name ?? 'Subject Teacher'} · ${teaches.name}`
-      for (const e of entries) {
-        await db.attendance.create({
-          data: {
-            schoolId,
-            studentId: e.studentId,
-            classId: body.classId,
-            date: day,
-            status: e.status,
-            markedBy,
-          },
-        })
-      }
-
-      const counts = {
-        present: entries.filter((e) => e.status === 'PRESENT').length,
-        absent: entries.filter((e) => e.status === 'ABSENT').length,
-        late: entries.filter((e) => e.status === 'LATE').length,
-        leave: entries.filter((e) => e.status === 'LEAVE').length,
-      }
-      return { saved: entries.length, subjectName: teaches.name, canonical: true, counts }
+      return { ...result, subjectName: teaches.name, canonical: true }
     },
     { roles: ['TEACHER'] }
   )

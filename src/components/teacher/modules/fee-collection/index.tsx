@@ -21,12 +21,13 @@
  *   · per-student ledger sheet + the shared receipt viewer.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GradientAvatar, PageTransition } from '@/components/shared/ui'
 import { formatINR } from '@/lib/format'
+import { useFocusStore } from '@/lib/store/focus-store'
 import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
 import { methodLabel, sourceLabel, sourceStory, txnDate, txnStatusMeta } from '@/components/shared/fee-collection/txn-meta'
 import { useFeeCollection } from './hooks'
@@ -71,6 +72,17 @@ export function FeeCollectionModule() {
   const [profileStudentId, setProfileStudentId] = useState<string | null>(null)
   const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
+
+  // Cross-module deep link (My Class → View collection / Fee Collection):
+  // the focus store carries the exact class to open, consumed once on mount.
+  useEffect(() => {
+    const focus = useFocusStore.getState().focus
+    if (focus && focus.type === 'class' && focus.moduleKey === 'fee-collection') {
+      const idx = data?.classes.findIndex((c) => c.classId === focus.id) ?? -1
+      if (idx >= 0) setClassIdx(idx)
+      useFocusStore.getState().clearFocus()
+    }
+  }, [data])
 
   const klass = data?.classes?.[Math.min(classIdx, (data?.classes.length ?? 1) - 1)] ?? null
   const students = klass?.students ?? []

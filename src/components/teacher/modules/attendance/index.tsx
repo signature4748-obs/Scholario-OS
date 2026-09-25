@@ -39,6 +39,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  CloudUpload,
+  History,
   Loader2,
   Plane,
   Save,
@@ -73,11 +75,13 @@ import {
   ATTENDANCE_STATUSES,
   HISTORY_DOT,
   STATUS_CONFIG,
+  boundaryLabel,
   historyStatsFor,
   longDate,
   rateTone,
   recentStatusesFor,
   rosterContextLine,
+  savedAtLabel,
   shiftDayKey,
   shortDate,
   todayKey,
@@ -86,6 +90,7 @@ import {
   type AttendanceHistory,
   type AttendanceStatus,
   type AttendanceStudent,
+  type AuditRow,
   type SaveCounts,
 } from './shared'
 
@@ -113,6 +118,8 @@ export function AttendanceModule() {
     draft,
     source,
     dirty,
+    resumedFromDraft,
+    draftSavedAt,
     setStatus,
     markAllPresent,
     counts,
@@ -377,9 +384,33 @@ export function AttendanceModule() {
             saving={saving}
             justSaved={justSaved}
             dirty={dirty}
-            marked={source !== 'present'}
+            marked={source === 'baseline' || source === 'session'}
             isSubjectMode={isSubjectMode}
+            draftSavedAt={draftSavedAt}
+            autosaveBoundary={
+              board.autosave?.autosaveFinalize && date === todayKey() && !board.baseline.exists
+                ? boundaryLabel(board.autosave.endOfDayMinutes)
+                : null
+            }
           />
+
+          {/* §19 draft resume — one quiet amber line so an open sheet is
+              never mistaken for the official record */}
+          {resumedFromDraft && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] px-3.5 py-2.5 text-xs text-amber-700 dark:text-amber-300"
+            >
+              <CloudUpload className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <p className="min-w-0">
+                Unsaved draft restored — your entries were kept.
+                <span className="text-amber-700/80 dark:text-amber-300/80">
+                  {' '}
+                  Save attendance to make them official.
+                </span>
+              </p>
+            </div>
+          )}
 
           {/* week strip: Mon–Sun, marked days dotted, today ringed —
               a lightweight navigation control, not a card */}
@@ -459,6 +490,7 @@ export function AttendanceModule() {
               <InsightsView
                 students={board.students}
                 history={board.history}
+                audit={board.audit ?? []}
               />
             ) : (
               <>
@@ -506,7 +538,17 @@ export function AttendanceModule() {
                     <p className="text-[11px] text-muted-foreground">
                       {dirty ? (
                         <span className="font-medium text-amber-600 dark:text-amber-400">
-                          Unsaved changes — remember to save
+                          Unsaved — kept as a draft
+                          {draftSavedAt && (
+                            <span className='font-normal text-muted-foreground'>
+                              {' '}(saved {savedAtLabel(draftSavedAt, date)})
+                            </span>
+                          )}
+                          {board.autosave?.autosaveFinalize && date === todayKey() && !board.baseline.exists && (
+                            <span className="font-normal text-muted-foreground">
+                              {' '}· auto-submits {boundaryLabel(board.autosave.endOfDayMinutes)}
+                            </span>
+                          )}
                         </span>
                       ) : source === 'present' ? (
                         'Nothing saved for this date yet'
@@ -804,6 +846,8 @@ function MobileSaveRow({
   dirty,
   marked,
   isSubjectMode,
+  draftSavedAt,
+  autosaveBoundary,
 }: {
   save: () => void
   canSave: boolean
@@ -812,6 +856,8 @@ function MobileSaveRow({
   dirty: boolean
   marked: boolean
   isSubjectMode: boolean
+  draftSavedAt: string | null
+  autosaveBoundary: string | null
 }) {
   const status = saving ? (
     <span className="flex items-center gap-1.5">
@@ -823,8 +869,8 @@ function MobileSaveRow({
     </span>
   ) : dirty ? (
     <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" aria-hidden="true" />
-      Unsaved changes
+      <CloudUpload className="h-3 w-3 shrink-0" aria-hidden="true" />
+      Draft kept
     </span>
   ) : marked ? (
     'In sync with saved record'
@@ -840,6 +886,11 @@ function MobileSaveRow({
     >
       <p className="w-[96px] min-w-0 shrink-0 text-[11px] font-medium leading-snug text-muted-foreground">
         {status}
+        {autosaveBoundary && dirty && (
+          <span className="block text-[10px] font-normal leading-tight text-muted-foreground/80">
+            auto-submits {autosaveBoundary}
+          </span>
+        )}
       </p>
       <Button
         onClick={save}
@@ -892,13 +943,16 @@ function MobileSaveRow({
   )
 }
 
-/** Insights: trend / attention / perfect record — all from the history slice. */
+/** Insights: trend / attention / perfect record / recent changes — all
+ *  from the history slice + the canonical audit journal. */
 function InsightsView({
   students,
   history,
+  audit,
 }: {
   students: AttendanceStudent[]
   history: AttendanceHistory | undefined
+  audit: AuditRow[]
 }) {
   const days = history?.days ?? []
   const perStudent = useMemo(
@@ -1033,6 +1087,44 @@ function InsightsView({
                       title={`${stat.present}/${stat.marked} present`}
                     >
                       {Math.round(stat.rate * 100)}%
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* recent changes — the §18 audit journal, hairline list */}
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <History className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Recent changes
+            </h4>
+          </div>
+          {audit.length === 0 ? (
+            <p className="py-6 text-center text-xs text-muted-foreground">
+              No edited statuses in the last 30 days — edits are always journaled.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/50">
+              {audit.map((row, i) => {
+                const prev = STATUS_CONFIG[row.previousStatus as AttendanceStatus]
+                const next = STATUS_CONFIG[row.newStatus as AttendanceStatus]
+                return (
+                  <li key={`${row.createdAt}-${i}`} className="flex items-center gap-2.5 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold">{row.studentName}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {row.changedBy} · {shortDate(row.date)}
+                        {row.source === 'AUTOSAVE' && ' · autosaved'}
+                      </p>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold">
+                      {prev && <span className={cn('rounded px-1.5 py-0.5 line-through opacity-60', prev.inactive)}>{prev.label}</span>}
+                      <span aria-hidden className="text-muted-foreground">→</span>
+                      {next && <span className={cn('rounded px-1.5 py-0.5', next.inactive)}>{next.label}</span>}
                     </span>
                   </li>
                 )

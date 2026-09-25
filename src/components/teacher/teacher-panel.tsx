@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/shell/app-shell'
 import { lazyModule } from '@/components/shared/lazy-module'
 import { useTeachersStore } from '@/lib/store/teachers-store'
@@ -77,6 +77,17 @@ export function TeacherPanel() {
   // REAL appointment context (server truth) — gates the Class Teacher Hub.
   const role = useTeacherRole()
   const classTeacherOf = role?.classTeacherOf ?? []
+
+  // §34 automatic role synchronization: if the Principal REMOVES the class
+  // teacher appointment while a Hub module is open (or a stale deep-link
+  // lands a non-appointee here), the module disappears too — back to the
+  // honest dashboard landing instead of stale class data. Server APIs
+  // re-check authorization on every call regardless.
+  useEffect(() => {
+    if (role && !role.isClassTeacher && (active === 'class-hub' || active === 'fee-collection')) {
+      setActive('dashboard')
+    }
+  }, [role, active])
 
   // Check pending position assignments for approval workflow
   const pendingAssignments = getPendingAssignments(currentTeacher ?? undefined, isRelieved)

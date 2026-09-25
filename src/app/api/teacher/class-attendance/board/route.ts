@@ -1,6 +1,10 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
-import { parseDateParam, resolveClassScope } from '@/lib/class-attendance'
+import {
+  parseDateParam,
+  resolveClassScope,
+  attendanceSettingsFor,
+} from '@/lib/class-attendance'
 import { classLabelOf } from '@/lib/teacher-hub'
 
 export const runtime = 'nodejs'
@@ -9,7 +13,9 @@ export const runtime = 'nodejs'
  * GET /api/teacher/class-attendance/board?classId=&date= — one attendance
  * board: the roster, the class-teacher baseline for that date (what
  * subject teachers prefill from), the caller's own subject sessions for
- * that date. Reading NEVER writes anything.
+ * that date, the open draft (autosave resume, §19), the school's
+ * end-of-day autosave policy, and the class's recent attendance audit
+ * trail (§18). Reading NEVER writes anything.
  */
 export async function GET(request: Request) {
   return withUser(
@@ -59,6 +65,62 @@ export async function GET(request: Request) {
             }
           : { exists: false, entries: {}, markedBy: null, savedAt: null, counts: { present: 0, absent: 0, late: 0, leave: 0 } }
 
+      // The open draft for this class-day (§19 resume) — never a second
+      // attendance record, just the not-yet-submitted sheet.
+      const draftRow = await db.attendanceDraft.findUnique({
+        where: { classId_date: { classId, date: day } },
+      })
+      let draftEntries: Record<string, string> = {}
+      if (draftRow) {
+        try {
+          const parsed = JSON.parse(draftRow.entries) as { studentId: string; status: string }[]
+          draftEntries = Object.fromEntries(parsed.map((e) => [e.studentId, e.status]))
+        } catch {
+          draftEntries = {}
+        }
+      }
+      const draft = draftRow
+        ? {
+            exists: true as const,
+            entries: draftEntries,
+            source: draftRow.source,
+            updatedAt: draftRow.updatedAt.toISOString(),
+            updatedByName: draftRow.updatedByName,
+          }
+        : { exists: false as const, entries: {}, source: null, updatedAt: null, updatedByName: null }
+
+      // Recent attendance audit trail for the class (§18) — the last 8
+      // journaled changes inside a 30-day window, student-named.
+      const auditSince = new Date(Date.now() - 30 * 86_400_000)
+      const auditRows = await db.attendanceAuditLog.findMany({
+        where: { classId, date: { gte: auditSince } },
+        select: {
+          studentId: true,
+          previousStatus: true,
+          newStatus: true,
+          source: true,
+          changedBy: true,
+          date: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+      })
+      const nameById = new Map(students.map((s) => [s.id, s.user?.name ?? 'Student']))
+      const audit = auditRows.map((r) => ({
+        studentName: nameById.get(r.studentId) ?? 'Student',
+        previousStatus: r.previousStatus,
+        newStatus: r.newStatus,
+        source: r.source,
+        changedBy: r.changedBy,
+        date: r.date.toISOString().slice(0, 10),
+        createdAt: r.createdAt.toISOString(),
+      }))
+
+      // The school's end-of-day autosave policy (§19) — the UI shows the
+      // boundary honestly; finalization itself is an explicit POST.
+      const settings = await attendanceSettingsFor(schoolId)
+
       // The caller's own subject sessions for the date.
       const teacher = await db.teacher.findUnique({ where: { userId: user.id } })
       const sessions = teacher
@@ -73,7 +135,7 @@ export async function GET(request: Request) {
 
       // Recent history: the last 10 MARKED school days for this class (the
       // official baselines), inside a 30-calendar-day lookback window ending
-      // TODAY (not the viewed date — the week strip and insights describe
+      // at TODAY (not the viewed date — the week strip and insights describe
       // the class around now). Rows are stored at midnight UTC (the baseline
       // contract), so the UTC day key is exact.
       const historyUntil = new Date()
@@ -138,6 +200,9 @@ export async function GET(request: Request) {
         subjects,
         students: students.map((s) => ({ id: s.id, rollNo: s.rollNo, name: s.user?.name ?? 'Student' })),
         baseline,
+        draft,
+        audit,
+        autosave: settings,
         mySessions,
         history: { days: historyDays },
       }

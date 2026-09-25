@@ -74,6 +74,35 @@ export interface BaselineInfo {
   counts: AttendanceCounts
 }
 
+/** The open, not-yet-submitted server-side draft for the class-day (§19). */
+export interface DraftInfo {
+  exists: boolean
+  entries: Record<string, string>
+  /** BASELINE | SUBJECT_SESSION */
+  source: string | null
+  updatedAt: string | null
+  updatedByName: string | null
+}
+
+/** One journaled attendance edit (§18 audit trail). */
+export interface AuditRow {
+  studentName: string
+  previousStatus: string
+  newStatus: string
+  /** BASELINE | SUBJECT_SESSION | AUTOSAVE */
+  source: string
+  changedBy: string
+  date: string
+  createdAt: string
+}
+
+/** The school's end-of-day autosave policy (§19). */
+export interface AutosaveSettings {
+  autosaveFinalize: boolean
+  /** minutes from midnight school time — 930 = 15:30 */
+  endOfDayMinutes: number
+}
+
 /** The caller's own saved subject session for the viewed date. */
 export interface SubjectSessionInfo {
   subjectId: string
@@ -90,6 +119,9 @@ export interface AttendanceBoard {
   subjects: SubjectRef[]
   students: AttendanceStudent[]
   baseline: BaselineInfo
+  draft: DraftInfo
+  audit: AuditRow[]
+  autosave: AutosaveSettings
   mySessions: Record<string, SubjectSessionInfo>
   /** last 10 marked school days (30-day lookback) — absent when server predates it */
   history?: AttendanceHistory
@@ -308,9 +340,32 @@ export function savedAtLabel(iso: string, dateKey: string): string {
   return day === dateKey ? time : `${shortDate(day)}, ${time}`
 }
 
+/** "3:30 PM" — the school's end-of-day boundary, school time (IST). */
+export function boundaryLabel(endOfDayMinutes: number): string {
+  const h24 = Math.floor(endOfDayMinutes / 60)
+  const m = endOfDayMinutes % 60
+  const d = new Date()
+  d.setHours(h24, m, 0, 0)
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** Minutes-from-midnight in school time (IST, UTC+5:30 — matches server). */
+export function istMinutesNowClient(): number {
+  const now = new Date()
+  return (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440
+}
+
+/** True once the viewed day's end-of-school-hours boundary has passed. */
+export function pastBoundary(dateKey: string, autosave: AutosaveSettings | undefined): boolean {
+  if (!autosave) return false
+  if (dateKey < todayKey()) return true
+  if (dateKey > todayKey()) return false
+  return istMinutesNowClient() >= autosave.endOfDayMinutes
+}
+
 // ─── Draft construction (server truth → editable draft) ───────────────
 
-export type PrefillSource = 'session' | 'baseline' | 'present'
+export type PrefillSource = 'session' | 'baseline' | 'present' | 'draft'
 
 function allPresent(students: readonly AttendanceStudent[]): AttendanceDraft {
   const draft: AttendanceDraft = {}
@@ -332,6 +387,8 @@ function overlay(
 
 /**
  * Prefill priority:
+ *   OPEN SERVER DRAFT → resume it (§19 autosave — never lose entered
+ *                        attendance; the roster context line says so);
  *   class teacher  → baseline.entries (her official record), else all-PRESENT;
  *   subject teacher → her saved session for the subject, else the class
  *                    teacher's baseline (change only exceptions),
@@ -341,6 +398,9 @@ export function buildDraft(
   board: AttendanceBoard,
   subjectId: string | null,
 ): { draft: AttendanceDraft; source: PrefillSource } {
+  if (board.draft.exists) {
+    return { draft: overlay(board.students, board.draft.entries), source: 'draft' }
+  }
   if (board.isClassTeacher) {
     return board.baseline.exists
       ? { draft: overlay(board.students, board.baseline.entries), source: 'baseline' }
@@ -365,6 +425,12 @@ export function rosterContextLine(
   source: PrefillSource,
 ): string {
   const isToday = board.date === todayKey()
+  if (source === 'draft') {
+    const who = board.draft.updatedByName
+    return who
+      ? `Unsaved draft — last edited by ${who}. Save to make it official.`
+      : 'Unsaved draft — save to make it official.'
+  }
   if (board.isClassTeacher) {
     if (source === 'baseline') {
       return `Official record · marked by ${board.baseline.markedBy ?? 'the class teacher'}`

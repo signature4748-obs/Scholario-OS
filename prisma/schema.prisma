@@ -38,6 +38,9 @@ model School {
   exams                Exam[]
   fees                 Fee[]
   attendance           Attendance[]
+  attendanceAuditLogs  AttendanceAuditLog[]
+  attendanceDrafts     AttendanceDraft[]
+  attendanceSetting    AttendanceSetting?
   timetables           Timetable[]
   assignments          Assignment[]
   userPreferences      UserPreference[]
@@ -176,6 +179,7 @@ model Student {
   results             Result[]
   fees                Fee[]
   attendance          Attendance[]
+  attendanceAuditLogs AttendanceAuditLog[]
   bookIssues          BookIssue[]
   examMarks           ExamMark[]
   examAttendance      ExamAttendance[]
@@ -221,6 +225,7 @@ model Class {
   subjects           Subject[] // LEGACY — kept for backward-compat; new code should use subjectAssignments
   exams              Exam[]
   attendance         Attendance[]
+  attendanceDrafts   AttendanceDraft[]
   timetables         Timetable[]
   assignments        Assignment[]
   questionBanks      QuestionBank[]
@@ -629,6 +634,90 @@ model Attendance {
   createdAt DateTime @default(now())
 
   @@unique([studentId, date], name: "studentId_date")
+}
+
+// ─── Class Teacher Hub v2.17 — canonical attendance workflow ────────────
+//
+// ONE canonical attendance record per CLASS + DATE + STUDENT (the unique
+// constraint above). The three models below add the workflow layer the
+// role-aware architecture requires — never a second attendance record:
+//
+//   AttendanceAuditLog — every EDIT of an already-saved status is
+//                        journaled (who, when, previous → new, source).
+//   AttendanceDraft    — an open, not-yet-submitted sheet (autosave, §19);
+//                        explicit Save/Submit writes the canonical rows
+//                        and deletes the draft.
+//   AttendanceSetting  — per-school workflow policy: whether unsaved
+//                        drafts are auto-finalized after the configured
+//                        end-of-school-hours boundary.
+
+/// One canonical attendance CHANGE record (spec §18): editing an existing
+/// status never silently overwrites — each change is journaled with the
+/// previous value, the new value, who changed it and when.
+model AttendanceAuditLog {
+  id             String   @id @default(cuid())
+  schoolId       String
+  school         School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId        String
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date           DateTime
+  /// the status that was replaced (audits only exist for real changes)
+  previousStatus String
+  /// the status now in force
+  newStatus      String
+  /// BASELINE (class teacher) | SUBJECT_SESSION (subject teacher) | AUTOSAVE
+  source         String
+  /// display name of the acting teacher (audit survives staff changes)
+  changedBy      String
+  /// User.id of the acting teacher (nullable — kept even if the user goes)
+  changedById    String?
+  createdAt      DateTime @default(now())
+
+  @@index([schoolId, classId, date])
+  @@index([studentId, date])
+}
+
+/// An open, not-yet-submitted attendance sheet (spec §19 autosave): the
+/// teacher's in-progress entries for one class-day, persisted server-side
+/// so a crash, a navigation or the end-of-school-hours boundary never
+/// loses entered attendance. One draft per class+date; an explicit
+/// canonical save deletes it. Auto-finalized after the school's
+/// end-of-day boundary when policy allows (AttendanceSetting).
+model AttendanceDraft {
+  id            String   @id @default(cuid())
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId       String
+  class         Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date          DateTime
+  /// JSON array [{ studentId, status }] — validated against the roster
+  /// server-side before every write; the draft may be partial.
+  entries       String
+  updatedById   String
+  updatedByName String
+  /// BASELINE (class teacher) | SUBJECT_SESSION (subject teacher)
+  source        String   @default("BASELINE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([classId, date])
+  @@index([schoolId, classId, date])
+}
+
+/// Per-school attendance workflow policy (spec §19): whether an unsaved
+/// draft is auto-finalized as the canonical record once the school day
+/// ends, and where that boundary sits. Seeded with sensible defaults;
+/// editable later via a settings surface.
+model AttendanceSetting {
+  id               String   @id @default(cuid())
+  schoolId         String   @unique
+  school           School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// auto-finalize unsaved drafts after the end-of-day boundary
+  autosaveFinalize Boolean  @default(true)
+  /// minutes from midnight school time (IST) — 930 = 15:30
+  endOfDayMinutes  Int      @default(930)
+  updatedAt        DateTime @updatedAt
 }
 
 model Timetable {

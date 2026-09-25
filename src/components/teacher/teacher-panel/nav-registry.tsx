@@ -59,27 +59,30 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
         { key: 'growth', label: 'Student Growth', icon: <TrendingUp className="h-4.5 w-4.5" /> },
       ],
     },
-    {
-      // Applications & Forms assigned to this teacher (Application / Event In-charge)
-      label: 'In-charge Duties',
-      items: [
-        { key: 'app-reviews', label: 'Application Reviews', icon: <ClipboardList className="h-4.5 w-4.5" /> },
-      ],
-    },
   ]
 
   // Class Teacher Hub — ONLY for teachers actually appointed class teacher
   // of a class (the server-derived classTeacherOf list). Not appointed ⇒
   // the group (and every module in it) does not exist for this teacher.
+  // My Class is the command center: class-level fee handling lives INSIDE
+  // it (spec §4/§22) — no separate Fees nav item for class teachers.
   if (classTeacherOf.length > 0) {
     navGroups.push({
       label: 'Class Teacher Hub',
       items: [
         { key: 'class-hub', label: 'My Class', icon: <School className="h-4.5 w-4.5" /> },
-        { key: 'fee-collection', label: 'Fees & Payments', icon: <Wallet className="h-4.5 w-4.5" /> },
       ],
     })
   }
+
+  // In-charge duties sit BELOW the teaching + class-teacher groups (§4).
+  navGroups.push({
+    // Applications & Forms assigned to this teacher (Application / Event In-charge)
+    label: 'In-charge Duties',
+    items: [
+      { key: 'app-reviews', label: 'Application Reviews', icon: <ClipboardList className="h-4.5 w-4.5" /> },
+    ],
+  })
 
   // Communication — the single teacher-facing messaging surface (parents,
   // colleagues, principal — parent messaging absorbed from Parent Connect)
