@@ -48,6 +48,35 @@ const TEACHER_MODULE_KEYS = [
   'fee-management',
 ] as const
 
+/** Per-tab module memory (sessionStorage). The FIRST visit to a lazily-
+ *  compiled module (webpack lazyCompilation) triggers a Fast-Refresh FULL
+ *  remount of the panel — without a memory, `useState` re-runs its
+ *  initializer and the teacher is silently reset to the dashboard ("I
+ *  clicked My Class and it bounced me back"). sessionStorage (not
+ *  localStorage): each tab remembers only itself and dies with it; an
+ *  explicit ?module= deep-link always wins over the memory. */
+const MODULE_MEMORY_KEY = 'scholario-teacher-module'
+
+function initialActiveModule(isRelieved: boolean): string {
+  const fallback = isRelieved ? 'profile' : 'dashboard'
+  if (typeof window === 'undefined') return fallback
+  // ?module=<key> deep-link — opens a specific module directly (bookmarks,
+  // shared links). Unknown keys fall through to the memory/fallback.
+  const requested = new URLSearchParams(window.location.search).get('module')
+  if (requested && (TEACHER_MODULE_KEYS as readonly string[]).includes(requested)) {
+    return requested
+  }
+  try {
+    const remembered = window.sessionStorage.getItem(MODULE_MEMORY_KEY)
+    if (remembered && (TEACHER_MODULE_KEYS as readonly string[]).includes(remembered)) {
+      return remembered
+    }
+  } catch {
+    /* storage disabled (Safari private mode) — honest fallback */
+  }
+  return fallback
+}
+
 export function TeacherPanel() {
   const { teachers, confirmPayrollRevision } = useTeachersStore()
   // Live server-derived Teacher Hub counts (published by the Communication Hub
@@ -63,16 +92,17 @@ export function TeacherPanel() {
     ? teachers.find((t) => (t.email ?? '').toLowerCase() === me.email.toLowerCase()) ?? null
     : null
   const isRelieved = currentTeacher != null && currentTeacher.status === 'Relieved'
-  const [active, setActive] = useState(() => {
-    const fallback = isRelieved ? 'profile' : 'dashboard'
-    if (typeof window === 'undefined') return fallback
-    // ?module=<key> deep-link — opens a specific module directly (bookmarks,
-    // shared links). Unknown keys fall back to the default landing module.
-    const requested = new URLSearchParams(window.location.search).get('module')
-    return requested && (TEACHER_MODULE_KEYS as readonly string[]).includes(requested)
-      ? requested
-      : fallback
-  })
+  const [active, setActive] = useState(() => initialActiveModule(isRelieved))
+
+  // Remember the open module for this tab (see initialActiveModule) — a
+  // lazy-compile full remount then re-opens exactly where the teacher was.
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(MODULE_MEMORY_KEY, active)
+    } catch {
+      /* storage disabled — nothing to remember */
+    }
+  }, [active])
 
   // REAL appointment context (server truth) — gates the Class Teacher Hub.
   const role = useTeacherRole()
@@ -83,6 +113,7 @@ export function TeacherPanel() {
   // lands a non-appointee here), the module disappears too — back to the
   // honest dashboard landing instead of stale class data. Server APIs
   // re-check authorization on every call regardless.
+  // (the persisted module memory updates too, so the bounce sticks)
   useEffect(() => {
     if (role && !role.isClassTeacher && (active === 'class-hub' || active === 'fee-collection')) {
       setActive('dashboard')

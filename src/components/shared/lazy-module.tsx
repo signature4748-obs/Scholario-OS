@@ -16,10 +16,13 @@ import { ModuleLoading } from '@/components/shared/module-loading'
  * screen (the commit-phase crash leaves the root error boundary unable
  * to render).
  *
- * This wrapper hardens every role-module mount with two layers:
+ * This wrapper hardens every role-module mount with three layers:
  *   1. IMPORT RETRY — a failed dynamic import is retried twice (fresh
  *      chunk URL) before surfacing the error.
- *   2. ERROR BOUNDARY — if the module still fails (or throws while
+ *   2. STALE-RUNTIME RECOVERY — if the chunk graph itself is retired
+ *      (dev recompile / re-deploy), one guarded full page reload fetches
+ *      a fresh runtime instead of dead-ending on an unfixable import.
+ *   3. ERROR BOUNDARY — if the module still fails (or throws while
  *      rendering), a compact "This module could not be loaded — Try
  *      again" card replaces ONLY that module; the shell, navigation and
  *      session stay alive. Retrying builds a FRESH dynamic instance
@@ -29,15 +32,50 @@ import { ModuleLoading } from '@/components/shared/module-loading'
 
 const CHUNK_ERROR = /ChunkLoadError|Loading chunk|Loading CSS chunk|imported module/i
 
+// One guarded full reload per window: when a runtime's chunk graph has
+// been RETIRED (dev-server recompile after heavy edits, or a production
+// re-deploy), no in-place import can ever succeed — the browser is holding
+// URLs the server no longer serves. The ONLY real recovery is fetching a
+// fresh runtime (exactly what Next.js itself does for chunk errors during
+// client-side navigation). The sessionStorage guard caps this at one
+// attempt per window so a genuinely broken build cannot reload-loop; the
+// error boundary card remains the last-resort surface.
+const CHUNK_RELOAD_KEY = 'scholario-chunk-reload-at'
+const CHUNK_RELOAD_WINDOW_MS = 15_000
+
+function chunkReloadAllowed(): boolean {
+  try {
+    const at = Number(window.sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0)
+    return Number.isFinite(at) && Date.now() - at > CHUNK_RELOAD_WINDOW_MS
+  } catch {
+    return false // storage disabled — never auto-reload blindly
+  }
+}
+
 async function importWithRetry<T>(loader: () => Promise<T>, attempts = 2): Promise<T> {
   try {
     return await loader()
   } catch (err) {
-    if (attempts > 0 && CHUNK_ERROR.test(String((err as Error)?.message ?? err))) {
-      // Give the dev server (or the browser cache) a beat, then retry —
-      // the recompiled chunk usually exists by the next attempt.
-      await new Promise((r) => setTimeout(r, 350))
-      return importWithRetry(loader, attempts - 1)
+    const message = String((err as Error)?.message ?? err)
+    if (CHUNK_ERROR.test(message)) {
+      if (attempts > 0) {
+        // Give the dev server (or the browser cache) a beat, then retry —
+        // the recompiled chunk usually exists by the next attempt.
+        await new Promise((r) => setTimeout(r, 350))
+        return importWithRetry(loader, attempts - 1)
+      }
+      // Retries exhausted: the chunk graph this runtime references is
+      // retired. Recover ONCE with a full reload (fresh runtime = fresh
+      // chunk URLs); hold the loader open while the document unloads.
+      if (typeof window !== 'undefined' && chunkReloadAllowed()) {
+        try {
+          window.sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
+        } catch {
+          /* guard write failed — proceed, worst case is one extra reload */
+        }
+        window.location.reload()
+        return await new Promise<T>(() => {})
+      }
     }
     throw err
   }
