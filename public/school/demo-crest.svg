@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 132" width="120" height="132" role="img" aria-label="School crest">
+  <!-- Formal school crest: maroon shield, gold trim, open book & flame. -->
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E8C25A"/>
+      <stop offset="0.5" stop-color="#C9A227"/>
+      <stop offset="1" stop-color="#A97F16"/>
+    </linearGradient>
+    <linearGradient id="maroonField" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8F1D1D"/>
+      <stop offset="1" stop-color="#6E1414"/>
+    </linearGradient>
+  </defs>
+
+  <!-- shield -->
+  <path d="M60 4 L112 18 V64 C112 96 90 116 60 128 C30 116 8 96 8 64 V18 Z"
+        fill="url(#maroonField)" stroke="url(#gold)" stroke-width="4"/>
+  <path d="M60 12 L104 24 V63 C104 90 85 108 60 119 C35 108 16 90 16 63 V24 Z"
+        fill="none" stroke="#E8C25A" stroke-width="1.4" opacity="0.85"/>
+
+  <!-- flame of knowledge -->
+  <path d="M60 24 C66 30 69 36 69 42 C69 48 65 52 60 52 C55 52 51 48 51 42 C51 36 54 30 60 24 Z"
+        fill="url(#gold)"/>
+  <path d="M60 31 C63 35 64 38 64 41 C64 45 62 47 60 47 C58 47 56 45 56 41 C56 38 57 35 60 31 Z"
+        fill="#FDF6EC"/>
+
+  <!-- open book -->
+  <path d="M26 66 C36 61 49 61 58 67 L58 96 C49 90 36 90 26 95 Z" fill="#FDF6EC" stroke="#C9A227" stroke-width="1.2"/>
+  <path d="M94 66 C84 61 71 61 62 67 L62 96 C71 90 84 90 94 95 Z" fill="#FDF6EC" stroke="#C9A227" stroke-width="1.2"/>
+  <path d="M60 67 V96" stroke="#C9A227" stroke-width="1.2"/>
+  <path d="M32 70 C39 67 47 67 53 71 M32 77 C39 74 47 74 53 78 M32 84 C39 81 47 81 53 85"
+        stroke="#8F1D1D" stroke-width="1.6" fill="none" opacity="0.8"/>
+  <path d="M88 70 C81 67 73 67 67 71 M88 77 C81 74 73 74 67 78 M88 84 C81 81 73 81 67 85"
+        stroke="#8F1D1D" stroke-width="1.6" fill="none" opacity="0.8"/>
+
+  <!-- ribbon base -->
+  <path d="M34 104 C43 110 52 111 60 107 C68 111 77 110 86 104 L90 112 C79 118 68 118 60 114 C52 118 41 118 30 112 Z"
+        fill="url(#gold)"/>
+</svg>

@@ -107,7 +107,7 @@ export async function GET(
       const examIds = exams.map((e) => e.id)
 
       // ── canonical configuration + marks (parallel reads) ─────────────
-      const [cfgRows, ownMarkRows, classMarkRows, csaRows, gradeScaleRows, reportCfg, attRows, outcomeRows] =
+      const [cfgRows, ownMarkRows, classMarkRows, csaRows, gradeScaleRows, reportCfg, attRows, outcomeRows, classWideMarkRows] =
         await Promise.all([
           db.examSubjectConfig.findMany({
             where: { examId: { in: examIds }, classId: student.classId },
@@ -144,6 +144,13 @@ export async function GET(
           db.examResultOutcome.findMany({
             where: { examId: { in: examIds }, studentId: student.id },
             select: { examId: true, outcome: true, notes: true, reason: true },
+          }),
+          // the WHOLE class's canonical marks across the session's exams —
+          // the basis of the honest class rank (same convention as the
+          // class marksheet matrix: totals among students with any marks)
+          db.examMark.findMany({
+            where: { classId: student.classId, examId: { in: examIds } },
+            select: { studentId: true, marksObtained: true },
           }),
         ])
 
@@ -334,6 +341,35 @@ export async function GET(
       const outcome = outcomeRows.find((o) => isDeclared(examDtos.find((e) => e.examId === o.examId)?.resultStatus ?? ''))
 
       const attended = attRows.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length
+
+      // ── class rank (§21): computed from the SAME canonical ExamMark rows
+      // the class marksheet matrix ranks by — position among assessed
+      // classmates. Never invented: absent a ranking (single student / no
+      // marks) it is null and the marksheet shows no rank.
+      const totalsByStudent = new Map<string, number>()
+      for (const m of classWideMarkRows) {
+        if (m.marksObtained == null) continue
+        totalsByStudent.set(m.studentId, (totalsByStudent.get(m.studentId) ?? 0) + m.marksObtained)
+      }
+      const standings = [...totalsByStudent.entries()].sort((a, b) => b[1] - a[1])
+      const rankIdx = standings.findIndex(([sid]) => sid === student.id)
+      const classRank =
+        rankIdx >= 0 && standings.length > 1
+          ? { position: rankIdx + 1, assessedCount: standings.length }
+          : null
+
+      // the school's own co-scholastic areas (config, never constants)
+      let coScholasticAreas: string[] = []
+      if (reportCfg?.coScholasticAreas) {
+        try {
+          const parsed = JSON.parse(reportCfg.coScholasticAreas)
+          if (Array.isArray(parsed)) {
+            coScholasticAreas = parsed.filter((a): a is string => typeof a === 'string' && a.trim() !== '')
+          }
+        } catch {
+          coScholasticAreas = []
+        }
+      }
       const scaleUsed =
         gradeScaleRows.length > 0
           ? gradeScaleRows.map((g) => ({ grade: g.grade, minPct: g.minPct, maxPct: g.maxPct }))
@@ -407,15 +443,18 @@ export async function GET(
           totalDays: attRows.length,
           pct: attRows.length > 0 ? Math.round((attended / attRows.length) * 100) : null,
         },
+        classRank: (reportCfg?.showRank ?? true) ? classRank : null,
         gradeScale: {
           source: gradeScaleRows.length > 0 ? ('school' as const) : ('default' as const),
           rows: scaleUsed,
         },
         config: {
           showAttendance: reportCfg?.showAttendance ?? true,
+          showRank: reportCfg?.showRank ?? true,
           showPercentage: reportCfg?.showPercentage ?? true,
           showGrade: reportCfg?.showGrade ?? true,
           showCoScholastic: reportCfg?.showCoScholastic ?? false,
+          coScholasticAreas,
           showRemarks: reportCfg?.showRemarks ?? true,
           showClassTeacherSign: reportCfg?.showClassTeacherSign ?? true,
           showPrincipalSign: reportCfg?.showPrincipalSign ?? true,

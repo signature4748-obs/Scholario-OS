@@ -1092,6 +1092,10 @@ model ReportCardConfig {
   showPercentage       Boolean  @default(true)
   showGrade            Boolean  @default(true)
   showCoScholastic     Boolean  @default(false)
+  // JSON string[] — the school's own co-scholastic areas (e.g.
+  // ["Sports & Games","Art & Craft"]) rendered on the digital marksheet.
+  // Null/empty ⇒ the co-scholastic section stays hidden (nothing hardcoded).
+  coScholasticAreas    String?
   showRemarks          Boolean  @default(true)
   showClassTeacherSign Boolean  @default(true)
   showPrincipalSign    Boolean  @default(true)

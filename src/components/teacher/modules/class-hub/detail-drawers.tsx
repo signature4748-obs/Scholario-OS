@@ -557,21 +557,38 @@ export function MarksheetDrawer({
       description="The canonical exam marks for this class — the same numbers every other module uses."
     >
       {/* Print stylesheet — mounted ONLY while this sheet is open, so
-          printing any other page stays untouched. */}
+          printing any other page stays untouched. Same strategy as the
+          student marksheet: everything outside this sheet is display:none'd
+          and every ancestor is neutralised (fixed drawer, Tailwind v4
+          "translate" offsets, scroll clipping), so the matrix prints
+          in-flow on a clean A4 landscape page. */}
       <style>{`
         @media print {
-          body * { visibility: hidden !important; }
-          #marksheet-print-area, #marksheet-print-area * { visibility: visible !important; }
-          #marksheet-print-header, #marksheet-print-header * { visibility: visible !important; }
-          #marksheet-print-area {
-            position: absolute !important;
-            left: 0; top: 70px;
-            width: 100%;
-            border: none !important;
-            font-size: 10px;
-            overflow: visible !important;
+          @page { size: A4 landscape; margin: 8mm; }
+          body > *:not(:has(#marksheet-print-area)) { display: none !important; }
+          body *:has(#marksheet-print-area) {
+            position: static !important; inset: auto !important;
+            transform: none !important; translate: none !important;
+            rotate: none !important; scale: none !important;
+            width: auto !important; max-width: none !important;
+            height: auto !important; max-height: none !important;
+            overflow: visible !important; margin: 0 !important; padding: 0 !important;
+            border: none !important; border-radius: 0 !important;
+            background: transparent !important; box-shadow: none !important;
+            display: block !important;
           }
-          #marksheet-print-header { position: absolute !important; left: 0; top: 12px; width: 100%; visibility: visible !important; }
+          body *:has(#marksheet-print-area) > *:not(:has(#marksheet-print-area)):not(#marksheet-print-area):not(#marksheet-print-header) {
+            display: none !important;
+          }
+          #marksheet-print-header {
+            display: block !important; position: static !important;
+            width: 100% !important; margin: 0 0 6px !important;
+          }
+          #marksheet-print-area {
+            position: static !important; width: 100% !important;
+            border: none !important; border-radius: 0 !important;
+            font-size: 10px; overflow: visible !important; margin: 0 !important;
+          }
         }
       `}</style>
       {loading ? (

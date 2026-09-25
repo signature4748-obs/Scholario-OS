@@ -2733,3 +2733,39 @@ Stage Summary:
 - Permissions/multi-tenant: assertStudentInScope + ctx.schoolId on every query; fee visibility untouched (Priya has no Fee tab; Rohan non-CT class 10-A also no Fee tab); declared-but-empty exams (Mid-Term) render NOT_STARTED with no false issue date.
 - Login matrix unchanged: rohan.mehta (CT 9-A + Math 10-A/10-B) / kavita.sharma (CT 10-A) / priya.iyer (subject-only) @greenwood.edu.in · teacher123.
 - Known-remaining: (a) no live FINALIZED exam exists (PA-1 is READY-not-declared; declaring needs the real Result Ready → declare flow) — FINALIZED branch (Official result banner, date of issue, outcome) is code-verified but not yet visible with live data; (b) the pasted HTML file itself never reached upload/ — the design was reconstructed from the spec's §3 structure list; if the original HTML arrives, compare typography details against it; (c) co-scholastic renders only when ReportCardConfig.showCoScholastic is set (currently false → cleanly hidden); (d) GradeScale table empty → app default scale shown and labeled "(school default)".
+
+---
+Task ID: 2
+Agent: Z.ai Code (main orchestrator)
+Task: FINAL CORRECTION — rebuild the digital marksheet visual layer to match the SBS Shiksha Niketan reference design exactly (SBS image = visual spec, user HTML = engineering reference, SCHOLARIO DB = only data source).
+
+Work Log:
+- Read worklog + mapped the marksheet surfaces: `src/components/teacher/modules/shared/student-marksheet-viewer.tsx` (the ONE canonical viewer, opened from the student drawer's single "View Marksheet" action) + `src/app/api/teacher/students/[studentId]/marksheet/route.ts` (canonical payload).
+- Prisma: added `coScholasticAreas String?` (JSON string[] of the school's own areas) to `ReportCardConfig`; `bun run db:push` (regenerated client — dev server restarted via keepalive to pick it up).
+- Seeded the demo school: `logoUrl=/school/demo-crest.svg` (new hand-crafted formal maroon/gold crest SVG at `public/school/demo-crest.svg`), ReportCardConfig row (showCoScholastic=true, areas=Sports & Games/Art & Craft/Music & Dance/Discipline — school CONFIG, not component constants, showRank=true).
+- API route extended (additive, canonical only): `config.showRank`, `config.coScholasticAreas` (parsed from config, hidden when empty), `classRank {position, assessedCount}` computed from the same canonical ExamMark rows the class matrix ranks by (position among assessed classmates; null when unrankable — never invented).
+- REBUILT the viewer's visual layer to the SBS design (complete rewrite of the render tree, same payload contract):
+  * palette constants: MAROON #8F1D1D (frame/grid/emphasis), PEACH #FCE7D2 (table headers), PEACH_DEEP #F7DCC2 (MM|OBT sub-header), CYAN #E3EFF5 (student info + totals strips), BLUE_INK #1F3A5F (session line), INK #1C1917 — fixed hex so dark mode can never leak into the paper.
+  * double maroon frame (outer 3px + inner 1.5px, 4px gap); crest directly in the header (no SaaS avatar circle; maroon monogram fallback); large maroon school name (text-balance, never shrunk); address + board line; maroon rounded "PROGRESS EVALUATION REPORT" badge; ink-blue session+class line.
+  * SBS student-information panel: fixed field set in a light-cyan bordered grid (1px maroon gap-grid trick for uniform dividers; missing values honestly show "—").
+  * SBS marks table: peach two-row header — SUBJECTS | per-exam "MM | OBT" column PAIRS (fully dynamic: the demo's 4 exam groups render 4 pairs; 6-exam schools get 6, compact typography at nExams≥4) | GRAND TOTAL | GRADE; maroon grid; TOTAL row in peach; pending cells "—" never 0; AB for absent.
+  * SBS totals strip (cyan): TOTAL MAXIMUM MARKS / TOTAL OBTAINED / PERCENTAGE (+ GRADE), "(to date)" while partial.
+  * Co-Scholastic Area only from school config with the SBS legend; SBS grade-scale strip from the school's scheme (default fallback labelled); Remark/Attendance/Class Rank row; Date of Issue | Class Teacher | Principal signature lines; provenance footer.
+  * honesty banners restyled paper-toned (amber pending, maroon finalized) — they print with the document.
+- FIXED PRINT (root-caused via pixel/bbox analysis): the old visibility+absolute trick printed only a fragment. Root cause #1: Tailwind v4 centers fixed dialogs via the standalone CSS `translate` property — `transform:none` does NOT reset it (dialog was shifted -50%/-50% off-page). Root cause #2: absolute positioning doesn't paginate. New strategy (both viewers): `body > :not(marker) display:none` + neutralise the dialog (`position/static, translate/rotate/scale:none, max-h/overflow/padding/border none`) → the SBS sheet prints in-flow, colors exact (`print-color-adjust: exact`), @page A4 portrait 8mm.
+- Applied the same fix to the class matrix drawer print (`detail-drawers.tsx`): :has()-based display:none + ancestor neutralisation, @page A4 landscape.
+- Hit + fixed a JSX pitfall: backticks inside a template-literal <style> comment terminated the string (Build Error) — replaced with quotes.
+- QA (agent-browser, logged in as the class teacher rohan.mehta@greenwood.edu.in):
+  * My Class → Students → Aarav Sharma → Marks & Results → View Marksheet — full SBS render verified section-by-section by VLM against the spec (frame/crest/name/address/badge/session/info panel/MM-OBT table/totals/co-scholastic/grade scale/rank row/signatures): ALL PASS.
+  * Print PDF verified: complete document, exact colors, no app chrome, nothing clipped (pixel + VLM + pdftotext checks).
+  * Mobile 390px: document stays proportional (660px min-width) inside a horizontal scroll viewport, toolbar usable, no squashing (§24 PASS).
+  * Class matrix print verified: landscape, full matrix, header, no chrome.
+  * Progressive honesty verified live: 4 exam groups — only Periodic Assessment 1 filled (5 subjects × 50), Mid-Term/UT2/Final show "—", totals "(to date)", rank "4th of 11 assessed", Date of Issue "—".
+  * `bun run lint` clean; dev.log/console/errors clean after fixes.
+
+Stage Summary:
+- The digital marksheet now IS the SBS report-card design driven by SCHOLARIO data: DYNAMIC DATA + SBS VISUAL TEMPLATE + A4 PRINT-READY DOCUMENT. QA artifacts in `.qa/marksheet-sbs-*.png`, `.qa/class-matrix-print-landscape.pdf`.
+- Canonical data flow unchanged and untouched: Principal exam config → class/subject config → Marks Entry ExamMark rows → marksheet payload → presentation. No second marks database, no hardcoded exams/subjects/grades/areas.
+- Schema change: `ReportCardConfig.coScholasticAreas` (JSON string[]). Demo school seeded with areas + crest; another school with no config hides the section cleanly and falls back to a monogram.
+- Critical print lesson (for every future dialog-print surface): Tailwind v4 uses the standalone `translate` property — always reset `translate/rotate/scale`, and prefer display:none + in-flow static printing over visibility+absolute.
+- Remaining/known: co-scholastic GRADES render "—" until a canonical co-scholastic marks source exists (honest by design); Mid-Term/UT2/Final have no ExamMark rows yet (legacy Result-model data) so they correctly show "—" — marksheet fills automatically as marks are entered.
