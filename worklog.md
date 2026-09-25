@@ -2342,3 +2342,28 @@ Stage Summary:
 - Full project history (46 commits) now published at https://github.com/signature4748-obs/Scholario-OS (branch: main)
 - Includes db/custom.db (seeded demo database) — anyone cloning gets working demo data; .env needs to be recreated (DATABASE_URL=file:/home/z/my-project/db/custom.db, adjust path) then `bun install && bun run db:push && bun run dev`
 - No secrets leaked; .env untracked going forward
+
+---
+Task ID: LP-3-ui-refinement
+Agent: Z.ai Code (main orchestrator)
+Task: Lesson Planner UI refinement — retire the oversized dark-green hero; adopt the SCHOLARIO house card language (My Timetable benchmark). UI/UX only: no logic, curriculum, permission, or data changes.
+
+Work Log:
+- hub-stat-cards.tsx: added optional `valueClassName` to HubStat (backward-compatible) so text-valued stats (topic names) can truncate with a smaller type scale
+- today-lesson.tsx: FULL REWRITE — the giant emerald gradient hero (progress ring, confetti, blur orbs, oversized type) is retired. New compact CurrentTopicCard: white card + emerald left accent (My Timetable "Now" row recipe), 10px uppercase label + status chip, text-lg/xl topic title, unit meta, line-clamp-2 description, footer with periods/daterange + Mark Completed (or Completed·date + Undo). Same canonical payload (plan.today.topic) + same optimistic toggle. ConfettiBurst removed from shared.tsx (dead code)
+- index.tsx: new composition — toolbar context now "Academic Session 2026–27" (derived from sessionStart; class/subject no longer duplicated — selectors show them) → 4 HubStatCards (Curriculum Progress %/count + hairline bar · Topics Left · Teaching Pace p/w + min/d context · Current Topic name + status) at grid-cols-1 / sm:2 / lg:4 → CurrentTopicCard → 2-col grid (ProgressPanel + Session Plan | Syllabus + Upcoming + Schedule Basis). PlanSkeleton matches new layout. summaryStatsFor() pure helper (tsc null-safety)
+- progress-panel.tsx: SLIMMED — removed the duplicated big % + bar + stats row (summary cards own the single primary progress viz); keeps header ("6 of 10 topics" text) + per-unit accent bars
+- curriculum-map.tsx: removed the per-unit AnimatedBar from sticky unit headers (unit bars live once, in ProgressPanel — §17 dedup); header meta trimmed to "N units · M topics" (board label lives in Schedule Basis); topic name `truncate` removed → names wrap naturally on mobile (was clipping 8/10 names at 390px)
+- syllabus-library.tsx: header flattened (gradient + blur orb → quiet bg-muted/30 like the other cards); content unchanged
+- upcoming-panel.tsx / schedule-basis: unchanged (already matched the spec)
+
+Verification (browser QA, agent-browser + VLM):
+- Structure verified via DOM: all 8 sections render (summary cards, Current Topic, Curriculum Progress, Session Plan 10 rows, Syllabus Library 100%, Upcoming next 3, Schedule Basis)
+- Responsive: 320/360/390/414/768/1024/1280/1440px → ZERO horizontal overflow; summary grid 1-col (390) / 2×2 (768) / 4-col (1024+) verified via computed gridTemplateColumns
+- Mobile topic names: wrap cleanly (only 1px sub-pixel rounding artifacts remain, no real clipping) — VLM confirmed readable
+- Functional: Mark Completed (60%→70%, topics left 4→3, 7/10, chip+Undo) ✓ · Undo restores ✓ · class selector 6-A↔9-A (12/16, 75%, "Constructions") ✓ · subject selector ✓ · Add Topic sheet → added + progress recomputed (6/11, 55%) ✓ · delete + confirm → canonical state restored (6/10, 60%) ✓
+- tsc --noEmit 0 errors · eslint clean · dev.log clean · console: zero errors/warnings (only Fast Refresh logs) · page errors: zero
+- VLM desktop review: "high-quality, production-ready teacher dashboard UI… no oversized hero, no visual defects" · tablet 2×2 clean · mobile clean
+
+Stage Summary:
+- Lesson Planner now visually belongs to the SCHOLARIO ERP family: compact summary-card header, single primary progress visualization, compact Current Topic card, tighter Session Plan with deduplicated info. Zero business-logic/data/permission changes.

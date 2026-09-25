@@ -1,15 +1,16 @@
 'use client'
 
 /**
- * lesson-planner/progress-panel — Curriculum Progress (LP-2 polish). One
- * honest overall line ("20 of 32 topics · 63%") with a spring-animated
- * emerald bar, a compact stats row (topics left, pace, teaching days) and
- * thin per-unit progress rows in each unit's accent colour with staggered
- * entrance. Linear bars only — per the module spec.
+ * lesson-planner/progress-panel — Curriculum Progress (LP-3 UI refinement).
+ * The OVERALL percentage + bar now lives once, in the summary cards row at
+ * the top of the module (the single primary progress visualization), so this
+ * panel keeps only what is unique here: the per-unit breakdown — thin
+ * accent bars with staggered entrance, capped by a compact header that
+ * restates the completion count as plain text (context, not a second
+ * indicator).
  */
 
 import { motion } from 'framer-motion'
-import { CalendarCheck, Clock3, ListTodo } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
 import type { LessonPlanPayload, UnitProgress } from './api'
@@ -56,14 +57,7 @@ function UnitRow({ unit, index }: { unit: UnitProgress; index: number }) {
 }
 
 export function ProgressPanel({ plan }: { plan: LessonPlanPayload }) {
-  const { progress, units, pace } = plan
-  const remaining = Math.max(0, progress.total - progress.completed)
-
-  const stats: [icon: typeof ListTodo, label: string, value: string][] = [
-    [ListTodo, 'Topics left', `${remaining}`],
-    [Clock3, 'Pace', `${pace.periodsPerWeek || 0} p/w`],
-    [CalendarCheck, 'Teaching', `${pace.teachingDaysPerWeek} d/w`],
-  ]
+  const { progress, units } = plan
 
   return (
     <GlassCard hover={false} className="p-4 sm:p-5">
@@ -76,47 +70,14 @@ export function ProgressPanel({ plan }: { plan: LessonPlanPayload }) {
         </p>
       </div>
 
-      <div className="mt-3 flex items-center gap-3">
-        <motion.p
-          key={progress.pct}
-          initial={{ scale: 0.85, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-          className="font-display text-2xl font-bold tabular-nums tracking-tight text-emerald-600 dark:text-emerald-400"
-        >
-          {progress.pct}%
-        </motion.p>
-        <AnimatedBar
-          pct={progress.pct}
-          className="h-2 min-w-0 flex-1"
-          ariaLabel={`${plan.subjectName} curriculum completion`}
-        />
-      </div>
-
-      {/* stats row */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        {stats.map(([Icon, label, value]) => (
-          <div
-            key={label}
-            className="rounded-xl border border-border/70 bg-muted/30 px-2.5 py-2"
-          >
-            <p className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
-              {label}
-            </p>
-            <p className="mt-0.5 text-sm font-bold tabular-nums tracking-tight">{value}</p>
-          </div>
-        ))}
-      </div>
-
       {units.length > 0 ? (
-        <div className="mt-4 max-h-72 divide-y divide-border/60 overflow-y-auto border-t border-border/60 pt-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25">
+        <div className="mt-3 max-h-72 divide-y divide-border/60 overflow-y-auto border-t border-border/60 pt-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25">
           {units.map((u, i) => (
             <UnitRow key={`${u.unitNo}-${u.unitName}`} unit={u} index={i} />
           ))}
         </div>
       ) : (
-        <p className="mt-4 text-xs text-muted-foreground">No units configured yet.</p>
+        <p className="mt-3 text-xs text-muted-foreground">No units configured yet.</p>
       )}
     </GlassCard>
   )

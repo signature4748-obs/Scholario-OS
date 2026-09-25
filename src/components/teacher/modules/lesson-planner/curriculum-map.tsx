@@ -32,7 +32,6 @@ import { GlassCard } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
 import type { LessonPlanPayload, ScheduledTopic } from './api'
 import {
-  AnimatedBar,
   formatDayRange,
   groupByUnit,
   LIST_STAGGER,
@@ -98,7 +97,7 @@ function TopicRow({
 
       <p
         className={cn(
-          'min-w-0 flex-1 truncate text-sm font-medium',
+          'min-w-0 flex-1 text-sm font-medium',
           done && 'text-muted-foreground',
         )}
         title={`${topic.topicNo}. ${topic.topicName}`}
@@ -301,9 +300,8 @@ export function CurriculumMapCard({
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Session Plan
         </p>
-        <p className="text-[11px] text-muted-foreground">
-          {plan.sourceBoard} · {plan.progress.completed}/{plan.progress.total} topics ·{' '}
-          {sections.length} {sections.length === 1 ? 'unit' : 'units'}
+        <p className="text-[11px] tabular-nums text-muted-foreground">
+          {sections.length} {sections.length === 1 ? 'unit' : 'units'} · {plan.progress.total} topics
         </p>
       </div>
 
@@ -338,15 +336,6 @@ export function CurriculumMapCard({
                     <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
                       {done}/{section.topics.length}
                     </span>
-                  </div>
-                  <div className="mt-1.5">
-                    <AnimatedBar
-                      pct={section.topics.length > 0 ? Math.round((done / section.topics.length) * 100) : 0}
-                      className="h-1"
-                      barClassName={accent.bar}
-                      delay={Math.min(si * 0.06, 0.35)}
-                      ariaLabel={`Unit ${section.unitNo} progress`}
-                    />
                   </div>
                 </div>
 

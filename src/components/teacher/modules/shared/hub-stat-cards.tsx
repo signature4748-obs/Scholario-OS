@@ -33,6 +33,8 @@ export interface HubStat {
   total?: number
   /** optional 0–1 fraction rendered as a hairline progress bar */
   progress?: number
+  /** optional override for the value line (e.g. text-valued stats: truncate, smaller size) */
+  valueClassName?: string
 }
 
 const TONES: Record<HubStatTone, { text: string; bg: string; border: string; bar: string }> = {
@@ -112,6 +114,7 @@ export function HubStatCards({
               className={cn(
                 'font-display text-2xl sm:text-3xl font-bold tabular-nums tracking-tight',
                 tone.text,
+                stat.valueClassName,
               )}
             >
               {stat.total != null ? (
