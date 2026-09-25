@@ -40,7 +40,7 @@ import { useBehavior } from './hooks'
 import { RecordsList, FollowUpsStrip } from './records-list'
 import { PRIMARY_ACTION_CLASS } from './shared'
 import { RecordDialog } from './record-dialog'
-import { StudentProfileDialog } from './student-profile-dialog'
+import { TeacherStudentProfileSheet } from '../shared/student-profile-sheet'
 
 export function StudentBehaviorModule({ onNavigate }: { onNavigate?: (key: string) => void }) {
   const { data, loading, error, reload } = useBehavior()
@@ -173,18 +173,14 @@ export function StudentBehaviorModule({ onNavigate }: { onNavigate?: (key: strin
         onCreated={() => reload()}
       />
 
-      <StudentProfileDialog
+      <TeacherStudentProfileSheet
         studentId={profileStudentId}
         onOpenChange={(o) => {
           if (!o) setProfileStudentId(null)
         }}
         onNavigate={onNavigate}
-        onRecordObservation={(student) => {
-          setProfileStudentId(null)
-          openRecordDialog(student)
-        }}
         onChanged={reload}
-        categories={data?.categories ?? []}
+        initialTab="behavior"
       />
     </PageTransition>
   )

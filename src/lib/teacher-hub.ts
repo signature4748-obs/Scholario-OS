@@ -41,6 +41,21 @@ export interface TeacherHubContext {
   name: string
   /** classes where this user is the class teacher (Class.classTeacherId = User.id) */
   classTeacherOf: TeacherClassInfo[]
+  /** classes where this teacher TEACHES a subject (timetable rows carrying
+   *  their name — the same permission source as the Student Directory /
+   *  Lesson Planner). A subject teacher's authorized students are the
+   *  students of these classes (spec §13: subject teachers act within
+   *  their authorized scope, never beyond it). */
+  taughtClasses: TeacherClassInfo[]
+}
+
+/** All classes the teacher may act on (class-teacher ∪ subject-taught). */
+export function scopeClassIds(ctx: TeacherHubContext): string[] {
+  const ids = new Set<string>([
+    ...ctx.classTeacherOf.map((c) => c.id),
+    ...ctx.taughtClasses.map((c) => c.id),
+  ])
+  return [...ids]
 }
 
 export function classLabelOf(c: { name: string; section: string | null } | null | undefined): string {
@@ -55,32 +70,59 @@ export function classLabelOf(c: { name: string; section: string | null } | null 
   return c.name
 }
 
-/** Resolve the authenticated teacher + her class-teacher scope. Throws honest errors. */
+/** Resolve the authenticated teacher + her full scope (class-teacher
+ *  classes ∪ subject-taught classes). Throws honest errors. */
 export async function requireTeacher(user: AuthUser): Promise<TeacherHubContext> {
   const schoolId = schoolScoped(user)
   const teacher = await db.teacher.findUnique({ where: { userId: user.id } })
   if (!teacher || teacher.schoolId !== schoolId) throw new Error('NO_TEACHER_RECORD')
-  const classes = await db.class.findMany({
-    where: { schoolId, classTeacherId: user.id },
-    select: { id: true, name: true, section: true },
-    orderBy: { name: 'asc' },
-  })
+  const teacherName = (user.name || '').trim().toLowerCase()
+  const [ctClasses, ttRows] = await Promise.all([
+    db.class.findMany({
+      where: { schoolId, classTeacherId: user.id },
+      select: { id: true, name: true, section: true },
+      orderBy: { name: 'asc' },
+    }),
+    teacherName
+      ? db.timetable.findMany({
+          where: { schoolId, teacherName: { not: null }, subjectId: { not: null } },
+          select: { classId: true, teacherName: true },
+          distinct: ['classId', 'teacherName'],
+        })
+      : Promise.resolve([]),
+  ])
+  const ctIds = new Set(ctClasses.map((c) => c.id))
+  const taughtIds = new Set(
+    ttRows
+      .filter((r) => (r.teacherName || '').trim().toLowerCase() === teacherName)
+      .map((r) => r.classId),
+  )
+  const taught = taughtIds.size
+    ? await db.class.findMany({
+        where: { schoolId, id: { in: [...taughtIds] } },
+        select: { id: true, name: true, section: true },
+        orderBy: { name: 'asc' },
+      })
+    : []
   return {
     schoolId,
     userId: user.id,
     teacherId: teacher.id,
     name: user.name || 'Teacher',
-    classTeacherOf: classes.map((c) => ({ ...c, label: classLabelOf(c) })),
+    classTeacherOf: ctClasses.map((c) => ({ ...c, label: classLabelOf(c) })),
+    taughtClasses: taught.filter((c) => !ctIds.has(c.id)).map((c) => ({ ...c, label: classLabelOf(c) })),
   }
 }
 
 /**
  * Prisma `where` for students this teacher may act on:
- * students of her class-teacher classes ∪ students already connected to her
- * through any Teacher Hub relation (conversation, behavior record).
+ * students of her class-teacher classes ∪ students of the classes she
+ * teaches a subject in (the Directory scope — spec §13) ∪ students
+ * already connected to her through any Teacher Hub relation
+ * (conversation, behavior record).
  */
 export function authorizedStudentWhere(ctx: TeacherHubContext) {
-  const classIds = ctx.classTeacherOf.map((c) => c.id)
+  const classIds = scopeClassIds(ctx)
   const clauses: Record<string, unknown>[] = classIds.length
     ? [{ classId: { in: classIds } }]
     : []
@@ -89,9 +131,11 @@ export function authorizedStudentWhere(ctx: TeacherHubContext) {
   return { schoolId: ctx.schoolId, OR: clauses }
 }
 
-/** Prisma `where` for behavior records the teacher may read. */
+/** Prisma `where` for behavior records the teacher may read: her own
+ * records ∪ records of students in any class she is responsible for
+ * (class teacher of, or teaches a subject in). */
 export function visibleBehaviorWhere(ctx: TeacherHubContext) {
-  const classIds = ctx.classTeacherOf.map((c) => c.id)
+  const classIds = scopeClassIds(ctx)
   const clauses: Record<string, unknown>[] = [{ recordedById: ctx.userId }]
   if (classIds.length) clauses.push({ student: { classId: { in: classIds } } })
   return { schoolId: ctx.schoolId, OR: clauses }
@@ -99,13 +143,19 @@ export function visibleBehaviorWhere(ctx: TeacherHubContext) {
 
 export interface ScopedStudent {
   id: string
+  userId: string
   rollNo: string | null
+  admissionNo: string | null
   guardianName: string | null
   guardianPhone: string | null
   guardianId: string | null
   classId: string | null
-  class: { id: string; name: string; section: string | null } | null
+  class: { id: string; name: string; section: string | null; stream?: string | null } | null
   user: { id: string; name: string | null } | null
+  gender: string | null
+  dob: string | null
+  bloodGroup: string | null
+  address: string | null
 }
 
 /** Validate + fetch a student inside the teacher's authorized scope. */
@@ -117,7 +167,7 @@ export async function assertStudentInScope(
   const student = await db.student.findFirst({
     where: { id: studentId, ...authorizedStudentWhere(ctx) },
     include: {
-      class: { select: { id: true, name: true, section: true } },
+      class: { select: { id: true, name: true, section: true, stream: true } },
       user: { select: { id: true, name: true } },
     },
   })

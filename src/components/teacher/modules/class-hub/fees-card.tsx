@@ -19,7 +19,16 @@ import type { ClassHubClass } from './types'
 const THIN_SCROLLBAR =
   '[scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-track]:bg-transparent'
 
-export function FeesCard({ cls, onNavigate }: { cls: ClassHubClass; onNavigate?: (key: string) => void }) {
+export function FeesCard({
+  cls,
+  onNavigate,
+  onOpenProfile,
+}: {
+  cls: ClassHubClass
+  onNavigate?: (key: string) => void
+  /** opens the ONE shared student profile for a defaulter (§25). */
+  onOpenProfile?: (studentId: string) => void
+}) {
   const reduce = useReducedMotion()
   const fees = cls.fees
   const collectedPct =
@@ -131,7 +140,24 @@ export function FeesCard({ cls, onNavigate }: { cls: ClassHubClass; onNavigate?:
                     initial={reduce ? false : { opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: Math.min(i * 0.04, 0.3), duration: 0.25 }}
-                    className="flex items-center gap-2.5 rounded-xl border border-border bg-card/50 px-2.5 py-2"
+                    className={
+                      onOpenProfile
+                        ? 'flex items-center gap-2.5 rounded-xl border border-border bg-card/50 px-2.5 py-2 text-left transition-colors hover:border-primary/30'
+                        : 'flex items-center gap-2.5 rounded-xl border border-border bg-card/50 px-2.5 py-2'
+                    }
+                    {...(onOpenProfile
+                      ? {
+                          role: 'button',
+                          tabIndex: 0,
+                          onClick: () => onOpenProfile(d.studentId),
+                          onKeyDown: (e: React.KeyboardEvent) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              onOpenProfile(d.studentId)
+                            }
+                          },
+                        }
+                      : {})}
                   >
                     <GradientAvatar name={d.name} size="sm" />
                     <div className="min-w-0 flex-1">

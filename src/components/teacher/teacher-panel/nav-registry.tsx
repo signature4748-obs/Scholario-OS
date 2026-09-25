@@ -53,6 +53,10 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
         { key: 'lesson-planner', label: 'Lesson Planner', icon: <BookMarked className="h-4.5 w-4.5" /> },
         { key: 'marks', label: 'Marks Entry', icon: <FileText className="h-4.5 w-4.5" /> },
         { key: 'students', label: 'Student Directory', icon: <Users className="h-4.5 w-4.5" /> },
+        // Behavior lives with teaching scope — every teacher records
+        // observations for the students they teach (spec §13); the module
+        // is NOT class-teacher-gated.
+        { key: 'behavior', label: 'Student Behavior', icon: <Shield className="h-4.5 w-4.5" /> },
       ],
     },
     {
@@ -73,7 +77,6 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
       items: [
         { key: 'class-hub', label: 'My Class', icon: <School className="h-4.5 w-4.5" /> },
         { key: 'fee-collection', label: 'Fees & Payments', icon: <Wallet className="h-4.5 w-4.5" /> },
-        { key: 'behavior', label: 'Student Behavior', icon: <Shield className="h-4.5 w-4.5" /> },
       ],
     })
   }

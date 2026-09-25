@@ -2395,3 +2395,25 @@ Stage Summary:
 - Lesson Planner is FINAL: 169 automated checks green across 5 suites (81 API + 12 multiset + 16 cross-role + 15 multi-tenant + 45 curriculum pairs) + full browser verification of every user-facing flow + 8-width responsive sweep with zero overflow/clipping + tsc/eslint/console all clean.
 - ONE source of truth confirmed end-to-end: Principal config (Classes → Subjects → CSA) + timetable staffing → teacher planner scope; class-teacher status grants NOTHING in the planner; curriculum auto-attaches from the immutable 2026-27 library; progress derives solely from LessonTopicCompletion rows.
 - Two real defects found and root-cause fixed: narrow-phone name clipping (UI) and multiset syllabus coverage (data). Both re-verified through the full failed-test → fix → re-run → affected-regression cycle.
+
+---
+Task ID: 1 (Class & Student Management master refinement — Phase 1)
+Agent: Z.ai Code (main orchestrator)
+Task: Production-grade refinement of 4 Teacher modules (Student Directory / My Class / Fees & Payments / Student Behavior) per user master spec (35 sections).
+
+Work Log (audit findings):
+- Read all 4 module entries + APIs (/api/teacher/students, class-hub, fee-collection, behavior) + teacher-hub.ts permission lib + Prisma schema.
+- DATA PROBLEMS FOUND:
+  1. DUPLICATE AARAV UNIVERSE: TWO Grade 9-A "Aarav Sharma" rows — student1@demoschool.edu (roll 01, DEMO-2026-0001, fee-rich ₹41,400/₹38,000/₹3,400/₹100-pending) AND login user aarav.sharma@greenwood.edu.in (roll 18, GWS2026018, ZERO fees). Student login sees empty fees; teacher surfaces show the other row. Must merge into ONE canonical (login user, roll 01, DEMO-2026-0001).
+  2. Rohan Mehta teaches Mathematics in ALL 7 classes (6/7/8/9/10/11/12-A) → the "0 students · Teaches Mathematics" chip spam in Directory.
+  3. Only 2 classes have students (9-A: 11, 10-A: 8). No Grade 10-B, no primary classes, no 11-12 students, no LEAVE attendance, no marks outside 9-A (PA-1 has 3 rows only), Teacher.subjects codes inconsistent with timetable.
+- UI PROBLEMS: Directory class chips repeat "Teaches Mathematics" per class; My Class has giant green/teal gradient hero; 3 separate teacher student-profile implementations (Directory Sheet props-only, Behavior Dialog fetch-based, Principal full-page 11-tab); behavior module gated to CT-only nav though §13 wants subject-teacher scope; navigation can't carry class context (focus-store gap — teacher Students module doesn't consume focus).
+- STRENGTHS TO KEEP: fee-collection module (canonical txn workflow, responsive table+cards), behavior records list + dialog, student cards/grid (excellent), class-hub cards (good, compact), QuickStats.
+
+Stage Summary:
+- Plan: (A) data restructure seed — merge Aarav; 9-teacher faculty (Rohan BOTH CT 9-A + Math 9/10A/10B; Kavita BOTH CT 10-A + Science; Arjun CT-ONLY 10-B; Priya SUBJECT-ONLY English 9/10A/10B + Biology 11-A; Meera SUBJECT-ONLY Hindi+SST; Sunita CT 3-A primary Eng/Math/EVS; Deepak CT 6-A Math+Science 6/7/8-A; Vikram SUBJECT-ONLY Phy+Chem 11/12-A + Math 12-A; Lakshmi CT 11-B Eng/History/PolSci); classes 3-A + 10-B new; streams 11-A=Science-PCB, 12-A=Science-PCM, 11-B/12-B=Humanities; +32 students (3-A×5, 6-A×4, 7-A×3, 8-A×3, 10-B×5, 11-A×4, 11-B×3, 12-A×3, 12-B×2) + 1 new 9-A roll 11; timetable rebuild conflict-free; fees (10-B full picture incl ₹1,500 pending by Arjun + 6-A ₹2,000 rejected by Deepak); behavior records for new classes incl monitoring + open concern w/ follow-up; PA-1 marks 9-A complete + 10-A partial + UT-2 10-B Math draft; LEAVE attendance; curriculum topics for new class-subjects. Teacher logins @greenwood.edu.in (password teacher123, hash copied from rohan).
+- (B) root-cause scope fix: teacher-hub authorizedStudentWhere/visibleBehaviorWhere extended to subject-taught classes (§13); behavior nav moved from CT-only group to Academics & Teaching (all active teachers).
+- (C) NEW API GET /api/teacher/students/[studentId] (role-scoped profile payload) + shared fee/attendance DTO builders extracted (single calculation).
+- (D) ONE shared TeacherStudentProfileSheet (tabs Overview/Attendance/Academics/Fees(CT)/Behavior/Guardian) used by Directory + Behavior + Fees ledger + My Class defaulters (§6/§25).
+- (E) Directory header redesign (scope line "Grade 9-A · 11 students · Class Teacher" | "Classes you teach · 3 · Mathematics", compact pills, NO per-class subject chips).
+- (F) My Class compact header (no gradient hero) + focus-store class preselect for Directory.

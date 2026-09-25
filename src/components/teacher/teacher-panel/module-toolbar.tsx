@@ -48,7 +48,7 @@ export function ModuleToolbar({ context, action, className }: ModuleToolbarProps
       )}
     >
       {hasContext ? (
-        <p className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+        <p className="min-w-0 text-xs font-medium text-muted-foreground line-clamp-2 sm:line-clamp-1">
           {context}
         </p>
       ) : (

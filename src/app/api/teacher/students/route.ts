@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf } from '@/lib/teacher-hub'
+import { deriveStudentFees, deriveAttendanceSummary, type StudentFeesDto } from '@/lib/teacher/student-ledger'
 
 export const runtime = 'nodejs'
 
@@ -85,43 +86,23 @@ export async function GET() {
         orderBy: [{ rollNo: 'asc' }],
       })
 
-      // ── Attendance per student (canonical Attendance rows; PRESENT +
-      //    LATE count as attended). Null pct when no records — never
-      //    fabricated. Recent = newest first, capped for the profile view.
+      // ── Attendance per student — the ONE canonical derivation (shared
+      //    with the student profile route; PRESENT + LATE attend, null pct
+      //    when no records, never fabricated).
       const attendanceRows = await db.attendance.findMany({
         where: { schoolId, studentId: { in: students.map((s) => s.id) } },
         select: { studentId: true, date: true, status: true },
         orderBy: { date: 'desc' },
       })
-      const RECENT_ATTENDANCE_LIMIT = 8
-      const attByStudent = new Map<
-        string,
-        {
-          total: number
-          attended: number
-          present: number
-          absent: number
-          late: number
-          leave: number
-          recent: { date: string; status: string }[]
-        }
-      >()
+      const attRowsByStudent = new Map<string, { date: Date; status: string }[]>()
       for (const row of attendanceRows) {
-        let entry = attByStudent.get(row.studentId)
-        if (!entry) {
-          entry = { total: 0, attended: 0, present: 0, absent: 0, late: 0, leave: 0, recent: [] }
-          attByStudent.set(row.studentId, entry)
-        }
-        entry.total += 1
-        if (row.status === 'PRESENT' || row.status === 'LATE') entry.attended += 1
-        if (row.status === 'PRESENT') entry.present += 1
-        else if (row.status === 'ABSENT') entry.absent += 1
-        else if (row.status === 'LATE') entry.late += 1
-        else if (row.status === 'LEAVE') entry.leave += 1
-        if (entry.recent.length < RECENT_ATTENDANCE_LIMIT) {
-          entry.recent.push({ date: row.date.toISOString().slice(0, 10), status: row.status })
-        }
+        const list = attRowsByStudent.get(row.studentId) ?? []
+        list.push({ date: row.date, status: row.status })
+        attRowsByStudent.set(row.studentId, list)
       }
+      const attByStudent = new Map(
+        [...attRowsByStudent.entries()].map(([sid, rows]) => [sid, deriveAttendanceSummary(rows)]),
+      )
 
       // ── Latest exam with entered marks, per class. "Latest" = greatest
       //    exam date (startDate, falling back to createdAt) among the
@@ -205,10 +186,14 @@ export async function GET() {
 
       const studentsByClass: Record<string, unknown[]> = {}
 
+      const today = new Date()
+      const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
+
       // ── Fee records — CLASS TEACHER classes only ─────────────────────
-      // Real Fee + Payment rows for the students of the classes this
-      // teacher is class teacher of. Subject-only classes get nothing:
-      // `fees` stays null on their students and `feeSummary` is absent.
+      // ONE canonical per-student derivation (shared with the student
+      // profile route — master task §11/§22): every Teacher surface shows
+      // the same numbers. Subject-only classes get nothing: `fees` stays
+      // null on their students and `feeSummary` is absent.
       const ctStudentIds = students
         .filter((s) => s.classId && classTeacherIds.has(s.classId))
         .map((s) => s.id)
@@ -219,7 +204,6 @@ export async function GET() {
             orderBy: [{ dueDate: 'asc' }],
           })
         : []
-
       // Canonical collection transactions for the same students — the
       // teacher's own collections (pending/verified/rejected) AND direct
       // office payments (source PRINCIPAL/SCHOOL_OFFICE), so the class
@@ -231,155 +215,16 @@ export async function GET() {
             take: 300,
           })
         : []
-      const ctTxnByStudent = new Map<string, typeof ctTxnRows>()
-      for (const t of ctTxnRows) {
-        if (!t.studentId) continue
-        const list = ctTxnByStudent.get(t.studentId) ?? []
-        list.push(t)
-        ctTxnByStudent.set(t.studentId, list)
-      }
-
-      const today = new Date()
-      const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
-
-      interface FeeItemDto {
-        id: string
-        title: string
-        amount: number
-        paid: number
-        outstanding: number
-        status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE'
-        dueDate: string | null
-        method: string | null
-      }
-      /** ONE payment history entry — canonical FeeTransaction rows
-       * (with source / verification / receipt) UNION pre-workflow legacy
-       * Payment rows (no transactionId — they predate the workflow and
-       * are tagged as office records). Every surface renders this same
-       * union (MASTER TASK §19: one source of truth). */
-      interface StudentPaymentDto {
-        id: string
-        txnId: string | null
-        feeTitle: string
-        amount: number
-        method: string | null
-        status: string
-        createdAt: string
-        source: string | null
-        sourceLabel: string | null
-        receiptNo: string | null
-        collectedBy: string | null
-        verifiedBy: string | null
-        rejectionReason: string | null
-      }
-      interface StudentFeesDto {
-        status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
-        totalBilled: number
-        totalPaid: number
-        outstanding: number
-        awaitingVerification: number
-        lastPaymentAt: string | null
-        items: FeeItemDto[]
-        payments: StudentPaymentDto[]
-      }
-
       const feesByStudent = new Map<string, StudentFeesDto>()
-      for (const s of students) {
-        if (!s.classId || !classTeacherIds.has(s.classId)) continue
-        const rows = feeRows.filter((f) => f.studentId === s.id)
-        if (rows.length === 0) {
-          feesByStudent.set(s.id, {
-            status: 'NONE',
-            totalBilled: 0,
-            totalPaid: 0,
-            outstanding: 0,
-            awaitingVerification: 0,
-            lastPaymentAt: null,
-            items: [],
-            payments: [],
-          })
-          continue
-        }
-        const items: FeeItemDto[] = rows.map((f) => {
-          const outstanding = Math.max(0, f.amount - f.paid)
-          const status: FeeItemDto['status'] =
-            outstanding <= 0
-              ? 'PAID'
-              : f.dueDate && f.dueDate < endOfToday
-                ? 'OVERDUE'
-                : f.paid > 0
-                  ? 'PARTIAL'
-                  : 'UNPAID'
-          return {
-            id: f.id,
-            title: f.title,
-            amount: f.amount,
-            paid: f.paid,
-            outstanding,
-            status,
-            dueDate: f.dueDate ? f.dueDate.toISOString().slice(0, 10) : null,
-            method: f.method,
-          }
-        })
-        const feeTitleByFeeId = new Map(rows.map((f) => [f.id, f.title]))
-        const legacyPayments: StudentPaymentDto[] = rows.flatMap((f) =>
-          f.payments
-            .filter((p) => !p.transactionId)
-            .map((p) => ({
-              id: p.id,
-              txnId: null,
-              feeTitle: feeTitleByFeeId.get(p.feeId ?? '') ?? f.title,
-              amount: p.amount,
-              method: p.method,
-              status: p.status,
-              createdAt: p.createdAt.toISOString(),
-              source: 'SCHOOL_OFFICE',
-              sourceLabel: 'School Office record',
-              receiptNo: null,
-              collectedBy: null,
-              verifiedBy: null,
-              rejectionReason: null,
-            })),
+      for (const sid of ctStudentIds) {
+        feesByStudent.set(
+          sid,
+          deriveStudentFees(
+            feeRows.filter((f) => f.studentId === sid),
+            ctTxnRows.filter((t) => t.studentId === sid),
+            endOfToday,
+          ),
         )
-        const txnPayments: StudentPaymentDto[] = (ctTxnByStudent.get(s.id) ?? []).map((t) => ({
-          id: t.id,
-          txnId: t.id,
-          feeTitle: t.feeHeadName ?? feeTitleByFeeId.get(t.feeId ?? '') ?? 'Fee',
-          amount: t.amount,
-          method: t.method,
-          status: t.status,
-          createdAt: (t.collectedAt ?? t.createdAt).toISOString(),
-          source: t.source,
-          sourceLabel: null,
-          receiptNo: t.receiptNo,
-          collectedBy: t.collectedByName,
-          verifiedBy: t.verifiedByName,
-          rejectionReason: t.rejectionReason,
-        }))
-        const payments = [...txnPayments, ...legacyPayments]
-          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-          .slice(0, 12)
-        const outstanding = items.reduce((sum, i) => sum + i.outstanding, 0)
-        const status: StudentFeesDto['status'] =
-          outstanding <= 0
-            ? 'PAID'
-            : items.some((i) => i.status === 'OVERDUE')
-              ? 'OVERDUE'
-              : items.some((i) => i.paid > 0)
-                ? 'PARTIAL'
-                : 'UNPAID'
-        feesByStudent.set(s.id, {
-          status,
-          totalBilled: rows.reduce((sum, f) => sum + f.amount, 0),
-          totalPaid: rows.reduce((sum, f) => sum + Math.min(f.amount, f.paid), 0),
-          outstanding,
-          awaitingVerification: txnPayments
-            .filter((p) => p.status === 'UNDER_VERIFICATION')
-            .reduce((sum, p) => sum + p.amount, 0),
-          lastPaymentAt: payments[0]?.createdAt ?? null,
-          items: items.slice(0, 8),
-          payments,
-        })
       }
 
       // per-class fee summaries (class-teacher classes only)
@@ -431,8 +276,8 @@ export async function GET() {
           address: s.address,
           classLabel: labelByClass.get(s.classId) ?? 'Unassigned',
           attendance: {
-            pct: att && att.total > 0 ? Math.round((att.attended / att.total) * 100) : null,
-            records: att?.total ?? 0,
+            pct: att && att.records > 0 ? att.pct : null,
+            records: att?.records ?? 0,
             present: att?.present ?? 0,
             absent: att?.absent ?? 0,
             late: att?.late ?? 0,

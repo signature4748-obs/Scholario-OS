@@ -83,7 +83,8 @@ export async function GET() {
       const typeCount = (t: string) => typeGroups.find((g) => g.type === t)?._count._all ?? 0
 
       const payload: BehaviorPayload = {
-        scopeLabel: ctx.classTeacherOf.map((c) => c.label).join(' · ') || 'Your records',
+        scopeLabel:
+          [...ctx.classTeacherOf, ...ctx.taughtClasses].map((c) => c.label).join(' · ') || 'Your records',
         categories: categories.map((c) => ({
           key: c.key,
           label: c.label,

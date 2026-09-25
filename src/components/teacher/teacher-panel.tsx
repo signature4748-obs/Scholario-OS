@@ -5,6 +5,7 @@ import { AppShell } from '@/components/shell/app-shell'
 import { lazyModule } from '@/components/shared/lazy-module'
 import { useTeachersStore } from '@/lib/store/teachers-store'
 import { useTeacherHubStore } from '@/lib/store/teacher-hub-store'
+import { useCurrentUser } from '@/lib/store/current-user-store'
 import { useTeacherRole } from './teacher-panel/use-teacher-role'
 import {
   buildTeacherNavGroups,
@@ -29,6 +30,16 @@ const MySalaryModule = lazyModule(
   'MySalaryModule',
 )
 
+/** Honest empty state for store-driven staff surfaces when the signed-in
+ *  teacher has no published staffing record (no fabricated profile). */
+function QuietNoRecord({ label }: { label: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+      {label}
+    </div>
+  )
+}
+
 /** Module keys the ModuleRouter knows — validates ?module= deep-links. */
 const TEACHER_MODULE_KEYS = [
   'dashboard', 'payroll', 'my-attendance', 'my-timetable', 'attendance',
@@ -43,9 +54,15 @@ export function TeacherPanel() {
   // module after each load) — drives the sidebar badge. One store, one truth.
   const hubUnread = useTeacherHubStore((s) => s.parentUnread)
 
-  // Default to Rohan Mehta (EMP-014) for Teacher View preview or active teacher
-  const currentTeacher = teachers.find((t) => t.id === 'T-014') || teachers[0]
-  const isRelieved = (currentTeacher?.status as string) === 'Relieved' || currentTeacher?.status === 'Suspended' || (currentTeacher?.status as string) === 'Terminated'
+  // The signed-in teacher's OWN record in the staffing store — matched by
+  // the SERVER session email (never a hardcoded demo row: every store-
+  // driven banner below belongs to this teacher alone; an unmatched
+  // session shows none of them instead of another teacher's data).
+  const me = useCurrentUser((st) => st.me)
+  const currentTeacher = me?.email
+    ? teachers.find((t) => (t.email ?? '').toLowerCase() === me.email.toLowerCase()) ?? null
+    : null
+  const isRelieved = currentTeacher != null && currentTeacher.status === 'Relieved'
   const [active, setActive] = useState(() => {
     const fallback = isRelieved ? 'profile' : 'dashboard'
     if (typeof window === 'undefined') return fallback
@@ -62,7 +79,7 @@ export function TeacherPanel() {
   const classTeacherOf = role?.classTeacherOf ?? []
 
   // Check pending position assignments for approval workflow
-  const pendingAssignments = getPendingAssignments(currentTeacher, isRelieved)
+  const pendingAssignments = getPendingAssignments(currentTeacher ?? undefined, isRelieved)
 
   const navGroups = buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread })
 
@@ -73,7 +90,7 @@ export function TeacherPanel() {
     handleConfirmDecline,
     handleOpenClarification,
     handleConfirmClarification,
-  } = useTeacherHandlers(currentTeacher)
+  } = useTeacherHandlers(currentTeacher ?? undefined)
 
   return (
     <AppShell
@@ -103,15 +120,20 @@ export function TeacherPanel() {
         onReview={() => setActive('payroll')}
       />
 
-      {/* My Salary & Payments (employee side of the payment trust model) */}
-      {active === 'payroll' && currentTeacher && (
-        <MySalaryModule employeeId={currentTeacher.id} />
-      )}
+      {active === 'payroll' &&
+        (currentTeacher ? (
+          <MySalaryModule employeeId={currentTeacher.id} />
+        ) : (
+          <QuietNoRecord label="Your payroll record is not available yet — the office will publish your salary details." />
+        ))}
 
       {/* Relieved staff views (profile / fee-management) */}
-      {currentTeacher && (active === 'profile' || active === 'fee-management') && (
-        <RelievedViews active={active} currentTeacher={currentTeacher} isRelieved={isRelieved} />
-      )}
+      {(active === 'profile' || active === 'fee-management') &&
+        (currentTeacher ? (
+          <RelievedViews active={active} currentTeacher={currentTeacher} isRelieved={isRelieved} />
+        ) : (
+          <QuietNoRecord label="Your staff profile has not been published by the office yet." />
+        ))}
 
       {/* Module Content */}
       {active !== 'profile' && active !== 'payroll' && active !== 'fee-management' && (

@@ -33,6 +33,7 @@ import { useFeeCollection } from './hooks'
 import type { FeeTxn } from './types'
 import { CollectFeeDialog } from './collect-dialog'
 import { StudentLedgerSheet } from './student-ledger'
+import { TeacherStudentProfileSheet } from '../shared/student-profile-sheet'
 import { ModuleToolbar } from '../../teacher-panel/module-toolbar'
 import {
   HubEmptyState,
@@ -66,6 +67,7 @@ export function FeeCollectionModule() {
   const [collectOpen, setCollectOpen] = useState(false)
   const [collectStudent, setCollectStudent] = useState<string | undefined>(undefined)
   const [ledgerStudentId, setLedgerStudentId] = useState<string | null>(null)
+  const [profileStudentId, setProfileStudentId] = useState<string | null>(null)
   const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
 
@@ -381,6 +383,15 @@ export function FeeCollectionModule() {
         txns={klass?.transactions ?? []}
         onCollect={(sid) => { setCollectStudent(sid); setCollectOpen(true) }}
         onViewReceipt={(id) => { setLedgerStudentId(null); setReceiptTxnId(id); setReceiptOpen(true) }}
+        onViewProfile={(id) => setProfileStudentId(id)}
+      />
+
+      {/* The ONE shared student profile (§25 — same sheet as Directory /
+          My Class / Behavior; fee tab first for the fee workflow context) */}
+      <TeacherStudentProfileSheet
+        studentId={profileStudentId}
+        onOpenChange={(o) => { if (!o) setProfileStudentId(null) }}
+        initialTab={profileStudentId != null && ledgerStudentId != null ? 'fees' : undefined}
       />
 
       {/* Shared receipt viewer */}
