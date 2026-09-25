@@ -192,7 +192,7 @@ export const DEFAULT_NEGATIVE_PRESETS: GrowthPreset[] = [
   { key: 'manual_lateness', label: 'Repeated Lateness', category: 'ATTENDANCE', points: -3 },
 ]
 
-// ---------- settings DTO (§18) ----------
+// ---------- settings DTO (§18 + refinement §8) ----------
 
 export interface GrowthSettingsDto {
   enabled: boolean
@@ -202,6 +202,13 @@ export interface GrowthSettingsDto {
   customReasons: boolean
   studentVisibility: boolean
   feePunctualityPoints: boolean
+  /** anti-abuse guardrails (enforced server-side; surfaced so the UI can
+   *  pre-empt quietly — never displayed as rules, refinement §29) */
+  manualDailyLimitPerTeacher: number
+  manualWeeklyLimitPerTeacher: number
+  manualWeeklyPointsCapPerTeacher: number
+  manualDailySchoolLimit: number
+  manualWeeklySchoolLimit: number
 }
 
 // ---------- scope summaries ----------
@@ -240,6 +247,9 @@ export interface GrowthClassSummary {
   studentCount: number
   /** average score over students with data; null when none have data */
   average: number | null
+  /** students with a valid calculated score — the ONLY ones inside the
+   *  average ("9 of 11 students scored", refinement §5/§24) */
+  scoredCount: number
   improving: number
   steady: number
   needsAttention: number
@@ -253,6 +263,8 @@ export interface GrowthClassSummary {
 export interface GrowthScopeSummary {
   studentCount: number
   average: number | null
+  /** students with a valid calculated score (refinement §5) */
+  scoredCount: number
   improving: number
   steady: number
   needsAttention: number
@@ -266,8 +278,18 @@ export interface GrowthWorkspacePayload {
   settings: GrowthSettingsDto
   presets: { positive: GrowthPreset[]; negative: GrowthPreset[] }
   classes: GrowthClassSummary[]
-  /** students the teacher may award points to */
-  students: { id: string; name: string; rollNo: string | null; classLabel: string; classId: string | null }[]
+  /** students the teacher may award points to — `manualToday` /
+   *   `manualWeekCategories` carry THIS teacher's recent manual activity
+   *   so the quick-action UI can pre-empt limits quietly (§21) */
+  students: {
+    id: string
+    name: string
+    rollNo: string | null
+    classLabel: string
+    classId: string | null
+    manualToday: boolean
+    manualWeekCategories: string[]
+  }[]
   events: GrowthEventItem[]
   summary: GrowthScopeSummary
   /** scope-average weekly trend (last 8 complete weeks) */

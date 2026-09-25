@@ -172,14 +172,17 @@ function attendanceWindow(rows: GrowthAttRow[], fromMs: number, toMs: number): A
 
 // ── the score (§19 — normalized, explainable, never invented) ───────────
 
-/** Dimension weights — configurable later via GrowthRule params (§18). */
+/** Dimension weights — configurable later via GrowthRule params (§18).
+ *  Refinement §2: progress is a first-class outcome — Improvement carries
+ *  the same weight as Attendance, so Growth never collapses into "who
+ *  has the highest marks" (a 55→72 riser outscores a static 95→96). */
 const DIMENSION_WEIGHTS: Record<GrowthCategory, number> = {
-  ACADEMIC: 0.3,
-  ATTENDANCE: 0.25,
+  ACADEMIC: 0.25,
+  ATTENDANCE: 0.2,
+  IMPROVEMENT: 0.2,
   CONDUCT: 0.15,
   PARTICIPATION: 0.1,
   CONSISTENCY: 0.1,
-  IMPROVEMENT: 0.1,
 }
 
 export function computeGrowthDimensions(input: GrowthComputeInput): GrowthDimension[] {
@@ -277,14 +280,17 @@ export function computeGrowthDimensions(input: GrowthComputeInput): GrowthDimens
 }
 
 /** Weighted mean over the dimensions that have data; null when fewer
- *  than 2 dimensions carry data (§21 — "building", never invented). */
+ *  than 2 dimensions carry data (§21 — "building", never invented).
+ *  Refinement §1: the normalized score is ALWAYS clamped to 0–100 —
+ *  every input dimension is already clamped, this is defense in depth
+ *  so no future weight change can ever leak a raw-points-style value. */
 export function overallScoreOf(dims: GrowthDimension[]): number | null {
   const available = dims.filter((d): d is GrowthDimension & { value: number } => d.value != null)
   if (available.length < 2) return null
   const totalWeight = available.reduce((s, d) => s + DIMENSION_WEIGHTS[d.category], 0)
   if (totalWeight <= 0) return null
   const weighted = available.reduce((s, d) => s + d.value * DIMENSION_WEIGHTS[d.category], 0)
-  return Math.round(weighted / totalWeight)
+  return Math.round(Math.max(0, Math.min(100, weighted / totalWeight)))
 }
 
 // ── the full profile: score + month deltas + 8-week trend + ledger sums ──

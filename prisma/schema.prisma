@@ -1939,5 +1939,16 @@ model GrowthSetting {
   /// fee punctuality points — OFF by default (§23: family finances never
   /// influence a student's growth unless the school explicitly opts in)
   feePunctualityPoints Boolean @default(false)
+  // ── manual-point anti-abuse guardrails (refinement §6/§7/§8) ──────────
+  /// manual events one teacher may create per student per calendar day
+  manualDailyLimitPerTeacher   Int @default(1)
+  /// manual events one teacher may create per student per rolling 7 days
+  manualWeeklyLimitPerTeacher  Int @default(3)
+  /// max absolute net manual contribution (points) per teacher/student per rolling 7 days
+  manualWeeklyPointsCapPerTeacher Int @default(5)
+  /// manual events per student per calendar day across ALL staff (school-wide)
+  manualDailySchoolLimit       Int @default(2)
+  /// manual events per student per rolling 7 days across ALL staff (school-wide)
+  manualWeeklySchoolLimit      Int @default(5)
   updatedAt          DateTime @updatedAt
 }

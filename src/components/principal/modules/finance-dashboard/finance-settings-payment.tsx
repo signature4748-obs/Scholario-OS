@@ -437,7 +437,7 @@ function BankAccountDialog({ mode, accountId, onClose, onSave }: BankAccountDial
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{mode === 'add' ? 'Add Bank Account' : 'Edit Bank Account'}</DialogTitle>
         </DialogHeader>
@@ -635,7 +635,7 @@ function UpiQrDialog({ mode, configId, onClose, onSave }: UpiQrDialogProps) {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{mode === 'add' ? 'Add UPI / QR Config' : 'Edit UPI / QR Config'}</DialogTitle>
         </DialogHeader>
@@ -917,7 +917,7 @@ function ConnectGatewayDialog({ onClose, onConnect }: ConnectGatewayDialogProps)
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Connect Payment Gateway</DialogTitle>
         </DialogHeader>

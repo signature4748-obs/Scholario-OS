@@ -31,9 +31,9 @@ import { GlassCard, PageTransition } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { toCsv } from '@/lib/csv'
 import { downloadCSVFile } from '@/lib/download-file'
-import { cn } from '@/lib/utils'
 import { useFocusStore } from '@/lib/store/focus-store'
 import { HubEmptyState, HubModuleSkeleton } from '../shared/hub-stat-cards'
+import { ClassSelect } from '../shared/class-select'
 import { FEE_STATUS_META } from './shared'
 import { useStudentDirectory } from './hooks'
 import { QuickStats } from './quick-stats'
@@ -173,45 +173,24 @@ export function StudentsModule() {
         }
       />
 
-      {/* Compact class selector — the real authorized classes with their
-          counts. The appointed class carries a small "Class Teacher" tag;
-          subjects are NEVER repeated per class (they live in the context
-          line above). Wraps on narrow screens — no horizontal page scroll. */}
+      {/* Compact class selector (refinement §15) — the SAME selector
+          language as Student Growth / My Class / Fees: a compact dropdown
+          (bottom sheet on mobile) instead of a chip row. Only authorized
+          classes are ever listed; the appointed class carries the Class
+          Teacher mark. Subjects stay in the context line above — never
+          repeated per class. */}
       {data.classes.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Select a class">
-          {data.classes.map((c) => {
-            const isActive = classId === c.id
-            return (
-              <button
-                key={c.id}
-                aria-pressed={isActive}
-                onClick={() => setClassId(c.id)}
-                className={cn(
-                  'flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all sm:min-h-[36px] sm:px-3',
-                  isActive
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground',
-                )}
-              >
-                <span className="whitespace-nowrap">{c.label}</span>
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
-                    isActive ? 'bg-primary/15' : 'bg-muted',
-                  )}
-                >
-                  {c.studentCount}
-                </span>
-                {c.isClassTeacher && (
-                  <BadgeCheck
-                    className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                    aria-label="Class Teacher"
-                  />
-                )}
-              </button>
-            )
-          })}
-        </div>
+        <ClassSelect
+          classes={data.classes.map((c) => ({
+            id: c.id,
+            label: c.label,
+            meta: String(c.studentCount),
+            isClassTeacher: c.isClassTeacher,
+          }))}
+          value={classId}
+          onChange={(id) => setClassId(id ?? '')}
+          ariaLabel="Select class"
+        />
       ) : (
         data.classes[0].isClassTeacher && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

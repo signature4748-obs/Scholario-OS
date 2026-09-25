@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button'
 import { useFocusStore } from '@/lib/store/focus-store'
 import { GlassCard } from '@/components/shared/ui'
 import { HubEmptyState, HubModuleSkeleton } from '../shared/hub-stat-cards'
+import { ClassSelect } from '../shared/class-select'
 import { TeacherStudentProfileSheet } from '../shared/student-profile-sheet'
 import { useClassHub } from './hooks'
 import { AttendanceCard } from './attendance-card'
@@ -176,28 +177,20 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
         </div>
       </section>
 
-      {/* class pills (only when the teacher runs more than one class) */}
+      {/* compact class selector (multi-class teachers only) — the SAME
+          selector language as Student Growth / Directory / Fees */}
       {data.classes.length > 1 && (
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Select one of your classes">
-          {data.classes.map((c) => {
-            const isActive = active.classId === c.classId
-            return (
-              <button
-                key={c.classId}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() => setClassId(c.classId)}
-                className={
-                  isActive
-                    ? 'min-h-[36px] rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary'
-                    : 'min-h-[36px] rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:border-muted-foreground/30 hover:text-foreground'
-                }
-              >
-                {c.label}
-              </button>
-            )
-          })}
-        </div>
+        <ClassSelect
+          classes={data.classes.map((c) => ({
+            id: c.classId,
+            label: c.label,
+            meta: String(c.studentCount),
+            isClassTeacher: true,
+          }))}
+          value={active.classId}
+          onChange={(id) => setClassId(id ?? data.classes[0].classId ?? null)}
+          ariaLabel="Select class"
+        />
       )}
 
       {/* ── the control room ──────────────────────────────────────────── */}

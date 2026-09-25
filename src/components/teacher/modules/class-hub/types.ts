@@ -72,6 +72,8 @@ export interface ClassHubClass {
   results: ClassHubResultExam[]
   growth: {
     average: number | null
+    /** students with a valid calculated score — the only ones in the average */
+    scoredCount: number
     improving: number
     steady: number
     needsAttention: number

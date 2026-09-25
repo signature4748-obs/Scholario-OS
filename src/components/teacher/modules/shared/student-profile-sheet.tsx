@@ -59,6 +59,7 @@ import type {
   GrowthEventItem,
   GrowthPreset,
   GrowthScoreDto,
+  GrowthSettingsDto,
 } from '@/lib/teacher-hub-types'
 import { FEE_STATUS_META, attendanceToneClass } from '../students/shared'
 import { ActivityList } from '../student-growth/activity-list'
@@ -131,6 +132,9 @@ export interface TeacherStudentProfile {
     events: GrowthEventItem[]
     feeStanding: FeeStandingDto | null
     presets: { positive: GrowthPreset[]; negative: GrowthPreset[] }
+    settings: GrowthSettingsDto
+    manualToday: boolean
+    manualWeekCategories: string[]
   }
   conversationId: string | null
 }
@@ -817,23 +821,19 @@ export function TeacherStudentProfileSheet({
               name: student.name,
               rollNo: student.rollNo,
               classLabel: student.classLabel,
+              manualToday: data.growth.manualToday,
+              manualWeekCategories: data.growth.manualWeekCategories,
             },
           ]}
           presets={data.growth.presets}
-          settings={{
-            enabled: true,
-            negativeEnabled: true,
-            minManualPoints: -5,
-            maxManualPoints: 5,
-            customReasons: true,
-            studentVisibility: true,
-            feePunctualityPoints: false,
-          }}
+          settings={data.growth.settings}
           prefillStudent={{
             id: student.id,
             name: student.name,
             rollNo: student.rollNo,
             classLabel: student.classLabel,
+            manualToday: data.growth.manualToday,
+            manualWeekCategories: data.growth.manualWeekCategories,
           }}
           onCreated={() => {
             setReload((r) => r + 1)

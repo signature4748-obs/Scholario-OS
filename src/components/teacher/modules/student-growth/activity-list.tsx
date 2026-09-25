@@ -150,7 +150,7 @@ export function ActivityList({
                     )}
                     <span className="truncate text-[11px] text-muted-foreground">{e.classLabel}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-[13px] font-medium text-foreground/90">{e.reason}</p>
+                  <p className="mt-0.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">{e.reason}</p>
                   {e.note && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{e.note}</p>}
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
                     <span>{relativeDay(e.effectiveAt)}</span>

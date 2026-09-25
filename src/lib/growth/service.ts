@@ -230,6 +230,11 @@ export async function growthSettingsFor(schoolId: string): Promise<GrowthSetting
       customReasons: true,
       studentVisibility: true,
       feePunctualityPoints: false,
+      manualDailyLimitPerTeacher: 1,
+      manualWeeklyLimitPerTeacher: 3,
+      manualWeeklyPointsCapPerTeacher: 5,
+      manualDailySchoolLimit: 2,
+      manualWeeklySchoolLimit: 5,
     }
   }
   return {
@@ -240,6 +245,11 @@ export async function growthSettingsFor(schoolId: string): Promise<GrowthSetting
     customReasons: row.customReasons,
     studentVisibility: row.studentVisibility,
     feePunctualityPoints: row.feePunctualityPoints,
+    manualDailyLimitPerTeacher: row.manualDailyLimitPerTeacher,
+    manualWeeklyLimitPerTeacher: row.manualWeeklyLimitPerTeacher,
+    manualWeeklyPointsCapPerTeacher: row.manualWeeklyPointsCapPerTeacher,
+    manualDailySchoolLimit: row.manualDailySchoolLimit,
+    manualWeeklySchoolLimit: row.manualWeeklySchoolLimit,
   }
 }
 

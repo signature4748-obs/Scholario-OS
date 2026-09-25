@@ -7,7 +7,8 @@ import {
   classLabelOf,
 } from '@/lib/teacher-hub'
 import { deriveStudentFees, deriveAttendanceSummary, type StudentFeesDto } from '@/lib/teacher/student-ledger'
-import { growthScoresFor, feeStandingOf, manualPresetsFor, toGrowthEventItem } from '@/lib/growth/service'
+import { growthScoresFor, feeStandingOf, growthSettingsFor, manualPresetsFor, toGrowthEventItem } from '@/lib/growth/service'
+import { manualStateByStudent } from '@/lib/growth/limits'
 
 export const runtime = 'nodejs'
 
@@ -171,7 +172,13 @@ export async function GET(
       ].sort()
 
       // — canonical growth profile (the SAME score every surface shows) ─
-      const [growth] = [...(await growthScoresFor(ctx.schoolId, [student.id])).values()]
+      const [growth, growthSettings, manualState] = await Promise.all([
+        growthScoresFor(ctx.schoolId, [student.id]).then((m) => [...m.values()][0] ?? null),
+        growthSettingsFor(ctx.schoolId),
+        manualStateByStudent(ctx.schoolId, ctx.userId, [student.id]).then(
+          (m) => m.get(student.id) ?? { manualToday: false, manualWeekCategories: [] },
+        ),
+      ])
 
       return {
         student: {
@@ -200,6 +207,9 @@ export async function GET(
           events: growthEventRows.map(toGrowthEventItem),
           feeStanding: feeStandingOf(fees),
           presets,
+          settings: growthSettings,
+          manualToday: manualState.manualToday,
+          manualWeekCategories: manualState.manualWeekCategories,
         },
         conversationId: conversation?.id ?? null,
       }

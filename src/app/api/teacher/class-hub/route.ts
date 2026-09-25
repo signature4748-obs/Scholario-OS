@@ -204,6 +204,7 @@ export async function GET() {
               withScore.length > 0
                 ? Math.round(withScore.reduce((sum, g) => sum + g.score!, 0) / withScore.length)
                 : null,
+            scoredCount: withScore.length,
             improving: bands.filter((b) => b === 'IMPROVING').length,
             steady: bands.filter((b) => b === 'STEADY').length,
             needsAttention: bands.filter((b) => b === 'NEEDS_ATTENTION').length,

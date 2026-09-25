@@ -21,7 +21,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Loader2, Minus, Plus, Search, Sparkles, X } from 'lucide-react'
+import { Check, CheckCircle2, ChevronDown, Loader2, Minus, Plus, Search, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -45,6 +45,10 @@ export interface GrowthStudentOption {
   name: string
   rollNo: string | null
   classLabel: string
+  /** §21 quiet pre-empt: this teacher already recorded for the student
+   *  today / already used these categories this week (server still enforces) */
+  manualToday?: boolean
+  manualWeekCategories?: string[]
 }
 
 interface AddPointsDialogProps {
@@ -128,6 +132,12 @@ export function AddPointsDialog({
     [customMode, presetKey, presets],
   )
 
+  // §21 — quiet pre-empt of the server-side limits. Never a rule text:
+  // just a soft "already updated today" state and spent chips.
+  const alreadyToday = !!student?.manualToday
+  const weekCategories = new Set(student?.manualWeekCategories ?? [])
+  const presetSpent = (p: GrowthPreset) => alreadyToday || weekCategories.has(p.category)
+
   const effectivePoints = selectedPreset
     ? selectedPreset.points
     : customMode
@@ -135,7 +145,11 @@ export function AddPointsDialog({
       : 0
 
   const canSubmit =
-    !!student && !saving && effectivePoints !== 0 && (!customMode || customReason.trim().length > 0)
+    !!student &&
+    !alreadyToday &&
+    !saving &&
+    effectivePoints !== 0 &&
+    (!customMode || customReason.trim().length > 0)
 
   const handleChip = (preset: GrowthPreset) => {
     setCustomMode(false)
@@ -168,6 +182,8 @@ export function AddPointsDialog({
       onCreated()
       onOpenChange(false)
     } catch (e) {
+      // §22 — limit errors arrive as concise human sentences; surface them
+      // verbatim, never with technical detail
       setError(e instanceof Error ? e.message : 'The point could not be recorded.')
     } finally {
       setSaving(false)
@@ -306,7 +322,16 @@ export function AddPointsDialog({
 
           {/* ── quick reasons ────────────────────────────────────────── */}
           <div className={cn('mt-4 space-y-4', !student && 'pointer-events-none opacity-40')}>
-            <div>
+            {alreadyToday && (
+              <p
+                role="status"
+                className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                {student?.name.split(' ')[0] ?? 'This student'}'s growth has already been updated today.
+              </p>
+            )}
+            <div className={cn(alreadyToday && 'pointer-events-none opacity-50')}>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Positive
               </p>
@@ -317,7 +342,7 @@ export function AddPointsDialog({
                     active={presetKey === p.key && !customMode}
                     points={p.points}
                     label={p.label}
-                    disabled={!student}
+                    disabled={!student || presetSpent(p)}
                     onClick={() => handleChip(p)}
                   />
                 ))}
@@ -325,7 +350,7 @@ export function AddPointsDialog({
             </div>
 
             {settings.negativeEnabled && presets.negative.length > 0 && (
-              <div>
+              <div className={cn(alreadyToday && 'pointer-events-none opacity-50')}>
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Needs attention
                 </p>
@@ -336,13 +361,13 @@ export function AddPointsDialog({
                       active={presetKey === p.key && !customMode}
                       points={p.points}
                       label={p.label}
-                      disabled={!student}
+                      disabled={!student || presetSpent(p)}
                       onClick={() => handleChip(p)}
                     />
                   ))}
                   <button
                     type="button"
-                    disabled={!student}
+                    disabled={!student || alreadyToday}
                     onClick={() => openCustom(-1)}
                     className={cn(
                       'rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all',
@@ -359,10 +384,10 @@ export function AddPointsDialog({
 
             {/* ── custom entry ──────────────────────────────────────── */}
             {settings.customReasons && (
-              <div>
+              <div className={cn(alreadyToday && 'pointer-events-none opacity-50')}>
                 <button
                   type="button"
-                  disabled={!student}
+                  disabled={!student || alreadyToday}
                   onClick={() => (customMode && customSign > 0 ? setCustomMode(false) : openCustom(1))}
                   className={cn(
                     'rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all',
@@ -441,7 +466,7 @@ export function AddPointsDialog({
             )}
 
             {/* ── optional note ─────────────────────────────────────── */}
-            <div>
+            <div className={cn(alreadyToday && 'pointer-events-none opacity-50')}>
               <label
                 htmlFor="growth-note"
                 className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
@@ -542,7 +567,7 @@ function ChipButton({
       >
         {signedPoints(points)}
       </span>
-      <span className="max-w-[10rem] truncate">{label}</span>
+      <span className="whitespace-nowrap">{label}</span>
     </button>
   )
 }

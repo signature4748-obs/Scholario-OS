@@ -50,6 +50,7 @@ import {
   MonthDeltaChip,
 } from './growth-summary'
 import { PRIMARY_ACTION_CLASS, signedDelta } from './shared'
+import { ClassSelect } from '../shared/class-select'
 import { TeacherStudentProfileSheet } from '../shared/student-profile-sheet'
 
 export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string) => void }) {
@@ -142,36 +143,27 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
             }
           />
 
-          {/* ── class pills ─────────────────────────────────────────── */}
+          {/* ── compact class selector (refinement §13/§14 — one dropdown,
+              not a pill row; mobile opens the same list as a bottom
+              sheet). Only classes the teacher is authorized to see are
+              ever in `data.classes` (assignment-driven scope). ──────── */}
           {data.classes.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <PillButton
-                active={classFilter === null}
-                onClick={() => {
-                  setClassFilter(null)
-                  setStudentFilter('')
-                }}
-                label="All classes"
-                badge={
-                  data.summary.average != null
-                    ? `${data.summary.average} avg`
-                    : `${data.summary.studentCount} students`
-                }
-              />
-              {data.classes.map((c) => (
-                <PillButton
-                  key={c.classId}
-                  active={classFilter === c.classId}
-                  onClick={() => {
-                    setClassFilter(c.classId)
-                    setStudentFilter('')
-                  }}
-                  label={c.label}
-                  badge={c.average != null ? `${c.average} avg` : `${c.studentCount}`}
-                  classTeacher={c.isClassTeacher}
-                />
-              ))}
-            </div>
+            <ClassSelect
+              classes={data.classes.map((c) => ({
+                id: c.classId,
+                label: c.label,
+                meta: c.average != null ? `${c.average} avg` : null,
+                isClassTeacher: c.isClassTeacher,
+              }))}
+              value={classFilter}
+              onChange={(id) => {
+                setClassFilter(id)
+                setStudentFilter('')
+              }}
+              allLabel="All classes"
+              allMeta={data.summary.average != null ? `${data.summary.average} avg` : null}
+              ariaLabel="Select class"
+            />
           )}
 
           {/* ── summary + trend ─────────────────────────────────────── */}
@@ -181,10 +173,16 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
                 <h3 className="text-sm font-semibold">
                   {selectedClass ? `${selectedClass.label} Growth` : 'Growth Overview'}
                 </h3>
-                <span className="text-[10px] text-muted-foreground">
-                  {selectedClass
-                    ? `${selectedClass.studentCount} students`
-                    : `${data.classes.length} classes`}
+                {/* §5/§24 — the average is transparent about who is in it:
+                    building students are counted, never silently averaged */}
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {(() => {
+                    const total = selectedClass?.studentCount ?? data.summary.studentCount
+                    const scored = selectedClass?.scoredCount ?? data.summary.scoredCount
+                    return scored < total
+                      ? `${scored} of ${total} scored`
+                      : `${total} student${total === 1 ? '' : 's'}`
+                  })()}
                 </span>
               </div>
               <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
@@ -318,6 +316,11 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
             customReasons: true,
             studentVisibility: true,
             feePunctualityPoints: false,
+            manualDailyLimitPerTeacher: 1,
+            manualWeeklyLimitPerTeacher: 3,
+            manualWeeklyPointsCapPerTeacher: 5,
+            manualDailySchoolLimit: 2,
+            manualWeeklySchoolLimit: 5,
           }
         }
         prefillStudent={prefillStudent}
@@ -338,53 +341,6 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
 }
 
 // ── small pieces ─────────────────────────────────────────────────────────
-
-function PillButton({
-  active,
-  onClick,
-  label,
-  badge,
-  classTeacher,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  badge?: string
-  classTeacher?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary/40 bg-primary/10 text-primary'
-          : 'border-border bg-card/60 text-muted-foreground hover:border-primary/25 hover:text-foreground',
-      )}
-    >
-      <span className="max-w-[9rem] truncate">{label}</span>
-      {classTeacher && (
-        <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
-          title="You are the class teacher"
-          aria-label="Class teacher"
-        />
-      )}
-      {badge && (
-        <span
-          className={cn(
-            'rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums',
-            active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-          )}
-        >
-          {badge}
-        </span>
-      )}
-    </button>
-  )
-}
 
 function BandTile({
   label,

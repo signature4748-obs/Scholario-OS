@@ -9,6 +9,7 @@ import {
   parseString,
 } from '@/lib/teacher-hub'
 import { ensureGrowthEvaluation } from '@/lib/growth/engine'
+import { assertManualEventAllowed, manualStateByStudent } from '@/lib/growth/limits'
 import {
   growthScoresFor,
   growthSettingsFor,
@@ -56,6 +57,9 @@ export async function GET() {
 
       const ids = scopeStudents.map((s) => s.id)
       const scores = await growthScoresFor(ctx.schoolId, ids)
+      // the current teacher's recent manual activity — lets the quick-action
+      // UI pre-empt limits quietly (§21); enforcement stays server-side
+      const manualState = await manualStateByStudent(ctx.schoolId, ctx.userId, ids)
 
       // — per-class + scope summaries (the SAME canonical scores) ──────
       const classIds = [...new Set(scopeStudents.map((s) => s.classId).filter((x): x is string => !!x))]
@@ -111,6 +115,7 @@ export async function GET() {
             withScore.length > 0
               ? Math.round(withScore.reduce((sum, g) => sum + g.score!, 0) / withScore.length)
               : null,
+          scoredCount: withScore.length,
           improving: bands.filter((b) => b === 'IMPROVING').length,
           steady: bands.filter((b) => b === 'STEADY').length,
           needsAttention: bands.filter((b) => b === 'NEEDS_ATTENTION').length,
@@ -128,6 +133,7 @@ export async function GET() {
           scopeWithScore.length > 0
             ? Math.round(scopeWithScore.reduce((sum, g) => sum + g.score!, 0) / scopeWithScore.length)
             : null,
+        scoredCount: scopeWithScore.length,
         improving: scopeBands.filter((b) => b === 'IMPROVING').length,
         steady: scopeBands.filter((b) => b === 'STEADY').length,
         needsAttention: scopeBands.filter((b) => b === 'NEEDS_ATTENTION').length,
@@ -160,13 +166,18 @@ export async function GET() {
         settings,
         presets,
         classes: classSummaries,
-        students: scopeStudents.map((s) => ({
-          id: s.id,
-          name: s.user?.name ?? 'Unnamed student',
-          rollNo: s.rollNo,
-          classLabel: labelOf.get(s.classId ?? '') ?? 'Unassigned',
-          classId: s.classId,
-        })),
+        students: scopeStudents.map((s) => {
+          const m = manualState.get(s.id)
+          return {
+            id: s.id,
+            name: s.user?.name ?? 'Unnamed student',
+            rollNo: s.rollNo,
+            classLabel: labelOf.get(s.classId ?? '') ?? 'Unassigned',
+            classId: s.classId,
+            manualToday: m?.manualToday ?? false,
+            manualWeekCategories: m?.manualWeekCategories ?? [],
+          }
+        }),
         events,
         summary,
         trend,
@@ -225,6 +236,17 @@ export async function POST(req: NextRequest) {
       if (points < 0 && !settings.negativeEnabled) {
         throw new Error('Negative points are disabled for this school')
       }
+
+      // ── anti-abuse guardrails (refinement §6/§7/§9) — server-side,
+      //    canonical-ledger truth; UI disabling is only a courtesy ──
+      await assertManualEventAllowed({
+        schoolId: ctx.schoolId,
+        studentId: student.id,
+        teacherId: ctx.userId,
+        category,
+        points,
+        settings,
+      })
 
       const event = await db.growthEvent.create({
         data: {

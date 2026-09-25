@@ -42,6 +42,7 @@ import {
   HubStatCards,
   type HubStat,
 } from '../shared/hub-stat-cards'
+import { ClassSelect } from '../shared/class-select'
 import { SectionCard } from '../shared/section-card'
 import {
   AlertTriangle, ArrowLeftRight, BadgeCheck, Banknote, CalendarDays, ChevronLeft,
@@ -183,24 +184,19 @@ export function FeeCollectionModule() {
         }
       />
 
-      {/* Class pills (multi-class teachers only) */}
+      {/* Compact class selector (multi-class teachers only) — the SAME
+          selector language as Student Growth / Directory / My Class */}
       {data.classes.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {data.classes.map((c, i) => (
-            <button
-              key={c.classId}
-              onClick={() => setClassIdx(i)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                i === classIdx
-                  ? 'border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
-                  : 'bg-card text-muted-foreground hover:bg-muted',
-              )}
-            >
-              {c.label} · {c.studentCount}
-            </button>
-          ))}
-        </div>
+        <ClassSelect
+          classes={data.classes.map((c, i) => ({
+            id: String(i),
+            label: c.label,
+            meta: String(c.studentCount),
+          }))}
+          value={String(Math.min(classIdx, data.classes.length - 1))}
+          onChange={(id) => setClassIdx(Number(id ?? 0))}
+          ariaLabel="Select class"
+        />
       )}
 
       {/* CLASS FINANCIAL OVERVIEW — compact metric grid, one system with

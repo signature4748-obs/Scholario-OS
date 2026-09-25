@@ -76,7 +76,7 @@ export function FeesTab() {
 
       {/* DIALOG: ADD FEE HEAD */}
       <Dialog open={addFeeHeadOpen} onOpenChange={setAddFeeHeadOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <IndianRupee className="h-5 w-5 text-emerald-600" /> Add Fee Head

@@ -64,6 +64,11 @@ export function GrowthCard({
           <p className="mt-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
             average
           </p>
+          {g.scoredCount < cls.studentCount && (
+            <p className="mt-1 text-[9px] font-semibold tabular-nums text-muted-foreground/80">
+              {g.scoredCount} of {cls.studentCount}
+            </p>
+          )}
         </div>
         <div className="grid flex-1 grid-cols-3 gap-2">
           <BandTile i={0} glyph="↑" tone="emerald" label="Improving" value={g.improving} />
@@ -82,6 +87,9 @@ export function GrowthCard({
         <p className="mt-2 text-[10px] text-muted-foreground/70">
           {g.building} still building — not enough records yet
         </p>
+      )}
+      {g.building === 0 && g.scoredCount > 0 && g.scoredCount === cls.studentCount && (
+        <p className="mt-2 text-[10px] text-muted-foreground/70">All {cls.studentCount} students scored</p>
       )}
 
       <button
