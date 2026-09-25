@@ -50,7 +50,6 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
 } from '@/components/ui/sheet'
 import { formatDate, formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -312,7 +311,15 @@ export function TeacherStudentProfileSheet({
 
   return (
     <Sheet open={!!studentId} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className={cn('w-full gap-0 sm:max-w-xl', THIN_SCROLLBAR)}>
+      <SheetContent
+        side="right"
+        aria-describedby={undefined}
+        className={cn('w-full gap-0 sm:max-w-xl', THIN_SCROLLBAR)}
+      >
+        {/* A11y contract: the title ALWAYS exists — the student's name once
+            loaded, a neutral label while the skeleton/error state shows. */}
+        <SheetTitle className="sr-only">{student?.name ?? 'Student profile'}</SheetTitle>
+
         {/* ── identity header (the Principal profile's architecture) ── */}
         <SheetHeader className="border-b border-border px-4 py-4 sm:px-5">
           {error && !data ? (
@@ -342,10 +349,10 @@ export function TeacherStudentProfileSheet({
               <div className="flex items-center gap-3">
                 <GradientAvatar name={student.name} size="xl" />
                 <div className="min-w-0 flex-1">
-                  <SheetTitle className="truncate text-base font-semibold">{student.name}</SheetTitle>
-                  <SheetDescription className="mt-0.5 truncate text-xs">
+                  <p className="truncate text-base font-semibold">{student.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     Roll {student.rollNo ?? '—'} · {student.classLabel} · Adm {student.admissionNo ?? '—'}
-                  </SheetDescription>
+                  </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {data.isClassTeacher && (
                       <StatusBadge status="Your class" variant="success" dot />

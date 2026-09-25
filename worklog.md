@@ -2417,3 +2417,45 @@ Stage Summary:
 - (D) ONE shared TeacherStudentProfileSheet (tabs Overview/Attendance/Academics/Fees(CT)/Behavior/Guardian) used by Directory + Behavior + Fees ledger + My Class defaulters (§6/§25).
 - (E) Directory header redesign (scope line "Grade 9-A · 11 students · Class Teacher" | "Classes you teach · 3 · Mathematics", compact pills, NO per-class subject chips).
 - (F) My Class compact header (no gradient hero) + focus-store class preselect for Directory.
+
+---
+Task ID: 2 (Class & Student Management — Phases A–F implemented + QA)
+Agent: Z.ai Code (main orchestrator)
+Task: Implement the 4-module master refinement (data restructure + permissions + shared profile + UI redesign + full 5-role QA).
+
+Work Log:
+- PHASE A (data, scripts/seed-refactor.ts — idempotent, resumable):
+  1. Merged the duplicate Aarav universe: student1@demoschool.edu (fee-rich roll 01) → login user aarav.sharma@greenwood.edu.in (now roll 01 · DEMO-2026-0001 · billed ₹41,400 / paid ₹38,000 / outstanding ₹3,400 / ₹100 pending / ₹500 rejected). All child rows migrated (fees, txns, attendance deduped on studentId+date, behavior, follow-ups, conversations, marks/results with unique-clash dedupe, learning data); filler user deleted.
+  2. Faculty restructure — 9 teachers with logins @greenwood.edu.in (password teacher123): Rohan (BOTH: CT 9-A + Math 9-A/10-A/10-B), Kavita (BOTH: CT 10-A + Science), Arjun (CT-ONLY 10-B), Priya (SUBJECT-ONLY: English 9/10A/10B + Biology 11-A), Meera (SUBJECT-ONLY: Hindi+SST), Sunita (BOTH: CT 3-A + Eng/Math/EVS primary), Deepak (BOTH: CT 6-A + Math/Science 6-8A), Vikram (SUBJECT-ONLY: Phy/Chem 11/12-A + Math 12-A), Lakshmi (BOTH: CT 11-B + Eng/History/PolSci/Eco).
+  3. Classes: +Grade 3-A, +Grade 10-B; streams set (11-A Science-PCB, 12-A Science-PCM, 11-B/12-B Humanities); CSA rebuilt (11-A drops Math, 12-A drops Bio, 11-B/12-B → English/History/Political Science/Economics; new subjects EVS/HIS/POL).
+  4. Timetable rebuilt: 187 slots, 0 teacher conflicts (6 days × 7 periods, teacher-per-class map matches the assignment design; 6/7/8-A English/Hindi/SST left unassigned as honest vacancies).
+  5. +33 students (9-A roll 11 Tanvi; rosters for 3-A×5, 6-A×4, 7-A×3, 8-A×3, 10-B×5, 11-A×4, 11-B×3, 12-A×3, 12-B×2) — school total 51.
+  6. Attendance: past week seeded for all new classes incl LEAVE (9 total); today (25 Sep): 10-A/10-B/6-A/3-A/11-B marked, 9-A intentionally unmarked (hub CTA state).
+  7. Fees: 10-B full picture (paid/partial/overdue + Kiara ₹1,500 UNDER_VERIFICATION by Arjun), 3-A light, 6-A with ₹2,000 REJECTED by Deepak (reason recorded), 11-B mixed. Receipts SCH-2026-000003+.
+  8. Behavior: positive/observation/concern × (open + follow-up due 28 Sep / monitoring / resolved) across 10-B, 6-A, 11-B, 3-A.
+  9. Marks: PA-1 complete 9-A (11×5, /50 scale — rescaled after catching 168% bug), 10-A Math+Sci SUBMITTED + English DRAFT, UT-2 linked to 10-B with Math DRAFT.
+  10. Curriculum topics for 3-A (Eng/Math/EVS) + 11-B/12-B (History/PolSci).
+- PHASE B (permissions root-cause):
+  - teacher-hub.ts: TeacherHubContext + taughtClasses (timetable-sourced); authorizedStudentWhere + visibleBehaviorWhere extended to CT ∪ subject-taught classes (§13); ScopedStudent extended (userId, admissionNo, gender, dob, blood, address, stream).
+  - Behavior moved from CT-only nav group → Academics & Teaching (all active teachers); CT Hub group = My Class + Fees only.
+- PHASE C (single calculation): src/lib/teacher/student-ledger.ts — deriveStudentFees + deriveAttendanceSummary (pure); directory route + new profile route both consume them.
+- PHASE D (shared profile): GET /api/teacher/students/[studentId] (scope-validated, fees CT-only, behavior teacher-visible, conversation link, taughtSubjects) + GET /api/teacher/behavior/categories; shared TeacherStudentProfileSheet (tabs Overview/Attendance/Academics/Fees?/Behavior/Guardian, fetch-on-open, receipt viewer, Record Observation with lazy taxonomy, follow-up completion); wired into Directory (replaced old sheet), Behavior (replaced old dialog), Fees (ledger "Profile" button), My Class (defaulters). Old duplicate implementations deleted.
+- PHASE E (UI): Directory — scope context line ("Grade 9 - A · 11 students · Class Teacher — plus 2 more classes you teach" | "Classes you teach · 4 classes · Biology, English"), compact class pills (label + count + CT check icon, NO per-class subject chips); My Class — compact card header replacing the gradient hero (identity + appointment + room + 4 quick actions); focus-store class preselect (My Class → Student Directory); ModuleToolbar context wraps on mobile (line-clamp-2).
+- PHASE F (fake-banner root cause): teacher-panel.tsx had hardcoded currentTeacher = store row 'T-014' — every teacher saw Rohan's mock position banner. Fixed: session-email match against the staffing store; unmatched sessions show NO store-driven banners + honest QuietNoRecord states for payroll/profile.
+- A11Y fix: shared sheet initially had no SheetTitle during skeleton/error → Radix DialogContent warning. Fixed with always-present sr-only title + aria-describedby={undefined}. Verified zero post-fix console errors.
+
+Verification (browser QA via agent-browser + curl):
+- Rohan (CT+subject): Directory shows exactly 3 classes (9-A CT 11 · 10-A 8 · 10-B 5), zero ghost classes; context line correct; Aarav profile = 6 tabs with Fees ₹41.4K/₹38.0K/₹3.4K + ₹100 awaiting + rejected w/ reason; PA-1 84% avg (44/50 Math etc.); My Class compact header + attendance "Pending" CTA + defaulters (Ananya ₹15.0K, Aarav ₹3.4K); Fees ₹2.66L/₹2.48L/₹18.4K/₹100 (identical to My Class + Principal Fee Management); ledger → profile stacked sheets work.
+- Priya (subject-only): nav has NO Class Teacher Hub; Behavior available; Directory = 4 classes "Classes you teach · 4 classes · Biology, English"; student profile has NO Fees tab; recorded an observation for Aadhya (10-A) from the shared sheet — appears instantly with real category label + "Recorded by Ms. Priya Iyer".
+- Arjun (CT-only): My Class 10-B fully functional (marked attendance 4P/1A, wellbeing 1 open/1 monitoring/1 positive, fees 63% ₹69.0K/₹1.10L + ₹1.5K awaiting, defaulters list); Behavior module shows his records + follow-up.
+- Principal: Students & Classes = 51 students · 11 classes (real distribution Primary 5/Middle 10/Secondary 24/Sr Sec 12); Fee Management ₹7.74L expected/₹5.83L collected/₹1.91L outstanding/₹1.6K pending (2 txns).
+- §24 workflow test: Principal verified Kiara's ₹1,500 → Arjun's 10-B updated automatically (collected ₹69.0K→₹70.5K, awaiting→0, Kiara outstanding ₹7,000→₹5,500) from the same ledger.
+- Student (Aarav): dashboard "Hi Aarav · Grade 9-A · Roll 01" + ₹3,400 outstanding banner + real timetable (English 11:45 Room 204); Fees page = ₹41,400/₹38,000/₹3,400/₹100-pending/₹2,500-overdue — matches every teacher surface.
+- Responsive: 320/390/768/1280/1440 × all four modules — zero horizontal overflow (verified via scrollWidth eval after confirmed navigation).
+- TypeScript 0 errors · ESLint 0/0 · dev.log clean · console errors 0 (post-fix).
+
+Stage Summary:
+- One canonical universe: single Aarav, 9-teacher faculty with clean scopes, 11 classes with students, one fee ledger, one profile architecture, one behavior scope model.
+- All §18 mock-data coverage cases present (CT-only/subject-only/both; 1-3 subjects; primary/secondary/sr-sec; PCB/PCM/Humanities streams; all fee states incl pending+rejected; all behavior types + follow-up + monitoring; all attendance states incl LEAVE).
+- Teacher logins: rohan.mehta / kavita.sharma / arjun.nair / priya.iyer / meera.krishnan / sunita.rao / deepak.kulkarni / vikram.desai / lakshmi.menon @greenwood.edu.in · teacher123.
+- Remaining known-acceptable: pre-existing logo.svg aspect-ratio console warning (public website, not in scope); Principal profile page still uses its hybrid store/server mapping (out of the four modules' scope — its data IS server-derived); scripts/seed-refactor.ts retained for reproducibility.
