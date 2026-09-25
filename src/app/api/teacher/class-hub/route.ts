@@ -1,6 +1,8 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf } from '@/lib/teacher-hub'
+import { growthScoresFor } from '@/lib/growth/service'
+import { bandOf } from '@/lib/growth/shared'
 
 export const runtime = 'nodejs'
 
@@ -18,8 +20,9 @@ export const runtime = 'nodejs'
  *     DRAFT vs SUBMITTED workflow status and the class average — the
  *     class teacher sees the whole submission picture, not just their own
  *     subject;
- *   · behavior — open concerns / monitoring / recent positives from the
- *     canonical BehaviorRecord rows.
+ *   · growth — the class's canonical Growth picture (§14): average score
+ *     + improving / steady / needs-attention counts, from the SAME
+ *     growthScoresFor derivation every other surface uses.
  *
  * Nothing is fabricated: empty sections surface as zeros/empty arrays and
  * render as honest empty states. A teacher with zero class-teacher classes
@@ -55,7 +58,6 @@ export async function GET() {
       const today = new Date()
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0)
       const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
-      const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
 
       const payload = await Promise.all(
         ctClasses.map(async (c) => {
@@ -193,17 +195,20 @@ export async function GET() {
             }
           })
 
-          // ── behavior ─────────────────────────────────────────────────
-          const behaviorRows = studentIds.length
-            ? await db.behaviorRecord.findMany({
-                where: { studentId: { in: studentIds } },
-                select: { type: true, status: true, date: true },
-              })
-            : []
-          const behavior = {
-            openConcerns: behaviorRows.filter((r) => r.type === 'concern' && r.status === 'open').length,
-            monitoring: behaviorRows.filter((r) => r.status === 'monitoring').length,
-            recentPositive: behaviorRows.filter((r) => r.type === 'positive' && r.date >= thirtyDaysAgo).length,
+          // ── growth (§14) — canonical scores for the class roster ────
+          const growthScores = await growthScoresFor(schoolId, studentIds)
+          const withScore = [...growthScores.values()].filter((g) => g.score != null)
+          const bands = [...growthScores.values()].map((g) => bandOf(g.score, g.monthDelta))
+          const growth = {
+            average:
+              withScore.length > 0
+                ? Math.round(withScore.reduce((sum, g) => sum + g.score!, 0) / withScore.length)
+                : null,
+            improving: bands.filter((b) => b === 'IMPROVING').length,
+            steady: bands.filter((b) => b === 'STEADY').length,
+            needsAttention: bands.filter((b) => b === 'NEEDS_ATTENTION').length,
+            building: bands.filter((b) => b === 'BUILDING').length,
+            monthPoints: [...growthScores.values()].reduce((sum, g) => sum + g.monthDelta, 0),
           }
 
           return {
@@ -214,7 +219,7 @@ export async function GET() {
             attendanceToday,
             fees,
             results,
-            behavior,
+            growth,
           }
         })
       )

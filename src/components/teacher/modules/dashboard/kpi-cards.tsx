@@ -29,7 +29,7 @@ export function TeacherKpiCards({ data }: TeacherKpiCardsProps) {
   const periodsToday = data.today.periods.length
   const lessonsToday = data.curriculum.filter((c) => c.todayTopic != null).length
 
-  const pendingActions = data.hub.openConcerns + data.hub.openFollowUps
+  const pendingActions = data.hub.needsAttention + data.hub.openFollowUps
 
   const stats: HubStat[] = [
     {
@@ -63,7 +63,7 @@ export function TeacherKpiCards({ data }: TeacherKpiCardsProps) {
       value: pendingActions,
       context:
         pendingActions > 0
-          ? `${data.hub.openConcerns} concerns · ${data.hub.openFollowUps} follow-ups`
+          ? `${data.hub.needsAttention} need attention · ${data.hub.openFollowUps} follow-ups`
           : 'nothing needs attention',
       icon: pendingActions > 0 ? AlarmClock : Inbox,
       tone: pendingActions > 0 ? 'violet' : 'emerald',

@@ -12,7 +12,7 @@
  *   · a COMPACT class header — identity, student count, appointment and
  *     room on one refined line + the four practical quick actions
  *     (no oversized decorative hero);
- *   · the control room grid — today's attendance, class wellbeing, the
+ *   · the control room grid — today's attendance, class growth, the
  *     fee picture with defaulters (each defaulter opens the ONE shared
  *     student profile), and the results-submission matrix.
  *
@@ -31,10 +31,10 @@ import {
   GraduationCap,
   RefreshCw,
   School,
+  TrendingUp,
   Users,
   BadgeCheck,
   DoorOpen,
-  Shield,
 } from 'lucide-react'
 import { PageTransition } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
@@ -46,13 +46,13 @@ import { useClassHub } from './hooks'
 import { AttendanceCard } from './attendance-card'
 import { FeesCard } from './fees-card'
 import { ResultsCard } from './results-card'
-import { WellbeingCard } from './wellbeing-card'
+import { GrowthCard } from './growth-card'
 
 const QUICK_ACTIONS = [
   { key: 'attendance', label: 'Mark Attendance', icon: CalendarCheck },
   { key: 'marks', label: 'Enter Marks', icon: FileText },
   { key: 'students', label: 'Student Directory', icon: Users },
-  { key: 'behavior', label: 'Behavior', icon: Shield },
+  { key: 'growth', label: 'Growth', icon: TrendingUp },
 ] as const
 
 export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => void }) {
@@ -203,7 +203,7 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
       {/* ── the control room ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
         <AttendanceCard cls={active} onNavigate={onNavigate} />
-        <WellbeingCard cls={active} onNavigate={onNavigate} />
+        <GrowthCard cls={active} onNavigate={onNavigate} />
         <FeesCard cls={active} onNavigate={onNavigate} onOpenProfile={setProfileStudentId} />
         <div className="lg:col-span-2">
           <ResultsCard cls={active} onNavigate={onNavigate} />
@@ -211,7 +211,7 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
       </div>
 
       {/* The ONE shared student profile — the same sheet the Directory,
-          Fees and Behavior open (canonical student, §25). */}
+          Fees and Growth open (canonical student, §25). */}
       <TeacherStudentProfileSheet
         studentId={profileStudentId}
         onOpenChange={(o) => {

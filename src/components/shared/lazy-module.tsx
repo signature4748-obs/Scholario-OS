@@ -93,6 +93,12 @@ export class ModuleErrorBoundary extends Component<ModuleErrorBoundaryProps, Mod
  * Same contract as the panels' local `lazy()` helpers — a dynamic()
  * component that compiles on first visit, hardened with import retry +
  * a per-module error boundary.
+ *
+ * PROPS ARE FORWARDED: modules mounted through this wrapper receive the
+ * exact props their caller passes (e.g. the Teacher module-router's
+ * onNavigate handoffs). The previous `<Comp />` render dropped every
+ * prop, which silently broke cross-module navigation buttons inside
+ * lazily-loaded modules (they saw onNavigate = undefined).
  */
 export function lazyModule(
   loader: () => Promise<{ [key: string]: any }>,
@@ -103,10 +109,10 @@ export function lazyModule(
       loading: ModuleLoading,
     })
 
-  function LazyModule() {
+  function LazyModule(props: Record<string, any>) {
     return (
       <ModuleErrorBoundary build={build}>
-        {(Comp) => <Comp />}
+        {(Comp) => <Comp {...props} />}
       </ModuleErrorBoundary>
     )
   }

@@ -12,11 +12,11 @@ import { Metric } from './shared'
 import {
   OverviewTab, AcademicsTab, AttendanceTab, FeesTab, ApplicationsTab,
   DocumentsTab, MedicalTab, ParentsTab, TransportTab,
-  DisciplineTab, TimelineTab,
+  GrowthTab, TimelineTab,
 } from './profile-tabs'
 import { StudentIdentityCodes } from './profile/identity-codes'
 
-const TABS = ['overview', 'academics', 'attendance', 'fees', 'applications', 'documents', 'medical', 'parents', 'transport', 'discipline', 'timeline'] as const
+const TABS = ['overview', 'academics', 'attendance', 'fees', 'applications', 'documents', 'medical', 'parents', 'transport', 'growth', 'timeline'] as const
 type TabName = typeof TABS[number]
 
 interface Props {
@@ -102,7 +102,7 @@ export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTr
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn('rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
                 activeTab === tab ? 'bg-white dark:bg-white/10 shadow-sm text-foreground rounded-full' : 'text-muted-foreground hover:text-foreground hover:bg-muted/40')}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'growth' ? 'Growth' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -124,7 +124,7 @@ export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTr
         {activeTab === 'medical' && <MedicalTab student={student} />}
         {activeTab === 'parents' && <ParentsTab student={student} />}
         {activeTab === 'transport' && <TransportTab student={student} />}
-        {activeTab === 'discipline' && <DisciplineTab student={student} />}
+        {activeTab === 'growth' && <GrowthTab student={student} />}
         {activeTab === 'timeline' && <TimelineTab student={student} />}
       </div>
     </PageTransition>

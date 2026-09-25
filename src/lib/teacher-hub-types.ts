@@ -1,6 +1,6 @@
 /**
  * teacher-hub-types — the shared DTO contract for the Teacher Hub
- * modules (parent conversations / Student Behavior).
+ * modules (parent conversations / Student Growth).
  *
  * Pure types + tiny config maps: NO server imports — this file is safe for
  * client components. Server routes in /api/teacher/** serialize rows into
@@ -122,7 +122,11 @@ export interface ParentConnectPayload {
   stats: ParentConnectStats
 }
 
-// ---------- Student Behavior ----------
+// ---------- Student Behavior (LEGACY — the growth redesign) ----------
+// The BehaviorRecord/BehaviorCategory tables and these DTOs remain for
+// the legacy rows (migrated into the GrowthEvent ledger by
+// scripts/growth-migrate.ts) and any future staff-only archive surface.
+// The live module is Student Growth (@/lib/growth/*).
 
 export type BehaviorType = 'positive' | 'observation' | 'concern'
 export type BehaviorStatus = 'open' | 'monitoring' | 'resolved'
@@ -180,6 +184,44 @@ export interface StudentBehaviorProfile {
   followUps: FollowUpItem[]
   conversationId: string | null
 }
+
+// ---------- Student Growth (re-exported canonical contract) ----------
+// The growth system's DTOs live in @/lib/growth/shared (pure, client-safe);
+// they are re-exported here so every Teacher module can keep importing its
+// DTO contract from this one hub-types module.
+
+export type {
+  GrowthCategory,
+  GrowthCategoryConfig,
+  GrowthEventSource,
+  GrowthEventStatus,
+  GrowthEventItem,
+  GrowthDimension,
+  GrowthTrendPoint,
+  GrowthScoreDto,
+  FeeStanding,
+  FeeStandingDto,
+  GrowthPreset,
+  GrowthSettingsDto,
+  StudentGrowthSummary,
+  GrowthBand,
+  GrowthClassSummary,
+  GrowthScopeSummary,
+  GrowthWorkspacePayload,
+} from '@/lib/growth/shared'
+export {
+  GROWTH_CATEGORIES,
+  GROWTH_CATEGORY_CONFIG,
+  isGrowthCategory,
+  growthCategoryOf,
+  GROWTH_SOURCES,
+  SOURCE_LABELS,
+  isAutomaticSource,
+  GROWTH_BAND_LABELS,
+  bandOf,
+  DEFAULT_POSITIVE_PRESETS,
+  DEFAULT_NEGATIVE_PRESETS,
+} from '@/lib/growth/shared'
 
 // ---------- client-side config (labels / tones shared by the modules) ----------
 

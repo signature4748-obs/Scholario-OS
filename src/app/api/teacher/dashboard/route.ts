@@ -1,9 +1,11 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
-import { classLabelOf } from '@/lib/teacher-hub'
+import { classLabelOf, requireTeacher, authorizedStudentWhere } from '@/lib/teacher-hub'
 import { getTeachingAssignments, getLessonPlan } from '@/lib/lesson-planner'
 import { audienceAllows } from '@/lib/notices'
 import { dayKey } from '@/lib/lesson-schedule'
+import { growthScoresFor } from '@/lib/growth/service'
+import { bandOf } from '@/lib/growth/shared'
 
 export const runtime = 'nodejs'
 
@@ -101,20 +103,35 @@ export async function GET() {
         })
       )
 
-      // ── Teacher Hub pending counts ───────────────────────────────────
+      // ── Teacher Hub pending counts ─────────────────────────────────
       // NOTE: ParentConversation.teacherId is the TEACHER'S USER id (the
-      // seeded hub contract), while follow-ups/behavior use Teacher row ids.
+      // seeded hub contract), while follow-ups use Teacher row ids. The
+      // growth count uses the SAME scoped derivation as the Student
+      // Growth module (canonical numbers everywhere).
       const hub = await (async () => {
-        const [unreadRows, followUps, openConcerns] = await Promise.all([
+        const [unreadRows, followUps, needsAttention] = await Promise.all([
           db.parentMessage.count({
             where: { conversation: { teacherId: user.id }, readAt: null, senderId: { not: user.id } },
           }),
           teacher
             ? db.teacherFollowUp.count({ where: { schoolId, teacherId: teacher.id, status: 'open' } })
             : Promise.resolve(0),
-          db.behaviorRecord.count({ where: { schoolId, type: 'concern', status: { in: ['open', 'monitoring'] } } }),
+          (async () => {
+            try {
+              const ctx = await requireTeacher(user)
+              const scopeStudents = await db.student.findMany({
+                where: authorizedStudentWhere(ctx),
+                select: { id: true },
+                take: 300,
+              })
+              const scores = await growthScoresFor(schoolId, scopeStudents.map((s) => s.id))
+              return [...scores.values()].filter((g) => bandOf(g.score, g.monthDelta) === 'NEEDS_ATTENTION').length
+            } catch {
+              return 0
+            }
+          })(),
         ])
-        return { unreadMessages: unreadRows, openFollowUps: followUps, openConcerns }
+        return { unreadMessages: unreadRows, openFollowUps: followUps, needsAttention }
       })()
 
       // ── Latest notices for staff ─────────────────────────────────────

@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf } from '@/lib/teacher-hub'
 import { deriveStudentFees, deriveAttendanceSummary, type StudentFeesDto } from '@/lib/teacher/student-ledger'
+import { growthScoresFor } from '@/lib/growth/service'
 
 export const runtime = 'nodejs'
 
@@ -257,10 +258,15 @@ export async function GET() {
         })
       }
 
+      // ── Growth chip data (§15) — the SAME canonical score every other
+      //    surface shows; null when the student is still building.
+      const growthByStudent = await growthScoresFor(schoolId, students.map((s) => s.id))
+
       for (const s of students) {
         if (!s.classId) continue
         const att = attByStudent.get(s.id)
         const latest = latestByClassStudent.get(s.classId)?.get(s.id) ?? null
+        const growth = growthByStudent.get(s.id)
         const list = studentsByClass[s.classId] ?? []
         list.push({
           id: s.id,
@@ -296,6 +302,10 @@ export async function GET() {
                 }
               : null,
           fees: feesByStudent.get(s.id) ?? null,
+          growth: {
+            score: growth?.score ?? null,
+            monthDelta: growth?.monthDelta ?? 0,
+          },
         })
         studentsByClass[s.classId] = list
       }

@@ -94,7 +94,7 @@ export type LessonTopicState =
 export interface TeacherHubCounts {
   unreadMessages: number
   openFollowUps: number
-  openConcerns: number
+  needsAttention: number
 }
 
 export interface TeacherNotice {

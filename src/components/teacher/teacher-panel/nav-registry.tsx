@@ -3,7 +3,7 @@
 import {
   LayoutDashboard, CalendarCheck, BookMarked,
   FileText, Users, BarChart3, Megaphone,
-  Shield, Wallet, ClipboardList, Settings,
+  TrendingUp, Wallet, ClipboardList, Settings,
   CalendarDays, MessagesSquare, School,
 } from 'lucide-react'
 import type { NavGroup } from '@/components/shell/app-shell'
@@ -53,10 +53,10 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
         { key: 'lesson-planner', label: 'Lesson Planner', icon: <BookMarked className="h-4.5 w-4.5" /> },
         { key: 'marks', label: 'Marks Entry', icon: <FileText className="h-4.5 w-4.5" /> },
         { key: 'students', label: 'Student Directory', icon: <Users className="h-4.5 w-4.5" /> },
-        // Behavior lives with teaching scope — every teacher records
-        // observations for the students they teach (spec §13); the module
-        // is NOT class-teacher-gated.
-        { key: 'behavior', label: 'Student Behavior', icon: <Shield className="h-4.5 w-4.5" /> },
+        // Growth lives with teaching scope — every teacher awards points to
+        // the students they teach (spec §13); the module is NOT
+        // class-teacher-gated.
+        { key: 'growth', label: 'Student Growth', icon: <TrendingUp className="h-4.5 w-4.5" /> },
       ],
     },
     {

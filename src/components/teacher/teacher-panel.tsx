@@ -43,7 +43,7 @@ function QuietNoRecord({ label }: { label: string }) {
 /** Module keys the ModuleRouter knows — validates ?module= deep-links. */
 const TEACHER_MODULE_KEYS = [
   'dashboard', 'payroll', 'my-attendance', 'my-timetable', 'attendance',
-  'lesson-planner', 'marks', 'students', 'app-reviews', 'behavior',
+  'lesson-planner', 'marks', 'students', 'app-reviews', 'growth',
   'class-hub', 'fee-collection', 'analytics', 'settings', 'communication', 'profile',
   'fee-management',
 ] as const

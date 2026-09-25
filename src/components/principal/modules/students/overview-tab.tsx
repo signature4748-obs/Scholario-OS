@@ -21,6 +21,7 @@ import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { useSchoolStats } from '@/hooks/use-school-stats'
+import { GrowthOverviewCard } from './growth-overview-card'
 
 interface ServerStudent {
   id: string
@@ -226,6 +227,8 @@ export function OverviewTab() {
 
       {/* Demographics & Distribution Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* School-wide Growth — canonical scores (§30) */}
+        <GrowthOverviewCard />
         {/* Students by Academic Level — from real classes */}
         <GlassCard className="p-4">
           <h3 className="font-semibold text-sm mb-3 flex items-center justify-between">

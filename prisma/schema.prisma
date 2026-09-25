@@ -85,6 +85,12 @@ model School {
   curriculumTopics        CurriculumTopic[]
   lessonTopicCompletions  LessonTopicCompletion[]
   subjectAttendanceSessions SubjectAttendanceSession[]
+
+  // Student Growth v2.16 — points, rules, evaluation runs, settings
+  growthEvents      GrowthEvent[]
+  growthRules       GrowthRule[]
+  growthEvalRuns    GrowthEvalRun[]
+  growthSetting     GrowthSetting?
 }
 
 model User {
@@ -123,6 +129,10 @@ model User {
   sentParentMessages       ParentMessage[]      @relation("ParentMessageSender")
   recordedBehavior         BehaviorRecord[]     @relation("BehaviorRecordRecorder")
   ownedTeacherFollowUps    TeacherFollowUp[]     @relation("TeacherFollowUpTeacher")
+
+  // Student Growth v2.16 — manual points + corrections (automatic events
+  // carry no creating user)
+  growthEvents     GrowthEvent[] @relation("GrowthEventCreator")
 
   // Teacher Exam Proctoring — duty sign-offs + reported irregularities
   examDutyCompletions  ExamDutyCompletion[]
@@ -189,6 +199,9 @@ model Student {
   parentConversations  ParentConversation[]
   behaviorRecords      BehaviorRecord[]
   teacherFollowUps     TeacherFollowUp[]
+
+  // Student Growth v2.16
+  growthEvents     GrowthEvent[]
 }
 
 model Class {
@@ -1781,4 +1794,150 @@ model SubjectAttendanceEntry {
   status    String
 
   @@unique([sessionId, studentId])
+}
+
+// ─── Student Growth v2.16 — smart points & growth profiles ──────────────
+//
+// Architecture (Student Behavior → Student Growth redesign):
+//   GrowthEvent    — the ONE transparent point ledger. Every point is
+//                   auditable: who/what created it, when, why, from which
+//                   source record. Manual points come from teachers;
+//                   automatic points are derived from canonical school data
+//                   (Attendance, ExamMark) and reference their source.
+//   GrowthRule     — school-configurable catalog of point rules (manual
+//                   quick-picks + automatic thresholds). Principal can
+//                   tune the system later without code changes.
+//   GrowthEvalRun  — idempotency ledger for the automatic engine: one row
+//                   per (kind, periodKey) that has been evaluated, so the
+//                   same week/exam can never generate duplicate events.
+//   GrowthSetting  — per-school feature configuration (negative points,
+//                   manual point bounds, visibility …).
+//
+// FAIRNESS RULES BAKED INTO THE DESIGN:
+//   · Fee standing NEVER contributes to growth points by default
+//     (GrowthSetting.feePunctualityPoints = false) — a family's finances
+//     are never treated as a student's conduct.
+//   · LEAVE attendance is never penalized (approved absence ≠ truancy).
+//   · Low absolute marks never generate negative points — only real
+//     academic decline across two completed exams does.
+
+/// One point event in the student growth ledger. Positive or negative —
+/// always with a short human reason, optionally a context note.
+model GrowthEvent {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// User.id of the acting staff member — null for automatic events
+  createdById String?
+  createdBy   User?   @relation("GrowthEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  /// +N / -N growth points (never 0)
+  points    Int
+  /// ACADEMIC | ATTENDANCE | CONDUCT | PARTICIPATION | IMPROVEMENT | CONSISTENCY
+  category  String
+  /// short human label e.g. "Leadership", "Attendance consistency"
+  reason    String
+  /// optional context — never required (§11)
+  note      String?
+  /// MANUAL | ATTENDANCE | ACADEMIC
+  source    String
+  /// identity of the source record, e.g. "week:2026-W38" or "exam:<examId>"
+  sourceRef String?
+  /// evaluation period, e.g. "2026-W38" (weekly) or "exam:<examId>" (per exam)
+  period    String?
+  /// the date the event REFERS to (week end / exam date / manual moment) —
+  /// drives "this month" attribution and trend cutoffs honestly
+  effectiveAt DateTime
+  /// ACTIVE | SUPERSEDED (a correction replaced it) | REVOKED
+  status    String    @default("ACTIVE")
+  /// set on the CORRECTION event → the original it replaces (audit chain)
+  correctsId String?
+  /// why the correction was made (audit trail, §29)
+  correctionNote String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  /// idempotency key — automatic events use "a:<ruleKey>:<studentId>:<period>";
+  /// manual events use "m:<cuid>" (unique by construction). The school-scoped
+  /// unique constraint makes duplicate automatic events impossible (§22).
+  dedupeKey String
+
+  @@unique([schoolId, dedupeKey])
+  @@index([schoolId, studentId, createdAt])
+  @@index([schoolId, createdAt])
+  @@index([schoolId, category])
+}
+
+/// School-configurable point rules — manual quick-picks (Participation +2 …)
+/// and automatic evaluation rules (attendance_week_excellent +3 weekly …).
+/// Seeded with defaults; a Principal can tune points/thresholds later.
+model GrowthRule {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// stable key e.g. attendance_week_excellent | manual_participation
+  key       String
+  /// human label
+  label     String
+  /// ACADEMIC | ATTENDANCE | CONDUCT | PARTICIPATION | IMPROVEMENT | CONSISTENCY
+  category  String
+  points    Int
+  /// MANUAL | ATTENDANCE | ACADEMIC
+  source    String
+  /// weekly | exam | manual
+  frequency String
+  /// JSON thresholds/params for the automatic engine (documented per rule)
+  params    String?
+  enabled   Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, key])
+  @@index([schoolId, source, enabled])
+}
+
+/// One completed pass of the automatic evaluation engine for a (kind,
+/// periodKey). The engine checks this table before evaluating — the same
+/// week/exam is never processed twice (§22 idempotency).
+model GrowthEvalRun {
+  id            String   @id @default(cuid())
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// WEEKLY_ATTENDANCE | EXAM_RESULTS
+  kind          String
+  /// "2026-W38" | "exam:<examId>"
+  periodKey     String
+  /// DONE | SKIPPED (no eligible data)
+  status        String   @default("DONE")
+  eventsCreated Int      @default(0)
+  detail        String?
+  evaluatedAt   DateTime @default(now())
+
+  @@unique([schoolId, kind, periodKey])
+  @@index([schoolId, kind])
+}
+
+/// Per-school growth configuration (§18 — the Principal control surface).
+/// Seeded with sensible defaults; editable later via a settings UI.
+model GrowthSetting {
+  id                String   @id @default(cuid())
+  schoolId          String   @unique
+  school            School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// master switch for the whole growth system
+  enabled           Boolean  @default(true)
+  /// negative points allowed at all?
+  negativeEnabled   Boolean  @default(true)
+  /// bounds for manual custom points
+  minManualPoints   Int      @default(-5)
+  maxManualPoints   Int      @default(5)
+  /// teachers may enter custom reasons (beyond the quick-picks)
+  customReasons     Boolean  @default(true)
+  /// students can see their own growth profile
+  studentVisibility Boolean  @default(true)
+  /// fee punctuality points — OFF by default (§23: family finances never
+  /// influence a student's growth unless the school explicitly opts in)
+  feePunctualityPoints Boolean @default(false)
+  updatedAt          DateTime @updatedAt
 }

@@ -4,20 +4,18 @@ import { withUser } from '@/lib/api'
 import {
   requireTeacher,
   assertStudentInScope,
-  visibleBehaviorWhere,
-  toBehaviorRecordItem,
-  toFollowUpItem,
   classLabelOf,
 } from '@/lib/teacher-hub'
 import { deriveStudentFees, deriveAttendanceSummary, type StudentFeesDto } from '@/lib/teacher/student-ledger'
+import { growthScoresFor, feeStandingOf, manualPresetsFor, toGrowthEventItem } from '@/lib/growth/service'
 
 export const runtime = 'nodejs'
 
 /**
  * GET /api/teacher/students/[studentId] — the ONE shared Teacher student
- * profile payload (master task §6/§25). Opened from the Student Directory,
- * My Class, Fees & Payments and Student Behavior — the same canonical
- * student, the same sections, role-appropriate visibility:
+ * profile payload. Opened from the Student Directory, My Class, Fees &
+ * Payments and Student Growth — the same canonical student, the same
+ * sections, role-appropriate visibility:
  *
  * PERMISSION MODEL (all server-decided):
  *   · the student must be inside the teacher's authorized scope
@@ -25,9 +23,11 @@ export const runtime = 'nodejs'
  *     assertStudentInScope re-validates on every request;
  *   · FEE LEDGER — visible ONLY when this teacher is the class teacher of
  *     the student's class (subject teachers never see a family's money);
- *   · BEHAVIOR — only records visible to THIS teacher (her own ∪ records
- *     of students in classes she is responsible for); private notes stay
- *     in the staff surface only;
+ *     the FEE STANDING chip derives from the same ledger and is likewise
+ *     class-teacher-only — it is administrative metadata, NEVER part of
+ *     the growth score (§3/§23);
+ *   · GROWTH — the canonical score + point ledger for this student
+ *     (every teacher in scope sees the same growth data);
  *   · academics — the latest exam THIS student has entered marks for
  *     (nothing fabricated; no marks ⇒ null).
  */
@@ -45,7 +45,7 @@ export async function GET(
       const today = new Date()
       const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
 
-      const [user_, attRows, ownMarkRows, feeRows, txnRows, behaviorRows, behaviorTypeGroups, openConcernCount, followUpRows, conversation, taughtSubjectRows] =
+      const [user_, attRows, ownMarkRows, feeRows, txnRows, growthEventRows, conversation, taughtSubjectRows, presets] =
         await Promise.all([
           db.user.findUnique({ where: { id: student.userId }, select: { name: true, email: true } }),
           db.attendance.findMany({
@@ -77,28 +77,20 @@ export async function GET(
                 take: 50,
               })
             : Promise.resolve([]),
-          db.behaviorRecord.findMany({
-            where: { ...visibleBehaviorWhere(ctx), studentId: student.id },
+          db.growthEvent.findMany({
+            where: { schoolId: ctx.schoolId, studentId: student.id, status: 'ACTIVE' },
             include: {
-              student: { select: { id: true, rollNo: true, classId: true, class: { select: { name: true, section: true } }, user: { select: { name: true } } } },
-              recordedBy: { select: { id: true, name: true } },
+              createdBy: { select: { id: true, name: true } },
+              student: {
+                select: {
+                  id: true,
+                  user: { select: { name: true } },
+                  class: { select: { name: true, section: true } },
+                },
+              },
             },
-            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-            take: 30,
-          }),
-          db.behaviorRecord.groupBy({
-            by: ['type'],
-            where: { ...visibleBehaviorWhere(ctx), studentId: student.id },
-            _count: { _all: true },
-          }),
-          db.behaviorRecord.count({
-            where: { ...visibleBehaviorWhere(ctx), studentId: student.id, type: 'concern', status: { not: 'resolved' } },
-          }),
-          db.teacherFollowUp.findMany({
-            where: { schoolId: ctx.schoolId, teacherId: ctx.userId, studentId: student.id, status: 'open' },
-            include: { student: { select: { id: true, rollNo: true, classId: true, class: { select: { name: true, section: true } }, user: { select: { name: true } } } } },
-            orderBy: { dueDate: 'asc' },
-            take: 10,
+            orderBy: [{ effectiveAt: 'desc' }, { createdAt: 'desc' }],
+            take: 20,
           }),
           db.parentConversation.findFirst({
             where: { teacherId: ctx.userId, studentId: student.id },
@@ -112,6 +104,7 @@ export async function GET(
                 distinct: ['teacherName', 'subjectId'],
               })
             : Promise.resolve([]),
+          manualPresetsFor(ctx.schoolId),
         ])
 
       // ── latest exam with entered marks for THIS student (same honest
@@ -177,7 +170,8 @@ export async function GET(
         ),
       ].sort()
 
-      const typeCount = (t: string) => behaviorTypeGroups.find((g) => g.type === t)?._count._all ?? 0
+      // — canonical growth profile (the SAME score every surface shows) ─
+      const [growth] = [...(await growthScoresFor(ctx.schoolId, [student.id])).values()]
 
       return {
         student: {
@@ -201,15 +195,11 @@ export async function GET(
         attendance: deriveAttendanceSummary(attRows),
         academics: { latestExam },
         fees,
-        behavior: {
-          records: behaviorRows.map(toBehaviorRecordItem),
-          counts: {
-            positive: typeCount('positive'),
-            observation: typeCount('observation'),
-            concern: typeCount('concern'),
-            open: openConcernCount,
-          },
-          followUps: followUpRows.map(toFollowUpItem),
+        growth: {
+          score: growth ?? null,
+          events: growthEventRows.map(toGrowthEventItem),
+          feeStanding: feeStandingOf(fees),
+          presets,
         },
         conversationId: conversation?.id ?? null,
       }

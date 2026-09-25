@@ -2459,3 +2459,54 @@ Stage Summary:
 - All §18 mock-data coverage cases present (CT-only/subject-only/both; 1-3 subjects; primary/secondary/sr-sec; PCB/PCM/Humanities streams; all fee states incl pending+rejected; all behavior types + follow-up + monitoring; all attendance states incl LEAVE).
 - Teacher logins: rohan.mehta / kavita.sharma / arjun.nair / priya.iyer / meera.krishnan / sunita.rao / deepak.kulkarni / vikram.desai / lakshmi.menon @greenwood.edu.in · teacher123.
 - Remaining known-acceptable: pre-existing logo.svg aspect-ratio console warning (public website, not in scope); Principal profile page still uses its hybrid store/server mapping (out of the four modules' scope — its data IS server-derived); scripts/seed-refactor.ts retained for reproducibility.
+
+---
+Task ID: 3 (Student Behavior → Student Growth complete module redesign)
+Agent: Z.ai Code (main orchestrator)
+Task: Replace the Student Behavior module with a smart Student Growth system per the 37-section spec: transparent points ledger, normalized 0–100 Growth Score across 6 dimensions, automatic idempotent points from attendance/exams, a seconds-fast Add Points quick action, fee standing separated from character, corrections with audit trail, and Principal visibility.
+
+Work Log:
+- DATA LAYER (prisma/schema.prisma + db push):
+  - 4 new models: GrowthEvent (point ledger: student/points/category/reason/note/source/sourceRef/period/status/correctsId/correctionNote/effectiveAt/dedupeKey UNIQUE[schoolId,dedupeKey]), GrowthRule (configurable catalog: manual quick-picks + automatic thresholds), GrowthEvalRun (idempotency ledger per kind+periodKey), GrowthSetting (per-school config: enabled/negativeEnabled/manual bounds/customReasons/studentVisibility/feePunctualityPoints=false).
+- LIB (src/lib/growth/):
+  - shared.ts — client-safe DTOs + category config (6 dimensions) + presets + bandOf classification.
+  - score.ts — pure transparent scoring: ACADEMIC (latest exam avg + nudge), ATTENDANCE (8-week eligible pct, LEAVE never penalized), CONDUCT/PARTICIPATION (60±5/pt, 90d), CONSISTENCY (full-week avg), IMPROVEMENT (50+2.5×exam-delta); weighted overall (≥2 dims else null="Building"); month deltas via effectiveAt; 8-week trend snapshots of the same formula; buildExamAverages over SUBMITTED/VERIFIED marks only.
+  - engine.ts — incremental automatic evaluation: WEEKLY_ATTENDANCE (excellent +3/consistent +2/good +1/absences −2/late −1; <3 eligible days = no event) + EXAM_RESULTS (strong +3/solid +2/mastery +2/improvement +5/decline −3; DRAFT marks never count; decline only across two COMPLETED exams); idempotent via GrowthEvalRun + per-event dedupeKey unique (SQLite: per-event create + P2002-skip — createMany(skipDuplicates) unsupported, found + fixed during seeding).
+  - service.ts — bulk loaders (3 queries regardless of student count), toGrowthEventItem, manualPresetsFor, growthSettingsFor, feeStandingOf (administrative, NEVER in score).
+- MIGRATION (scripts/growth-migrate.ts, idempotent): seeded GrowthSetting + 20 rules/school; migrated 21 legacy BehaviorRecords → growth events (positive +2 / concern −2 / observation +1, category-mapped, description preserved as note, private notes NEVER migrated); cancelled 3 open behavior follow-ups with explanatory note; ran engine → 31 automatic events (18 excellent-week attendance, 13 PA-1 academic) + 21 migrated = 52-event canonical ledger.
+- APIs:
+  - NEW GET/POST /api/teacher/growth (workspace: scope+class summaries, 8-week trends, ACTIVE event feed, presets, settings; POST: quick-pick via server-side rule resolution OR custom with required reason + bounds + negative check).
+  - NEW PATCH /api/teacher/growth/[eventId] (correction §29: original → SUPERSEDED + new correction event with correctsId chain; creator-only; automatic events immutable).
+  - UPDATED /api/teacher/students/[studentId]: behavior block → growth block (score + 20 events + feeStanding CT-only + presets).
+  - UPDATED /api/teacher/students (directory): growth {score, monthDelta} per student.
+  - UPDATED /api/teacher/class-hub: behavior summary → growth summary (avg/bands/monthPoints).
+  - UPDATED /api/teacher/dashboard: openConcerns → scoped needsAttention (same derivation as module).
+  - UPDATED /api/search: behavior records → growth events (type 'growth', moduleKey 'growth', notes never leaked).
+  - NEW /api/principal/growth/student/[studentId] (full audit incl. superseded chain) + /api/principal/growth/overview (school-wide).
+  - DELETED /api/teacher/behavior/** (4 routes) + teacher-hub dead helpers (visibleBehaviorWhere/toBehaviorRecordItem).
+- TEACHER UI:
+  - NEW modules/student-growth/: index (toolbar + class pills + overview card with ring/bands + trend + activity with compact filters + student filter), add-points-dialog (THE compact §34 UX: student search-picker → positive/negative chip blocks → custom ±stepper+reason → optional note → sticky-footer submit; max-h-86dvh, safe-area, focus-trapped), activity-list (animated ledger with week/category/source attribution + inline correction editor §29), growth-summary (animated ring + CountUp, dimension bars with formula hints, AreaTrendChart trend, FeeStandingChip), hooks, shared.
+  - REWIRED shared/student-profile-sheet: Behavior tab → Growth tab (ring + dimensions + fee standing "Never part of the growth score" + recent activity + Add Points + View full history).
+  - RENAMED module key 'behavior'→'growth' everywhere: nav-registry (Student Growth + TrendingUp), module-router, teacher-panel keys, class-hub quick actions, command palette, focus deep-links (grw-<id>, growth-class).
+  - My Class: wellbeing-card → growth-card (avg + ↑→↓ bands + View Growth → focus-store class preselect).
+  - Directory: student-card metric band 3→4 columns with Growth cell (score + month trend, "Building" honest state).
+- PRINCIPAL UI: profile-tab-discipline (RANDOM mock store data) DELETED → profile-tab-growth (canonical fetch, full audit trail); GrowthOverviewCard added to Students & Classes overview (school avg + bands + latest points).
+- ROOT-CAUSE FIX (pre-existing, exposed by this work): shared/lazy-module.tsx `LazyModule` rendered `<Comp />` WITHOUT forwarding props — every lazily-loaded module across ALL FOUR role panels received NO props (onNavigate = undefined), silently breaking every cross-module navigation button inside lazy modules (My Class CTAs, dashboard cards, old Behavior/View Growth). Fixed to `<Comp {...props} />`; verified My Class→View Growth, dashboard→My Class handoffs now navigate.
+
+Verification (agent-browser + curl, browser closed between bursts):
+- Rohan (CT+subject): workspace 24 students avg 86 · 7↑/13→/0↓/4 building · +43 month points; class pills 9-A 87/10-A 86/10-B 69; trend W31–W38; 54-event feed with automatic attendance/exam events + notes; Add Points: quick-pick +3 (Aarav Leadership), +2 with note (Diya Good Conduct), −2 negative (Vivaan Repeated Disruption, no note), custom +4 with reason (science fair), cancel-clean (no side effects); correction chain visible ("corrected" + "superseded" chips + audit note); profile Growth tab (score 94, dims with hints, fee standing "Verification pending — Never part of the growth score", 12-event ledger); My Class Class Growth card → View Growth → Grade 9-A preselected (pill pressed, trend retitled, student filter scoped to 11); Directory growth cells (Aarav 94 ↑+9 — same numbers everywhere).
+- Priya (subject-only): 4 classes / 28 students scope; Aadhya profile: NO Fees tab, NO fee standing (fee data simply absent).
+- Arjun-verified data path: 10-B avg 69 (Abhimanyu COND 50 after real concern) — honest.
+- Principal: School Growth card (86 avg, 22/51 scored, +48 month, latest points) + profile Growth tab (94, full ledger incl. superseded+correction audit trail).
+- Student (Aarav): fees ₹41,400/₹38,000/₹3,400/₹100-pending unchanged; no growth leakage; zero console errors.
+- Idempotency (DB-level): 3× ensureGrowthEvaluation → 0 new events, 0 new runs, 0 duplicate dedupeKeys. PASS.
+- Permission: out-of-scope studentId POST → 403-style "Student not found in your scope".
+- Responsive: 320/360/390/414/768/1024/1280/1440 — zero horizontal overflow (module + directory); Add Points modal fits 390×844 (top 59 bottom 785), no element escapes, no internal horizontal scroll.
+- tsc 0 errors · ESLint 0/0 · dev.log clean · console errors 0.
+
+Stage Summary:
+- One canonical growth universe: ONE ledger (GrowthEvent), ONE score derivation (growthScoresFor), ONE settings source — teacher module, profile sheet, My Class, Directory, dashboard, Principal overview and profile all render the same numbers by construction.
+- Fees NEVER influence growth (separate FeeStanding, feePunctualityPoints=false by default, §23); LEAVE never penalized; low absolute marks never negative (only real decline); insufficient data renders "Building", never an invented score.
+- Teacher quick action: student → reason chip → (optional note) → submit ≈ 3 seconds; corrections are audited, never silent.
+- Remaining known-acceptable: iPad real-Safari not testable in sandbox (viewport-range + safe-area verified instead); GrowthSetting editing UI deferred per §18 ("architecture so it can be configured safely later" — the schema, defaults and server-side enforcement all exist); student self-view of growth deferred per §18 studentVisibility config; scripts/growth-migrate.ts retained for reproducibility.
+- Login matrix unchanged: rohan.mehta / kavita.sharma / arjun.nair / priya.iyer / meera.krishnan / sunita.rao / deepak.kulkarni / vikram.desai / lakshmi.menon @greenwood.edu.in · teacher123; principal@greenwood.edu.in · principal123; aarav.sharma@greenwood.edu.in · student123.

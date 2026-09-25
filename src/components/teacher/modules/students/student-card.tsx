@@ -11,12 +11,17 @@
  *   │           Roll 18 · Grade 9 - A              │
  *   │           Adm ADM-2024-018                   │
  *   ├──────────────────────────────────────────────┤
- *   │ ATTENDANCE │ LATEST AVG │ FEES               │  metric band —
- *   │ 95%        │ 84%        │ [Fees clear]       │  equal CSS-grid
- *   │ 65 records │ PA · Mar 25│ 1 fee line         │  columns divided
+ *   │ ATTENDANCE │ LATEST AVG │ GROWTH │ FEES       │  metric band —
+ *   │ 95%        │ 84%        │ 82 ↑   │ [Fees clr]│  equal CSS-grid
+ *   │ 65 records │ PA · Mar 25│ +6 mo  │ 1 fee line│  columns divided
  *   ├──────────────────────────────────────────────┤  by hairlines
  *   │ 👤 Sharma Family        View profile →       │  footer band
  *   └──────────────────────────────────────────────┘
+ *
+ * The growth cell (§15) is a VERY small indicator — score + trend glyph
+ * — never a dashboard. The grid guarantees ≥64px per cell at the card
+ * minimum (300px / 4 columns with fees, / 3 without), and every label
+ * truncates structurally.
  *
  * COLLISION-SAFETY — every rule is structural, never cosmetic:
  *   · NAME ✕ BADGE   name is min-w-0 + flex-1 + truncate, the badge is
@@ -37,13 +42,13 @@
  *     never be pushed outside the card.
  *
  * The grid that sizes this card (./students-grid) guarantees a minimum
- * card width of 300px via minmax(), so the 3-column metric band never
- * drops below ~77px per cell — comfortably above the widest label
- * ("ATTENDANCE" ≈ 68px at 10px semibold).
+ * card width of 300px via minmax(), so the 4-column metric band never
+ * drops below ~64px per cell — every label truncates structurally, so
+ * even the widest ("ATTENDANCE" ≈ 68px at 10px semibold) cannot overflow.
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, User, Wallet } from 'lucide-react'
+import { ArrowRight, TrendingUp, User, Wallet } from 'lucide-react'
 import { GradientAvatar, StatusBadge } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
 import { formatINR } from '@/lib/format'
@@ -138,7 +143,7 @@ export function StudentCard({
       <div
         className={cn(
           'mt-4 grid divide-x divide-border border-t border-border pt-3.5',
-          fees ? 'grid-cols-3' : 'grid-cols-2',
+          fees ? 'grid-cols-4' : 'grid-cols-3',
         )}
       >
         <MetricCell
@@ -168,6 +173,40 @@ export function StudentCard({
             </span>
           }
           supporting={s.latestExam ? s.latestExam.examName : 'No marks yet'}
+        />
+        {/* growth — a VERY small indicator (§15): score + this-month trend */}
+        <MetricCell
+          label={
+            <span className="flex items-center gap-1">
+              <TrendingUp className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+              Growth
+            </span>
+          }
+          value={
+            <span
+              className={cn(
+                'font-display text-lg font-bold leading-none tabular-nums',
+                s.growth?.score == null
+                  ? 'text-muted-foreground/60'
+                  : s.growth.score >= 75
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : s.growth.score >= 55
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-rose-600 dark:text-rose-400',
+              )}
+            >
+              {s.growth?.score ?? '—'}
+            </span>
+          }
+          supporting={
+            s.growth?.score == null
+              ? 'Building'
+              : s.growth.monthDelta > 0
+            ? `↑ +${s.growth.monthDelta} this month`
+            : s.growth.monthDelta < 0
+              ? `↓ ${s.growth.monthDelta} this month`
+              : 'Holding steady'
+          }
         />
         {fees && (
           <MetricCell
@@ -199,7 +238,6 @@ export function StudentCard({
           />
         )}
       </div>
-
       {/* ── footer band — guardian + profile affordance ───────────── */}
       <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-border pt-3">
         <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">

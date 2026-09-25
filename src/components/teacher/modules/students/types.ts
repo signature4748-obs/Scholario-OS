@@ -68,6 +68,15 @@ export interface DirectoryStudent {
    * fee surfaces simply do not render.
    */
   fees: DirectoryStudentFees | null
+  /**
+   * Growth chip data (§15) — the canonical Growth Score + this month's
+   * ledger delta, from the same derivation the Growth module renders.
+   * score null = still building (rendered honestly, never invented).
+   */
+  growth: {
+    score: number | null
+    monthDelta: number
+  }
 }
 
 /** One fee line of a student (real Fee row, amounts in ₹). */

@@ -70,10 +70,13 @@ export interface ClassHubClass {
   }
   fees: ClassHubFees
   results: ClassHubResultExam[]
-  behavior: {
-    openConcerns: number
-    monitoring: number
-    recentPositive: number
+  growth: {
+    average: number | null
+    improving: number
+    steady: number
+    needsAttention: number
+    building: number
+    monthPoints: number
   }
 }
 

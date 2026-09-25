@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withUser } from '@/lib/api'
 import { requireStudent, authorizedMaterials } from '@/lib/learning'
-import { requireTeacher, visibleBehaviorWhere, classLabelOf } from '@/lib/teacher-hub'
+import { requireTeacher, authorizedStudentWhere, classLabelOf } from '@/lib/teacher-hub'
 import type { SearchResultItem } from '@/lib/search-service/types'
 
 export const runtime = 'nodejs'
@@ -350,13 +350,13 @@ export async function GET(req: NextRequest) {
     }
 
     // 8. TEACHER HUB (teacher role only) — the teacher's OWN conversations,
-    //    visible behavior records and open follow-ups.
-    //    Strictly scope-respecting (requireTeacher); behavior snippets NEVER
-    //    include descriptions or private notes — identity + category only.
+    //    visible growth point events and open follow-ups.
+    //    Strictly scope-respecting (requireTeacher); growth snippets NEVER
+    //    include notes — identity + reason + points only.
     if (user.role === 'TEACHER') {
       try {
         const ctx = await requireTeacher(user)
-        const [conversations, behaviorRecords, followUps, categoryRows] =
+        const [conversations, growthEvents, followUps] =
           await Promise.all([
             db.parentConversation.findMany({
               where: {
@@ -381,17 +381,19 @@ export async function GET(req: NextRequest) {
                 },
               },
             }),
-            db.behaviorRecord.findMany({
+            db.growthEvent.findMany({
               where: {
-                ...visibleBehaviorWhere(ctx),
+                schoolId,
+                status: 'ACTIVE',
+                student: authorizedStudentWhere(ctx),
                 OR: [
                   { student: { user: { name: { contains: q } } } },
+                  { reason: { contains: q } },
                   { category: { contains: q } },
-                  { type: { contains: q } },
                 ],
               },
               take: 4,
-              orderBy: { date: 'desc' },
+              orderBy: { effectiveAt: 'desc' },
               include: {
                 student: {
                   select: {
@@ -407,7 +409,7 @@ export async function GET(req: NextRequest) {
                 schoolId,
                 teacherId: user.id,
                 status: 'open',
-                kind: { in: ['parent-connect', 'behavior'] },
+                kind: 'parent-connect',
                 OR: [{ reason: { contains: q } }, { student: { user: { name: { contains: q } } } }],
               },
               take: 4,
@@ -422,10 +424,8 @@ export async function GET(req: NextRequest) {
                 },
               },
             }),
-            db.behaviorCategory.findMany({ where: { schoolId }, select: { key: true, label: true } }),
           ])
 
-        const categoryLabel = new Map(categoryRows.map((c) => [c.key, c.label]))
         const labelOf = (s: { class: { name: string; section: string | null } | null }) => classLabelOf(s.class)
 
         conversations.forEach((c) => {
@@ -444,23 +444,20 @@ export async function GET(req: NextRequest) {
           })
         })
 
-        behaviorRecords.forEach((r) => {
-          const typeLabel =
-            r.type === 'positive' ? 'Positive' : r.type === 'concern' ? 'Concern' : 'Observation'
+        growthEvents.forEach((r) => {
           results.push({
-            id: `beh-${r.id}`,
+            id: `grw-${r.id}`,
             title: r.student.user?.name ?? 'Student',
-            // Identity + category + date ONLY — never the description or notes.
-            subtitle: `${categoryLabel.get(r.category) ?? r.category} · ${typeLabel} · ${new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+            // Identity + reason + points ONLY — never the note.
+            subtitle: `${r.points >= 0 ? '+' : ''}${r.points} ${r.reason} · ${labelOf(r.student)} · ${new Date(r.effectiveAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
             category: 'Students',
-            type: 'behavior',
-            moduleKey: 'behavior',
-            iconName: 'Shield',
-            badge: typeLabel,
-            badgeVariant:
-              r.type === 'positive' ? 'success' : r.type === 'concern' ? 'destructive' : 'warning',
-            keywords: `behavior observation conduct ${r.category} ${r.type}`,
-            timestamp: r.date.getTime(),
+            type: 'growth',
+            moduleKey: 'growth',
+            iconName: 'TrendingUp',
+            badge: r.points >= 0 ? 'Positive' : 'Concern',
+            badgeVariant: r.points >= 0 ? 'success' : 'warning',
+            keywords: `growth points ${r.category} ${r.reason}`,
+            timestamp: r.effectiveAt.getTime(),
           })
         })
 

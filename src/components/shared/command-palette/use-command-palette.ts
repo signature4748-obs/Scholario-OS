@@ -17,7 +17,7 @@ import {
 
 // Entity types that exist in the real database — selecting one emits a
 // deep-link focus request in addition to navigating to the module.
-const DB_ENTITY_TYPES = new Set(['student', 'teacher', 'fee', 'notice', 'parent', 'behavior'])
+const DB_ENTITY_TYPES = new Set(['student', 'teacher', 'fee', 'notice', 'parent', 'growth'])
 
 export interface UseCommandPaletteArgs {
   open: boolean

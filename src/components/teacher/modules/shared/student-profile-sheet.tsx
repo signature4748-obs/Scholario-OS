@@ -3,7 +3,7 @@
 /**
  * shared/student-profile-sheet — the ONE teacher-facing student profile
  * (master task §6/§25). Opened from the Student Directory, My Class,
- * Fees & Payments and Student Behavior — the SAME canonical student, the
+ * Fees & Payments and Student Growth — the SAME canonical student, the
  * SAME architecture the Principal's profile uses (identity header →
  * quick metrics → tab pills → sections), with role-appropriate
  * visibility decided by the SERVER:
@@ -13,8 +13,10 @@
  *   · Academics     latest exam with entered marks, per subject
  *   · Fees          class-teacher classes ONLY (subject teachers never
  *                   see a family's money — the payload simply omits it)
- *   · Behavior      records visible to THIS teacher + open follow-ups
- *                   (private staff notes stay inside the staff surface)
+ *   · Growth        the canonical Growth Score + point ledger + the
+ *                   quick Add Points action (§13); the fee standing chip
+ *                   is administrative metadata — NEVER part of the score
+ *                   (§3/§23)
  *   · Guardian      guardian contact + the parent conversation link
  *
  * Fetch-on-open: GET /api/teacher/students/[studentId] re-validates the
@@ -25,10 +27,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
-  Award,
   Calendar,
   CalendarCheck,
-  CheckCircle2,
   Clock3,
   GraduationCap,
   Mail,
@@ -37,7 +37,7 @@ import {
   Phone,
   Plus,
   Receipt,
-  Shield,
+  TrendingUp,
   User,
   Users,
   Wallet,
@@ -54,10 +54,26 @@ import {
 import { formatDate, formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signout'
-import type { BehaviorCategoryItem, BehaviorRecordItem, FollowUpItem } from '@/lib/teacher-hub-types'
+import type {
+  FeeStandingDto,
+  GrowthEventItem,
+  GrowthPreset,
+  GrowthScoreDto,
+} from '@/lib/teacher-hub-types'
 import { FEE_STATUS_META, attendanceToneClass } from '../students/shared'
-import { TYPE_CONFIG, STATUS_CONFIG, categoryLabelOf, compactDate, dueState, PRIMARY_ACTION_CLASS } from '../student-behavior/shared'
-import { RecordDialog } from '../student-behavior/record-dialog'
+import { ActivityList } from '../student-growth/activity-list'
+import { AddPointsDialog } from '../student-growth/add-points-dialog'
+import {
+  FeeStandingChip,
+  GrowthDimensions,
+  GrowthScoreRing,
+  MonthDeltaChip,
+} from '../student-growth/growth-summary'
+import {
+  PRIMARY_ACTION_CLASS,
+  scoreTextClass,
+  signedDelta,
+} from '../student-growth/shared'
 
 const THIN_SCROLLBAR =
   '[scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-track]:bg-transparent'
@@ -110,15 +126,16 @@ export interface TeacherStudentProfile {
     items: { id: string; title: string; amount: number; paid: number; outstanding: number; status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE'; dueDate: string | null }[]
     payments: { id: string; txnId: string | null; feeTitle: string; amount: number; method: string | null; status: string; createdAt: string; source: string | null; sourceLabel: string | null; receiptNo: string | null; collectedBy: string | null; verifiedBy: string | null; rejectionReason: string | null }[]
   } | null
-  behavior: {
-    records: BehaviorRecordItem[]
-    counts: { positive: number; observation: number; concern: number; open: number }
-    followUps: FollowUpItem[]
+  growth: {
+    score: GrowthScoreDto | null
+    events: GrowthEventItem[]
+    feeStanding: FeeStandingDto | null
+    presets: { positive: GrowthPreset[]; negative: GrowthPreset[] }
   }
   conversationId: string | null
 }
 
-export type ProfileTab = 'overview' | 'attendance' | 'academics' | 'fees' | 'behavior' | 'guardian'
+export type ProfileTab = 'overview' | 'attendance' | 'academics' | 'fees' | 'growth' | 'guardian'
 
 // ── fetch hook (house discipline: no-store, {ok,data}, 401 → signOut once) ──
 
@@ -233,8 +250,7 @@ export function TeacherStudentProfileSheet({
   const [tab, setTab] = useState<ProfileTab>(initialTab ?? 'overview')
   const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
-  const [recordOpen, setRecordOpen] = useState(false)
-  const [categories, setCategories] = useState<BehaviorCategoryItem[] | null>(null)
+  const [addPointsOpen, setAddPointsOpen] = useState(false)
 
   useEffect(() => {
     setTab(initialTab ?? 'overview')
@@ -252,44 +268,16 @@ export function TeacherStudentProfileSheet({
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
       })
-    // the school's behavior taxonomy rides along (tiny payload) so the
-    // Behavior tab resolves real category labels from the first render
-    if (!categories) {
-      fetch('/api/teacher/behavior/categories', { cache: 'no-store', credentials: 'same-origin' })
-        .then((r) => r.json() as Promise<{ ok?: boolean; data?: { categories: BehaviorCategoryItem[] } }>)
-        .then((json) => {
-          if (!cancelled && json.ok && json.data) setCategories(json.data.categories)
-        })
-        .catch(() => {
-          /* labels fall back to the raw keys */
-        })
-    }
     return () => {
       cancelled = true
     }
-  }, [studentId, reload, categories])
+  }, [studentId, reload])
 
-  // Record Observation from anywhere (§12) — the taxonomy is already
-  // loaded with the profile; the dialog opens instantly.
-  const openRecordDialog = useCallback(() => {
-    setRecordOpen(true)
+  // Add Points from anywhere (§12) — the presets ride along with the
+  // profile payload; the compact sheet opens instantly.
+  const openAddPoints = useCallback(() => {
+    setAddPointsOpen(true)
   }, [])
-
-  const completeFollowUp = async (id: string) => {
-    try {
-      const res = await fetch(`/api/teacher/follow-ups/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ status: 'done' }),
-      })
-      if (!res.ok) throw new Error('Could not complete the follow-up')
-      setReload((r) => r + 1)
-      onChanged?.()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not complete the follow-up')
-    }
-  }
 
   const tabs = useMemo<{ key: ProfileTab; label: string }[]>(() => {
     const list: { key: ProfileTab; label: string }[] = [
@@ -298,7 +286,7 @@ export function TeacherStudentProfileSheet({
       { key: 'academics', label: 'Academics' },
     ]
     if (data?.fees && data.fees.status !== 'NONE') list.push({ key: 'fees', label: 'Fees' })
-    list.push({ key: 'behavior', label: 'Behavior' })
+    list.push({ key: 'growth', label: 'Growth' })
     list.push({ key: 'guardian', label: 'Guardian' })
     return list
   }, [data])
@@ -407,10 +395,17 @@ export function TeacherStudentProfileSheet({
                   </div>
                 ) : (
                   <div className="rounded-xl border border-border bg-card/50 p-2.5 text-center">
-                    <p className="font-display text-lg font-bold tabular-nums text-muted-foreground">
-                      {data.behavior.counts.open > 0 ? data.behavior.counts.open : '0'}
+                    <p
+                      className={cn(
+                        'font-display text-lg font-bold tabular-nums',
+                        data.growth.score?.score != null
+                          ? scoreTextClass(data.growth.score.score)
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {data.growth.score?.score != null ? data.growth.score.score : '—'}
                     </p>
-                    <p className="truncate text-[10px] text-muted-foreground">Open concerns</p>
+                    <p className="truncate text-[10px] text-muted-foreground">Growth</p>
                   </div>
                 )}
               </div>
@@ -688,93 +683,97 @@ export function TeacherStudentProfileSheet({
             </>
           )}
 
-          {data && tab === 'behavior' && (
+          {data && tab === 'growth' && (
             <>
-              <div className="grid grid-cols-4 gap-2">
-                <CountTile label="Positive" value={data.behavior.counts.positive} className="text-emerald-600 dark:text-emerald-400" />
-                <CountTile label="Observations" value={data.behavior.counts.observation} className="text-sky-600 dark:text-sky-400" />
-                <CountTile label="Concerns" value={data.behavior.counts.concern} className="text-rose-600 dark:text-rose-400" />
-                <CountTile
-                  label="Open"
-                  value={data.behavior.counts.open}
-                  className={data.behavior.counts.open > 0 ? 'text-rose-600 dark:text-rose-400' : undefined}
+              {/* the score — ring + month delta + dimensions (§13) */}
+              <div className="rounded-xl border border-border bg-card/40 p-4">
+                <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-5">
+                  <GrowthScoreRing
+                    score={data.growth.score?.score ?? null}
+                    monthDelta={data.growth.score?.monthDelta ?? 0}
+                    size={104}
+                  />
+                  <div className="w-full min-w-0 flex-1">
+                    <div className="mb-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Growth Score
+                      </span>
+                      <MonthDeltaChip monthDelta={data.growth.score?.monthDelta ?? 0} />
+                    </div>
+                    {data.growth.score ? (
+                      <GrowthDimensions dimensions={data.growth.score.dimensions} columns />
+                    ) : (
+                      <p className="text-center text-xs text-muted-foreground sm:text-left">
+                        Building from attendance and academic records.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {data.growth.score?.score == null && (
+                  <p className="mt-3 text-center text-[11px] text-muted-foreground">
+                    Not enough records yet — the score appears once attendance and marks build up.
+                  </p>
+                )}
+                {data.growth.score && (
+                  <p className="mt-3 border-t border-border pt-2 text-center text-[10px] text-muted-foreground">
+                    Ledger: {signedDelta(data.growth.score.totalPoints)} lifetime points ·{' '}
+                    {data.growth.score.eventCount} events · {signedDelta(data.growth.score.monthDelta)} this month
+                  </p>
+                )}
+              </div>
+
+              {/* fee standing — administrative, ALWAYS separate (§23) */}
+              {data.growth.feeStanding && (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/40 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold">Fee standing</p>
+                    <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                      {data.growth.feeStanding.detail} Never part of the growth score.
+                    </p>
+                  </div>
+                  <FeeStandingChip standing={data.growth.feeStanding} />
+                </div>
+              )}
+
+              {/* recent point activity (§13 — same canonical ledger) */}
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Recent activity
+                  </p>
+                  <span className="text-[10px] text-muted-foreground">
+                    {data.growth.events.length} event{data.growth.events.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <ActivityList
+                  events={data.growth.events}
+                  currentUserId={null}
+                  onCorrected={() => {
+                    setReload((r) => r + 1)
+                    onChanged?.()
+                  }}
+                  emptyHint="Points from teachers, attendance and exams will appear here."
                 />
               </div>
 
-              {data.behavior.followUps.length > 0 && (
-                <div className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                    Your open follow-ups
-                  </p>
-                  {data.behavior.followUps.map((f) => {
-                    const state = dueState(f.dueDate)
-                    return (
-                      <div key={f.id} className="flex items-center justify-between gap-2 text-xs">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{f.reason}</p>
-                          <p className={cn('text-[10px]', state === 'overdue' ? 'font-semibold text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
-                            Due {compactDate(f.dueDate)}
-                            {state === 'overdue' ? ' · overdue' : state === 'today' ? ' · today' : ''}
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm" className="h-7 shrink-0 px-2.5 text-[11px]" onClick={() => completeFollowUp(f.id)}>
-                          <CheckCircle2 className="h-3 w-3" /> Complete
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              {data.behavior.records.length === 0 ? (
-                <p className="rounded-xl border border-border bg-card/40 px-3 py-3 text-xs text-muted-foreground">
-                  No behavior records for this student yet.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {data.behavior.records.map((r) => {
-                    const cfg = TYPE_CONFIG[r.type]
-                    const status = STATUS_CONFIG[r.status]
-                    return (
-                      <div key={r.id} className={cn('rounded-lg border border-border border-l-2 bg-card/40 p-2.5', cfg.border)}>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                          <span className={cn('flex items-center gap-1 font-semibold', cfg.text)}>
-                            <span className={cn('h-1.5 w-1.5 rounded-full', cfg.dot)} />
-                            {cfg.label}
-                          </span>
-                          <span className="text-muted-foreground">·</span>
-                          <span className="font-medium text-muted-foreground">
-                            {categoryLabelOf(categories ?? [], r.category)}
-                          </span>
-                          <span className="text-muted-foreground">·</span>
-                          <span className="text-muted-foreground">{compactDate(r.date)}</span>
-                          <span className={cn('ml-auto flex items-center gap-1 font-semibold', status.text)}>
-                            <span className={cn('h-1.5 w-1.5 rounded-full', status.dot)} />
-                            {status.label}
-                          </span>
-                        </div>
-                        <p className="mt-1.5 text-xs leading-relaxed">{r.description}</p>
-                        {r.actionTaken && (
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            <span className="font-medium">Action:</span> {r.actionTaken}
-                          </p>
-                        )}
-                        {r.privateNote && (
-                          <p className="mt-1.5 rounded-md bg-muted/60 px-2 py-1 text-[11px] italic text-muted-foreground">
-                            Staff note — {r.privateNote}
-                          </p>
-                        )}
-                        <p className="mt-1.5 text-[10px] text-muted-foreground">Recorded by {r.recordedBy?.name ?? 'Staff'}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              <button type="button" onClick={openRecordDialog} className={cn(PRIMARY_ACTION_CLASS, 'w-full justify-center')}>
+              <button type="button" onClick={openAddPoints} className={cn(PRIMARY_ACTION_CLASS, 'w-full justify-center')}>
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                Record Observation
+                Add Points
               </button>
+
+              {onNavigate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenChange(false)
+                    onNavigate('growth')
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-primary/30"
+                >
+                  <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  View full growth history
+                </button>
+              )}
             </>
           )}
 
@@ -806,30 +805,40 @@ export function TeacherStudentProfileSheet({
           queue open (canonical payment, canonical document) */}
       <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} />
 
-      {/* Record Observation — the same dialog the Behavior module uses,
-          with this student preselected (categories lazily fetched) */}
+      {/* Add Points — the same compact sheet the Growth module uses, with
+          this student preselected (presets ride along with the payload) */}
       {data && student && (
-        <RecordDialog
-          open={recordOpen}
-          onOpenChange={setRecordOpen}
+        <AddPointsDialog
+          open={addPointsOpen}
+          onOpenChange={setAddPointsOpen}
           students={[
             {
               id: student.id,
               name: student.name,
               rollNo: student.rollNo,
               classLabel: student.classLabel,
-              classId: student.classId,
             },
           ]}
-          categories={categories ?? []}
+          presets={data.growth.presets}
+          settings={{
+            enabled: true,
+            negativeEnabled: true,
+            minManualPoints: -5,
+            maxManualPoints: 5,
+            customReasons: true,
+            studentVisibility: true,
+            feePunctualityPoints: false,
+          }}
           prefillStudent={{
             id: student.id,
             name: student.name,
             rollNo: student.rollNo,
             classLabel: student.classLabel,
-            classId: student.classId,
           }}
-          onCreated={() => setReload((r) => r + 1)}
+          onCreated={() => {
+            setReload((r) => r + 1)
+            onChanged?.()
+          }}
         />
       )}
     </Sheet>

@@ -1,6 +1,6 @@
 /**
  * teacher-hub — server-side authorization + serialization for the
- * Teacher Hub modules (parent conversations / Student Behavior).
+ * Teacher Hub modules (parent conversations / Student Growth).
  *
  * SECURITY MODEL (mirrors learning.ts's requireStudent pattern):
  *   erp_session cookie → getCurrentUser → requireTeacher → Teacher row →
@@ -9,9 +9,8 @@
  * the target student/conversation/record belongs to the
  * authenticated teacher's scope:
  *   • Parent conversations are owned by the teacher (teacherId).
- *   • Behavior records are visible to their recorder AND to the class
- *     teacher of the student's class (the class teacher sees the whole
- *     picture for their class — that is what a class teacher is for).
+ *   • Growth events are visible to every teacher with the student in
+ *     scope (the growth system is transparent by design, §28).
  * A teacher can never touch another school's rows: every query is
  * schoolId-scoped from the session, never from the request body.
  */
@@ -19,11 +18,7 @@
 import { db } from '@/lib/db'
 import { schoolScoped } from '@/lib/api'
 import type { AuthUser } from '@/lib/auth'
-import type {
-  BehaviorRecordItem,
-  FollowUpItem,
-  StudentRef,
-} from '@/lib/teacher-hub-types'
+import type { FollowUpItem, StudentRef } from '@/lib/teacher-hub-types'
 
 export interface TeacherClassInfo {
   id: string
@@ -131,16 +126,6 @@ export function authorizedStudentWhere(ctx: TeacherHubContext) {
   return { schoolId: ctx.schoolId, OR: clauses }
 }
 
-/** Prisma `where` for behavior records the teacher may read: her own
- * records ∪ records of students in any class she is responsible for
- * (class teacher of, or teaches a subject in). */
-export function visibleBehaviorWhere(ctx: TeacherHubContext) {
-  const classIds = scopeClassIds(ctx)
-  const clauses: Record<string, unknown>[] = [{ recordedById: ctx.userId }]
-  if (classIds.length) clauses.push({ student: { classId: { in: classIds } } })
-  return { schoolId: ctx.schoolId, OR: clauses }
-}
-
 export interface ScopedStudent {
   id: string
   userId: string
@@ -222,40 +207,6 @@ export function toFollowUpItem(f: FollowUpRow): FollowUpItem {
     conversationId: f.conversationId,
     recordId: f.recordId,
     createdAt: f.createdAt.toISOString(),
-  }
-}
-
-type BehaviorRow = {
-  id: string
-  date: Date
-  category: string
-  type: string
-  description: string
-  actionTaken: string | null
-  followUpRequired: boolean
-  followUpDate: Date | null
-  status: string
-  parentNotified: boolean
-  privateNote: string | null
-  recordedBy: { id: string; name: string | null } | null
-  student: StudentRow
-}
-
-export function toBehaviorRecordItem(r: BehaviorRow): BehaviorRecordItem {
-  return {
-    id: r.id,
-    date: r.date.toISOString(),
-    category: r.category,
-    type: r.type as BehaviorRecordItem['type'],
-    description: r.description,
-    actionTaken: r.actionTaken,
-    followUpRequired: r.followUpRequired,
-    followUpDate: r.followUpDate ? r.followUpDate.toISOString() : null,
-    status: r.status as BehaviorRecordItem['status'],
-    parentNotified: r.parentNotified,
-    privateNote: r.privateNote,
-    recordedBy: { id: r.recordedBy?.id ?? '', name: r.recordedBy?.name ?? 'Staff' },
-    student: toStudentRef(r.student),
   }
 }
 

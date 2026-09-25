@@ -2,13 +2,11 @@
 
 /**
  * PendingActions — real, server-derived action queue for the Teacher
- * Dashboard. Replaces the former mock "Pending Reviews" widget (homework /
- * assignment grading) after those modules were removed from the Teacher
- * Workspace.
+ * Dashboard.
  *
  * Sources (existing Teacher Hub APIs, teacher-session scoped):
  *   • GET /api/teacher/parent-connect  → stats.unread + follow-ups
- *   • GET /api/teacher/behavior        → stats.openConcerns
+ *   • GET /api/teacher/growth          → summary.needsAttention
  * (Navigation targets the Communication Hub — Parent Connect was absorbed
  * into it as the parent-thread channel.)
  * Every number rendered here traces to a real row — the widget renders an
@@ -22,8 +20,8 @@ import {
 import { GlassCard, GradientAvatar } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
 import type {
-  BehaviorPayload,
   FollowUpItem,
+  GrowthWorkspacePayload,
   ParentConnectPayload,
 } from '@/lib/teacher-hub-types'
 
@@ -34,7 +32,7 @@ interface PendingActionsProps {
 }
 
 interface FollowUpRow extends FollowUpItem {
-  moduleKey: 'communication' | 'behavior'
+  moduleKey: 'communication'
 }
 
 function dueLabel(due: string): { text: string; tone: 'overdue' | 'today' | 'later' } {
@@ -58,7 +56,7 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
     | {
         phase: 'ready'
         unread: number
-        openConcerns: number
+        needsAttention: number
         followUps: FollowUpRow[]
       }
   >({ phase: 'loading' })
@@ -67,13 +65,13 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
     let cancelled = false
     const load = async () => {
       try {
-        const [pc, beh] = await Promise.allSettled([
+        const [pc, growth] = await Promise.allSettled([
           fetch('/api/teacher/parent-connect', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('pc')))),
-          fetch('/api/teacher/behavior', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('beh')))),
+          fetch('/api/teacher/growth', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('growth')))),
         ])
         if (cancelled) return
         const pcData = pc.status === 'fulfilled' ? (pc.value.data as ParentConnectPayload) : null
-        const behData = beh.status === 'fulfilled' ? (beh.value.data as BehaviorPayload) : null
+        const growthData = growth.status === 'fulfilled' ? (growth.value.data as GrowthWorkspacePayload) : null
 
         const rows: FollowUpRow[] = []
         pcData?.followUps
@@ -84,7 +82,7 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
         setState({
           phase: 'ready',
           unread: pcData?.stats?.unread ?? 0,
-          openConcerns: behData?.stats?.openConcerns ?? 0,
+          needsAttention: growthData?.summary?.needsAttention ?? 0,
           followUps: rows.slice(0, 4),
         })
       } catch {
@@ -128,7 +126,7 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
           </div>
         )}
 
-        {state.phase === 'ready' && state.followUps.length === 0 && state.unread === 0 && state.openConcerns === 0 && (
+        {state.phase === 'ready' && state.followUps.length === 0 && state.unread === 0 && state.needsAttention === 0 && (
           <div className="py-8 text-center">
             <Inbox className="h-8 w-8 mx-auto text-emerald-500/40 mb-2" />
             <p className="text-sm font-medium text-muted-foreground">You&apos;re all caught up</p>
@@ -154,17 +152,17 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
               </button>
             )}
 
-            {state.openConcerns > 0 && (
+            {state.needsAttention > 0 && (
               <button
-                onClick={() => onNavigate('behavior')}
+                onClick={() => onNavigate('growth')}
                 className="w-full flex items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-left hover:bg-rose-500/10 transition-colors"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600">
                   <Shield className="h-4.5 w-4.5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm">{state.openConcerns} open behavior concern{state.openConcerns === 1 ? '' : 's'}</p>
-                  <p className="text-xs text-muted-foreground">Student Behavior · review status</p>
+                  <p className="font-semibold text-sm">{state.needsAttention} student{state.needsAttention === 1 ? '' : 's'} needing attention</p>
+                  <p className="text-xs text-muted-foreground">Student Growth · review recent points</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
               </button>
@@ -216,7 +214,7 @@ function TeacherHubCard({ onNavigate }: { onNavigate: (key: string) => void }) {
       <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
         <Shield className="h-4 w-4 text-emerald-500" /> Class Teacher Hub
       </h3>
-      <p className="text-xs text-muted-foreground mb-3">Your class, end to end — attendance, fees, results & behaviour</p>
+      <p className="text-xs text-muted-foreground mb-3">Your class, end to end — attendance, fees, results & growth</p>
       <button
         onClick={() => onNavigate('class-hub')}
         className="w-full rounded-xl border border-border bg-card/40 p-3 text-left hover:bg-accent/40 transition-colors"

@@ -4,7 +4,7 @@
  * communication/hooks — the data layer for the Communication Hub.
  *
  * ONE aggregate fetch (GET /api/teacher/communication) mirrors the
- * student-behavior discipline: { cache: 'no-store', credentials:
+ * student-growth discipline: { cache: 'no-store', credentials:
  * 'same-origin' } against the { ok, data } envelope, a 401 that routes
  * through the shared signOut() instead of a dead-end, and QUIET reloads —
  * the skeleton shows on the first load only, later reloads keep the stale
