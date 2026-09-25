@@ -600,11 +600,11 @@ export function MarksheetDrawer({
             </div>
           </div>
 
-          {/* print-only header */}
+          {/* print-only header — the school's configured identity */}
           <div id="marksheet-print-header" className="hidden print:block">
             <h2 className="text-lg font-bold">{data.classLabel} — {data.exam.examName}</h2>
             <p className="text-xs">
-              Greenwood High School{data.room ? ` · Room ${data.room}` : ''} · Class Teacher Copy ·{' '}
+              {data.schoolName}{data.room ? ` · Room ${data.room}` : ''} · Class Teacher Copy ·{' '}
               {new Date().toLocaleDateString('en-IN')}
             </p>
           </div>

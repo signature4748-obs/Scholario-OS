@@ -194,6 +194,8 @@ export interface MarksheetPayload {
   classId: string
   classLabel: string
   room: string | null
+  /** the school's configured identity (print header) — never hardcoded */
+  schoolName: string
   exam: {
     examId: string
     examName: string

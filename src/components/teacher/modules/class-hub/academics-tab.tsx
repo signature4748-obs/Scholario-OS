@@ -13,6 +13,12 @@
  * teaches get an "Enter marks" deep link into the ONE global Marks Entry
  * (subject-scoped work). MY CLASS = overall class results; GLOBAL MARKS
  * ENTRY = subject-scoped entry — different purposes, never merged.
+ *
+ * ONE MARKSHEET ACTION (simplification round §4): the duplicate "Open
+ * marksheet" button in the exam-summary strip was REMOVED. The ONE
+ * entry point into the ONE canonical marksheet viewer is the View /
+ * Print action inside the Marksheets section at the bottom — no second
+ * route, no second component, no duplicate action.
  */
 
 import { useMemo, useState } from 'react'
@@ -100,7 +106,9 @@ export function AcademicsTab({
 
   return (
     <div className="space-y-4">
-      {/* examination selector + headline numbers — one compact strip */}
+      {/* examination selector + headline numbers — one compact strip.
+          NO "Open marksheet" action here (§4): the ONE marksheet action
+          lives in the Marksheets section below. */}
       <div className="rounded-xl border border-border bg-card px-4 py-3.5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
@@ -151,16 +159,6 @@ export function AcademicsTab({
               </div>
             </div>
           </div>
-          {selected && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 shrink-0 gap-1.5 text-xs"
-              onClick={() => onOpenMarksheet(selected.examId)}
-            >
-              <FileText className="h-3.5 w-3.5" aria-hidden="true" /> Open marksheet
-            </Button>
-          )}
         </div>
       </div>
 
@@ -385,7 +383,9 @@ export function AcademicsTab({
         </SectionCard>
       )}
 
-      {/* MARKSHEETS (§16) */}
+      {/* MARKSHEETS (§16) — the ONE marksheet action surface (§4): every
+          exam with entered marks, opening the ONE canonical viewer (which
+          carries Print + Download CSV inside). No duplicate action above. */}
       <SectionCard
         icon={GraduationCap}
         title="Marksheets"
@@ -410,7 +410,7 @@ export function AcademicsTab({
                 onClick={() => onOpenMarksheet(m.examId)}
               >
                 <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                {m.examId === selectedId ? 'View / Print' : 'View'}
+                View / Print
               </Button>
             </li>
           ))}

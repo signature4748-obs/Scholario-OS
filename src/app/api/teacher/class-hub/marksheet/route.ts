@@ -30,6 +30,11 @@ export async function GET(request: Request) {
         throw new Error('FORBIDDEN — you are not the class teacher of this class')
       }
 
+      const school = await db.school.findUnique({
+        where: { id: schoolId },
+        select: { name: true },
+      })
+
       const exam = await db.exam.findUnique({
         where: { id: examId },
         select: { id: true, name: true, type: true, session: true, startDate: true, endDate: true, resultStatus: true },
@@ -132,6 +137,7 @@ export async function GET(request: Request) {
         classId,
         classLabel: classLabelOf(cls),
         room: cls.room,
+        schoolName: school?.name ?? 'School',
         exam: {
           examId: exam.id,
           examName: exam.name,

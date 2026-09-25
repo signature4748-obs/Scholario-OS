@@ -15,18 +15,21 @@
  * Anatomy (all from the ONE detail payload — no extra fetch):
  *   · headline — overall 30-day rate + school days vs marked days +
  *     the Present / Absent / Late / Leave distribution;
- *   · trends — weekly (8 weeks) + monthly (6 months) bars;
  *   · most recent marked day summary (with the honest "today not marked
  *     yet" state and ONE small contextual link into Class Attendance);
  *   · excellent / needs-attention lists (≥ 3 marked-day honesty floor);
  *   · attendance by student — the full roster table (roll order or
  *     lowest-rate-first), row click opens the canonical Student Profile.
+ *
+ * FINAL UX REFINEMENT (simplification round): the weekly "Attendance
+ * trend" and "Monthly rate" bar sections were REMOVED — this is a
+ * CLASS ATTENDANCE REPORT, not an analytics dashboard. Numbers, lists
+ * and one table; zero decorative charts.
  */
 
 import { useMemo, useState } from 'react'
 import {
-  ArrowRight, Award, CalendarCheck, CheckCircle2, Clock,
-  Info, ShieldCheck, TrendingDown, Users,
+  ArrowRight, Award, CalendarCheck, Clock, Info, ShieldCheck, Users,
 } from 'lucide-react'
 import { GradientAvatar } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
@@ -44,16 +47,6 @@ function statusOf(ratePct: number | null, markedDays: number): { label: string; 
   if (ratePct >= 95) return { label: 'Excellent', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' }
   if (ratePct >= 85) return { label: 'Good', cls: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' }
   return { label: 'Needs attention', cls: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' }
-}
-
-function monthLabel(m: string): string {
-  const [y, mo] = m.split('-')
-  return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('en-IN', { month: 'short' })
-}
-
-function weekLabel(w: string): string {
-  const d = new Date(`${w}T00:00:00.000Z`)
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
 function dayLabel(dayKey: string): string {
@@ -182,91 +175,6 @@ export function AttendanceReportTab({
           <DistributionTile label="On Leave" count={o.leave} pct={share(o.leave)} tone="sky" />
         </div>
       </SectionCard>
-
-      {/* ── trends: weekly (8) + monthly (6) ─────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard
-          icon={TrendingDown}
-          title="Attendance trend"
-          subtitle="Weekly class rate — last 8 weeks"
-          contentClassName="px-4 py-4"
-        >
-          {report.weekly.length === 0 ? (
-            <p className="py-4 text-xs text-muted-foreground">No weekly trend yet.</p>
-          ) : (
-            <div className="flex items-end gap-2" aria-label="Weekly attendance trend">
-              {report.weekly.map((w) => (
-                <div
-                  key={w.week}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
-                  title={`Week of ${weekLabel(w.week)} — ${w.ratePct != null ? `${w.ratePct}%` : 'no data'}`}
-                >
-                  <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">
-                    {w.ratePct ?? '—'}
-                  </span>
-                  <div className="flex h-20 w-full items-end justify-center">
-                    <div
-                      className={cn(
-                        'w-full max-w-7 rounded-t',
-                        (w.ratePct ?? 0) >= 90
-                          ? 'bg-emerald-500'
-                          : (w.ratePct ?? 0) >= 75
-                            ? 'bg-amber-500'
-                            : 'bg-rose-500',
-                      )}
-                      style={{ height: `${Math.max(w.ratePct ?? 4, 4)}%` }}
-                    />
-                  </div>
-                  <span className="truncate text-[9px] font-medium text-muted-foreground">
-                    {weekLabel(w.week)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
-
-        <SectionCard
-          icon={CheckCircle2}
-          title="Monthly rate"
-          subtitle="Class attendance rate by month"
-          contentClassName="px-4 py-4"
-        >
-          {report.monthly.length === 0 ? (
-            <p className="py-4 text-xs text-muted-foreground">No monthly data yet.</p>
-          ) : (
-            <div className="flex items-end gap-3" aria-label="Monthly attendance rate">
-              {report.monthly.map((m) => (
-                <div
-                  key={m.month}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
-                  title={`${m.month}: ${m.ratePct ?? '—'}%`}
-                >
-                  <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">
-                    {m.ratePct ?? '—'}
-                  </span>
-                  <div className="flex h-20 w-full items-end justify-center">
-                    <div
-                      className={cn(
-                        'w-full max-w-8 rounded-t',
-                        (m.ratePct ?? 0) >= 90
-                          ? 'bg-emerald-500'
-                          : (m.ratePct ?? 0) >= 75
-                            ? 'bg-amber-500'
-                            : 'bg-rose-500',
-                      )}
-                      style={{ height: `${Math.max(m.ratePct ?? 4, 4)}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-medium text-muted-foreground">
-                    {monthLabel(m.month)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
-      </div>
 
       {/* ── most recent day + excellent + needs attention ───────────── */}
       <div className="grid gap-4 lg:grid-cols-3">

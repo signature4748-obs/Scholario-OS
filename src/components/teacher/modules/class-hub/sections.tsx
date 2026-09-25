@@ -57,10 +57,11 @@ function StatTile({ label, value, tone, className }: { label: string; value: str
   )
 }
 
-// ─── 1. ATTENDANCE — today's summary + 30-day rate + trend (§12) ──────
+// ─── 1. ATTENDANCE — today's summary + 30-day rate (§12) ────────────
 // A READ-ONLY summary of the canonical records. Marking happens in the
 // global Class Attendance module — reachable here through ONE small
-// contextual action when today is still unmarked.
+// contextual action when today is still unmarked. No trend bars:
+// numbers + the "View report" link only (simplification round §2).
 
 export function AttendanceSection({
   cls, report, onOpenReport, onNavigate,
@@ -75,7 +76,6 @@ export function AttendanceSection({
 }) {
   const att = cls.attendanceToday
   const rate = report?.overall.ratePct ?? null
-  const weekly = report?.weekly ?? []
   return (
     <SectionCard
       icon={CalendarCheck}
@@ -118,33 +118,6 @@ export function AttendanceSection({
             </>
           )}
         </div>
-        {/* weekly trend — the same 8-week series the report tab shows */}
-        {weekly.length > 1 && (
-          <div className="flex items-end gap-1 px-4 py-3" aria-label="Weekly attendance trend">
-            {weekly.map((w) => (
-              <div
-                key={w.week}
-                className="flex min-w-0 flex-1 flex-col items-center gap-1"
-                title={`Week of ${w.week} — ${w.ratePct != null ? `${w.ratePct}%` : 'no data'}`}
-              >
-                <div className="flex h-9 w-full items-end justify-center">
-                  <div
-                    className={cn(
-                      'w-full max-w-6 rounded-t',
-                      (w.ratePct ?? 0) >= 90
-                        ? 'bg-emerald-500/80'
-                        : (w.ratePct ?? 0) >= 75
-                          ? 'bg-amber-500/80'
-                          : 'bg-rose-500/80',
-                    )}
-                    style={{ height: `${Math.max(w.ratePct ?? 6, 6)}%` }}
-                  />
-                </div>
-                <span className="text-[9px] font-medium tabular-nums text-muted-foreground">{w.ratePct ?? '—'}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </SectionCard>
   )
@@ -315,7 +288,11 @@ export function FeesSection({
   )
 }
 
-// ─── 4. STUDENT GROWTH — class growth summary + trend (§12/§14) ───────
+// ─── 4. STUDENT GROWTH — class growth summary (§12/§14) ──────────────
+// Compact and textual (simplification round §3): the class growth score,
+// the improving/steady/needs-attention split, the top improvement student
+// and a one-line ledger context — NO weekly bars. The 8-week series stays
+// in the class growth drawer for those who want the detail.
 
 export function GrowthSection({
   cls,
@@ -328,7 +305,6 @@ export function GrowthSection({
   onOpenGrowth: () => void
 }) {
   const g = cls.growth
-  const trend = detail?.growthTrend ?? []
   const topImproving = useMemo(
     () =>
       (detail?.directory ?? [])
@@ -358,29 +334,8 @@ export function GrowthSection({
         <StatTile label="Steady" value={g.steady} tone="text-amber-600 dark:text-amber-400" />
         <StatTile label="Need attention" value={g.needsAttention} tone="text-rose-600 dark:text-rose-400" />
       </div>
-      {/* 8-week trend — a compact inline sparkline, no second fetch */}
-      {trend.length > 1 && (
-        <div className="flex items-end gap-1 border-t border-border px-4 py-3" aria-label="8-week class growth trend">
-          {trend.map((p) => (
-            <div
-              key={p.label}
-              className="flex min-w-0 flex-1 flex-col items-center gap-1"
-              title={`${p.label} — ${p.value != null ? p.value : 'no data'}`}
-            >
-              <div className="flex h-10 w-full items-end justify-center">
-                <div
-                  className={cn(
-                    'w-full max-w-6 rounded-t',
-                    p.value == null ? 'bg-muted' : p.value >= 75 ? 'bg-emerald-500/80' : p.value >= 55 ? 'bg-amber-500/80' : 'bg-rose-500/80',
-                  )}
-                  style={{ height: `${p.value != null ? Math.max(p.value, 6) : 6}%` }}
-                />
-              </div>
-              <span className="truncate text-[9px] font-medium text-muted-foreground">{p.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* compact context line — quick understanding, not data
+          visualization (§3). No chart, no bars. */}
       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-border bg-muted/20 px-4 py-2 text-[11px] text-muted-foreground">
         {topImproving ? (
           <>

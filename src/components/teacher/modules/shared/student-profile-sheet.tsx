@@ -10,8 +10,13 @@
  *
  *   · Overview      identity + class info (real Student/User rows)
  *   · Attendance    canonical summary + counts + recent records
- *   · Academics     latest exam with entered marks, per subject
- *   · Fees          class-teacher classes ONLY (subject teachers never
+ *   · Marksheets    the PERSONAL DIGITAL RESULT RECORD (§7–§12): every
+ *                  examination configured for the class with its honest
+ *                  NOT_STARTED / IN_PROGRESS / READY / FINALIZED state,
+ *                  opening the document-style digital marksheet viewer.
+ *                  Same canonical marks as Marks Entry / Academics /
+ *                  Results Submission — never a second marks record.
+ *   · Fee & Receipts  class-teacher classes ONLY (subject teachers never
  *                   see a family's money — the payload simply omits it)
  *   · Growth        the canonical Growth Score + point ledger + the
  *                   quick Add Points action (§13); the fee standing chip
@@ -30,12 +35,15 @@ import {
   Calendar,
   CalendarCheck,
   Clock3,
+  Download,
+  Eye,
   GraduationCap,
   Mail,
   MapPin,
   MessagesSquare,
   Phone,
   Plus,
+  Printer,
   Receipt,
   TrendingUp,
   User,
@@ -44,6 +52,7 @@ import {
 } from 'lucide-react'
 import { GradientAvatar, StatusBadge } from '@/components/shared/ui'
 import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
+import { StudentMarksheetViewer } from './student-marksheet-viewer'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -81,6 +90,24 @@ const THIN_SCROLLBAR =
 
 // ── payload contract (mirrors GET /api/teacher/students/[studentId]) ──
 
+/** The per-exam personal result state (digital record §7/§11/§12) —
+ * derived server-side from the canonical ExamMark + ExamSubjectConfig
+ * rows, never stored twice. */
+export interface StudentExamState {
+  examId: string
+  examName: string
+  examDate: string | null
+  type: string
+  session: string | null
+  resultStatus: string
+  state: 'NOT_STARTED' | 'IN_PROGRESS' | 'READY' | 'FINALIZED'
+  subjectsSubmitted: number
+  subjectsTotal: number
+  /** over submitted subjects only — labeled partial when incomplete */
+  percentage: number | null
+  partial: boolean
+}
+
 export interface TeacherStudentProfile {
   student: {
     id: string
@@ -116,6 +143,9 @@ export interface TeacherStudentProfile {
       subjects: { subjectId: string; subjectName: string; marks: number; maxMarks: number; pct: number }[]
       averagePct: number
     } | null
+    /** EVERY examination configured for the student's class, newest
+     * first, with its honest result state (§7/§12) */
+    exams: StudentExamState[]
   }
   fees: {
     status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
@@ -139,7 +169,7 @@ export interface TeacherStudentProfile {
   conversationId: string | null
 }
 
-export type ProfileTab = 'overview' | 'attendance' | 'academics' | 'fees' | 'growth' | 'guardian'
+export type ProfileTab = 'overview' | 'attendance' | 'marksheets' | 'fees' | 'growth' | 'guardian'
 
 // ── fetch hook (house discipline: no-store, {ok,data}, 401 → signOut once) ──
 
@@ -231,6 +261,17 @@ function attStatusLabel(status: string): string {
   return status.charAt(0) + status.slice(1).toLowerCase()
 }
 
+/** The four honest result states of a personal marksheet (§11). */
+const EXAM_STATE_META: Record<
+  StudentExamState['state'],
+  { label: string; cls: string }
+> = {
+  NOT_STARTED: { label: 'Not started', cls: 'bg-muted text-muted-foreground' },
+  IN_PROGRESS: { label: 'In Progress', cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
+  READY: { label: 'Ready', cls: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' },
+  FINALIZED: { label: 'Declared', cls: 'bg-emerald-600 text-white' },
+}
+
 // ── the sheet ────────────────────────────────────────────────────────
 
 export function TeacherStudentProfileSheet({
@@ -254,6 +295,10 @@ export function TeacherStudentProfileSheet({
   const [tab, setTab] = useState<ProfileTab>(initialTab ?? 'overview')
   const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
+  const [receiptAutoPrint, setReceiptAutoPrint] = useState(false)
+  const [marksheetExamId, setMarksheetExamId] = useState<string | null>(null)
+  const [marksheetOpen, setMarksheetOpen] = useState(false)
+  const [marksheetAutoPrint, setMarksheetAutoPrint] = useState(false)
   const [addPointsOpen, setAddPointsOpen] = useState(false)
 
   useEffect(() => {
@@ -287,9 +332,9 @@ export function TeacherStudentProfileSheet({
     const list: { key: ProfileTab; label: string }[] = [
       { key: 'overview', label: 'Overview' },
       { key: 'attendance', label: 'Attendance' },
-      { key: 'academics', label: 'Academics' },
+      { key: 'marksheets', label: 'Marksheets' },
     ]
-    if (data?.fees && data.fees.status !== 'NONE') list.push({ key: 'fees', label: 'Fees' })
+    if (data?.fees && data.fees.status !== 'NONE') list.push({ key: 'fees', label: 'Fee & Receipts' })
     list.push({ key: 'growth', label: 'Growth' })
     list.push({ key: 'guardian', label: 'Guardian' })
     return list
@@ -508,52 +553,81 @@ export function TeacherStudentProfileSheet({
             )
           )}
 
-          {data && tab === 'academics' && (
-            data.academics.latestExam == null ? (
+          {/* ── MARKSHEETS — the personal digital result record (§7–§12).
+              EVERY examination configured for the class with its honest
+              state; the digital marksheet document opens on demand. */}
+          {data && tab === 'marksheets' && (
+            data.academics.exams.length === 0 ? (
               <p className="rounded-xl border border-border bg-card/40 px-3 py-3 text-xs text-muted-foreground">
-                No exam marks entered for this student yet.
+                No examinations are configured for this student&rsquo;s class yet — the result record builds as exams and marks are set up.
               </p>
             ) : (
               <>
-                <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/40 px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold">{data.academics.latestExam.examName}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Latest exam with entered marks · {data.academics.latestExam.subjects.length}{' '}
-                      subject{data.academics.latestExam.subjects.length === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                  <p
-                    className={cn(
-                      'font-display text-lg font-bold tabular-nums',
-                      data.academics.latestExam.averagePct < 40
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : 'text-emerald-600 dark:text-emerald-400',
-                    )}
-                  >
-                    {data.academics.latestExam.averagePct}%
-                  </p>
-                </div>
-                <div className="space-y-1.5 rounded-xl border border-border bg-card/40 p-3">
-                  {data.academics.latestExam.subjects.map((sub) => (
-                    <div key={sub.subjectId} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="min-w-0 flex-1 truncate font-medium">{sub.subjectName}</span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {sub.marks} / {sub.maxMarks}
-                      </span>
-                      <span
-                        className={cn(
-                          'w-11 shrink-0 rounded-full px-2 py-0.5 text-right text-[10px] font-semibold tabular-nums',
-                          sub.pct < 40
-                            ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                <p className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Examinations · {data.academics.exams[0]?.session ?? 'session'}</span>
+                  <span>{data.academics.exams.length} on record</span>
+                </p>
+                <ul className="divide-y divide-border/50 rounded-xl border border-border bg-card/40">
+                  {data.academics.exams.map((ex) => (
+                    <li key={ex.examId} className="px-3 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold">{ex.examName}</p>
+                          <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                            {ex.subjectsTotal > 0
+                              ? `${ex.subjectsSubmitted}/${ex.subjectsTotal} subject${ex.subjectsTotal === 1 ? '' : 's'} submitted`
+                              : 'No subject marks yet'}
+                            {ex.percentage != null && (
+                              <>
+                                {' · '}
+                                <span className="font-semibold tabular-nums text-foreground">
+                                  {ex.percentage}%
+                                </span>
+                                {ex.partial && <span className="text-amber-600 dark:text-amber-400"> (partial)</span>}
+                              </>
+                            )}
+                            {ex.examDate ? ` · ${formatDate(ex.examDate)}` : ''}
+                          </p>
+                        </div>
+                        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold', EXAM_STATE_META[ex.state].cls)}>
+                          {EXAM_STATE_META[ex.state].label}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 px-2.5 text-[11px]"
+                          onClick={() => {
+                            setMarksheetExamId(ex.examId)
+                            setMarksheetAutoPrint(false)
+                            setMarksheetOpen(true)
+                          }}
+                        >
+                          <Eye className="h-3 w-3" aria-hidden="true" /> View
+                        </Button>
+                        {(ex.state === 'READY' || ex.state === 'FINALIZED') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1 px-2.5 text-[11px]"
+                            onClick={() => {
+                              setMarksheetExamId(ex.examId)
+                              setMarksheetAutoPrint(true)
+                              setMarksheetOpen(true)
+                            }}
+                          >
+                            <Printer className="h-3 w-3" aria-hidden="true" /> {ex.state === 'FINALIZED' ? 'Download PDF' : 'Print / PDF'}
+                          </Button>
                         )}
-                      >
-                        {sub.pct}%
-                      </span>
-                    </div>
+                      </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  Built from the same canonical marks as Marks Entry and Results Submission — submitted marks appear here
+                  automatically, pending subjects are shown as &ldquo;—&rdquo; and never invented.
+                </p>
               </>
             )
           )}
@@ -605,80 +679,105 @@ export function TeacherStudentProfileSheet({
                 ))}
               </div>
               {data.fees.payments.length > 0 && (
-                <div className="space-y-1.5 rounded-xl border border-border bg-card/40 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Recent payments</p>
+                <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Payment records · {data.fees.payments.length}
+                  </p>
                   {data.fees.payments.map((p) => {
                     const pending = p.status === 'UNDER_VERIFICATION'
                     const rejected = p.status === 'REJECTED'
+                    const verified = p.status === 'SUCCESS' && !!p.txnId
                     return (
-                      <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="min-w-0 truncate font-medium">{p.feeTitle}</span>
-                            <span
-                              className={cn(
-                                'inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[9px] font-semibold',
-                                pending
-                                  ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                                  : rejected
-                                    ? 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-400'
-                                    : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-                              )}
-                            >
-                              {pending ? 'Awaiting verification' : rejected ? 'Rejected' : p.txnId ? 'Verified' : 'Paid'}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                            {formatDate(p.createdAt.slice(0, 10))} · {(p.method ?? '—').replace('_', ' ').toLowerCase()}
-                            {p.txnId
-                              ? p.source === 'CLASS_TEACHER'
+                      <div key={p.id} className="rounded-lg border border-border/70 bg-card px-2.5 py-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              <span className="truncate text-xs font-semibold">{p.feeTitle}</span>
+                              <span className="shrink-0 text-xs font-bold tabular-nums text-foreground">
+                                {formatINR(p.amount)}
+                              </span>
+                            </p>
+                            <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                              {formatDate(p.createdAt.slice(0, 10))}
+                              {' · '}{(p.method ?? '—').replace(/_/g, ' ').toLowerCase()}
+                              {p.source === 'CLASS_TEACHER'
                                 ? p.collectedBy
                                   ? ` · collected by ${p.collectedBy}`
                                   : ' · class teacher'
                                 : p.source === 'SCHOOL_OFFICE'
-                                  ? ' · paid through School Office'
+                                  ? p.sourceLabel ? ` · ${p.sourceLabel}` : ' · school office'
                                   : p.source === 'PRINCIPAL'
                                     ? ' · paid through the Principal'
-                                    : ''
-                              : p.sourceLabel
-                                ? ` · ${p.sourceLabel}`
-                                : ''}
-                            {p.receiptNo ? ` · receipt ${p.receiptNo}` : ''}
-                          </p>
-                          {rejected && p.rejectionReason && (
-                            <p className="mt-0.5 line-clamp-2 text-[10px] text-rose-600 dark:text-rose-400">
-                              Reason: {p.rejectionReason}
+                                    : p.sourceLabel
+                                      ? ` · ${p.sourceLabel}`
+                                      : ''}
                             </p>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
+                          </div>
                           <span
                             className={cn(
-                              'tabular-nums font-semibold',
-                              rejected
-                                ? 'text-rose-600 line-through dark:text-rose-400'
+                              'shrink-0 rounded-full border px-1.5 py-px text-[9px] font-semibold',
+                              verified
+                                ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                                 : pending
-                                  ? 'text-amber-700 dark:text-amber-400'
-                                  : 'text-emerald-600 dark:text-emerald-400',
+                                  ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                                  : 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-400',
                             )}
                           >
-                            {formatINR(p.amount, true)}
+                            {verified ? 'Verified' : pending ? 'Pending verification' : 'Rejected'}
                           </span>
-                          {p.txnId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                              aria-label="View payment document"
-                              onClick={() => {
-                                setReceiptTxnId(p.txnId)
-                                setReceiptOpen(true)
-                              }}
-                            >
-                              <Receipt className="h-3 w-3" />
-                            </Button>
+                        </div>
+                        {/* receipt line — ONLY verified payments carry a
+                            final official receipt (§6) */}
+                        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-dashed border-border/70 pt-1.5">
+                          {verified ? (
+                            <p className="min-w-0 flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <Receipt className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                              <span className="truncate font-semibold tabular-nums text-foreground">
+                                {p.receiptNo ?? `Receipt ${p.txnId!.slice(-8)}`}
+                              </span>
+                              {p.verifiedBy && <span className="truncate">· verified by {p.verifiedBy}</span>}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] italic text-muted-foreground">
+                              {pending ? 'No final receipt yet — awaiting the Principal’s verification.' : 'No receipt — this payment was rejected.'}
+                            </p>
+                          )}
+                          {verified && (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 gap-1 px-1.5 text-[10px]"
+                                aria-label="View receipt"
+                                onClick={() => {
+                                  setReceiptTxnId(p.txnId)
+                                  setReceiptAutoPrint(false)
+                                  setReceiptOpen(true)
+                                }}
+                              >
+                                <Eye className="h-3 w-3" aria-hidden="true" /> View receipt
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 gap-1 px-1.5 text-[10px]"
+                                aria-label="Download receipt (print / save as PDF)"
+                                onClick={() => {
+                                  setReceiptTxnId(p.txnId)
+                                  setReceiptAutoPrint(true)
+                                  setReceiptOpen(true)
+                                }}
+                              >
+                                <Download className="h-3 w-3" aria-hidden="true" /> Download
+                              </Button>
+                            </div>
                           )}
                         </div>
+                        {rejected && p.rejectionReason && (
+                          <p className="mt-1 line-clamp-2 text-[10px] text-rose-600 dark:text-rose-400">
+                            Reason: {p.rejectionReason}
+                          </p>
+                        )}
                       </div>
                     )
                   })}
@@ -806,8 +905,19 @@ export function TeacherStudentProfileSheet({
       </SheetContent>
 
       {/* the SAME receipt viewer the fee workspace and the Principal's
-          queue open (canonical payment, canonical document) */}
-      <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} />
+          queue open (canonical payment, canonical document) — with the
+          download shortcut when opened via "Download" (§6) */}
+      <FeeReceiptViewer txnId={receiptTxnId} open={receiptOpen} onOpenChange={setReceiptOpen} autoPrint={receiptAutoPrint} />
+
+      {/* the personal DIGITAL MARKSHEET document (§10) — same canonical
+          marks, document layout, print/PDF only when complete */}
+      <StudentMarksheetViewer
+        studentId={studentId}
+        examId={marksheetExamId}
+        open={marksheetOpen}
+        onOpenChange={setMarksheetOpen}
+        autoPrint={marksheetAutoPrint}
+      />
 
       {/* Add Points — the same compact sheet the Growth module uses, with
           this student preselected (presets ride along with the payload) */}

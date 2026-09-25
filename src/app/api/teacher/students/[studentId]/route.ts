@@ -10,6 +10,23 @@ import { deriveStudentFees, deriveAttendanceSummary, type StudentFeesDto } from 
 import { growthScoresFor, feeStandingOf, growthSettingsFor, manualPresetsFor, toGrowthEventItem } from '@/lib/growth/service'
 import { manualStateByStudent } from '@/lib/growth/limits'
 
+/** The per-exam personal result state of ONE student (digital record
+ * §7/§11/§12) — derived, never stored. */
+export interface StudentExamStateDto {
+  examId: string
+  examName: string
+  examDate: string | null
+  type: string
+  session: string | null
+  resultStatus: string
+  state: 'NOT_STARTED' | 'IN_PROGRESS' | 'READY' | 'FINALIZED'
+  subjectsSubmitted: number
+  subjectsTotal: number
+  /** over submitted subjects only — labeled partial when incomplete */
+  percentage: number | null
+  partial: boolean
+}
+
 export const runtime = 'nodejs'
 
 /**
@@ -30,7 +47,12 @@ export const runtime = 'nodejs'
  *   · GROWTH — the canonical score + point ledger for this student
  *     (every teacher in scope sees the same growth data);
  *   · academics — the latest exam THIS student has entered marks for
- *     (nothing fabricated; no marks ⇒ null).
+ *     (nothing fabricated; no marks ⇒ null) PLUS the exam-wise personal
+ *     result states (digital record §7–§12): for EVERY examination
+ *     configured for the student's class, the honest NOT_STARTED /
+ *     IN_PROGRESS / READY / FINALIZED state derived from the SAME
+ *     canonical ExamMark + ExamSubjectConfig rows Marks Entry, Academics
+ *     and Results Submission use — never a second marks record.
  */
 export async function GET(
   _req: NextRequest,
@@ -157,6 +179,111 @@ export async function GET(
         }
       }
 
+      // ── exam-wise personal result states (digital record §7–§12) ────
+      // For EVERY examination linked to the student's class: the honest
+      // NOT_STARTED / IN_PROGRESS / READY / FINALIZED state from the same
+      // canonical ExamMark + ExamSubjectConfig rows every other module
+      // uses. "Submitted" per subject = the student has an outcome (a
+      // mark or an ABSENT); missing subjects are never invented.
+      const exams: StudentExamStateDto[] = []
+      if (student.classId) {
+        const links = await db.examClass.findMany({
+          where: { classId: student.classId },
+          select: {
+            exam: {
+              select: { id: true, name: true, type: true, session: true, startDate: true, createdAt: true, resultStatus: true },
+            },
+          },
+        })
+        if (links.length > 0) {
+          const examIds = links.map((l) => l.exam.id)
+          const [cfgRows, ownRows, classRows] = await Promise.all([
+            db.examSubjectConfig.findMany({
+              where: { examId: { in: examIds }, classId: student.classId },
+              select: { examId: true, subjectId: true, maxMarks: true, subject: { select: { name: true } } },
+            }),
+            // ALL of this student's rows in these exams (incl. ABSENT
+            // outcomes and drafts — an outcome is an outcome)
+            db.examMark.findMany({
+              where: { examId: { in: examIds }, studentId: student.id },
+              select: { examId: true, subjectId: true, marksObtained: true, status: true },
+            }),
+            // class-wide entered subjects — the honest fallback required
+            // set for exams without a subject config for this class
+            db.examMark.findMany({
+              where: { examId: { in: examIds }, classId: student.classId, marksObtained: { not: null } },
+              select: { examId: true, subjectId: true },
+            }),
+          ])
+          const cfgByExam = new Map<string, { subjectId: string; maxMarks: number }[]>()
+          for (const c of cfgRows) {
+            const list = cfgByExam.get(c.examId) ?? []
+            list.push({ subjectId: c.subjectId, maxMarks: c.maxMarks })
+            cfgByExam.set(c.examId, list)
+          }
+          const classSubjectsByExam = new Map<string, Set<string>>()
+          for (const r of classRows) {
+            const set = classSubjectsByExam.get(r.examId) ?? new Set<string>()
+            set.add(r.subjectId)
+            classSubjectsByExam.set(r.examId, set)
+          }
+          const maxByExamSubject = new Map(cfgRows.map((c) => [`${c.examId}:${c.subjectId}`, c.maxMarks]))
+
+          for (const exam of links.map((l) => l.exam)) {
+            const required = cfgByExam.get(exam.id) ?? [...(classSubjectsByExam.get(exam.id) ?? [])].map((subjectId) => ({
+              subjectId,
+              maxMarks: maxByExamSubject.get(`${exam.id}:${subjectId}`) ?? 100,
+            }))
+            const own = ownRows.filter((r) => r.examId === exam.id)
+            const ownBySubject = new Map(own.map((r) => [r.subjectId, r]))
+            let submitted = 0
+            let total = 0
+            let maxTotal = 0
+            for (const req of required) {
+              const row = ownBySubject.get(req.subjectId)
+              const isOutcome = !!row && (row.marksObtained != null || row.status === 'ABSENT')
+              if (isOutcome) {
+                submitted += 1
+                total += row!.marksObtained ?? 0
+                maxTotal += req.maxMarks
+              }
+            }
+            const subjectsTotal = required.length
+            // the canonical declare flow writes "Result Declared"; the
+            // seeded/student-results convention is "Declared" — both mean
+            // the official final result is out
+            const isDeclared = exam.resultStatus === 'Declared' || exam.resultStatus === 'Result Declared'
+            const state: StudentExamStateDto['state'] =
+              submitted === 0 || subjectsTotal === 0
+                ? 'NOT_STARTED'
+                : submitted < subjectsTotal
+                  ? 'IN_PROGRESS'
+                  : isDeclared
+                    ? 'FINALIZED'
+                    : 'READY'
+            exams.push({
+              examId: exam.id,
+              examName: exam.name,
+              examDate: exam.startDate ? exam.startDate.toISOString().slice(0, 10) : null,
+              type: exam.type,
+              session: exam.session,
+              resultStatus: exam.resultStatus,
+              state,
+              subjectsSubmitted: submitted,
+              subjectsTotal,
+              percentage: submitted > 0 && maxTotal > 0 ? Math.round((total / maxTotal) * 1000) / 10 : null,
+              partial: submitted > 0 && submitted < subjectsTotal,
+            })
+          }
+          // session-timeline order (earliest → latest) — the record reads
+          // like the spec's §12 history: completed exams first, pending
+          // future exams at the bottom where "Not started" belongs
+          exams.sort((a, b) =>
+            (a.examDate ?? a.examName).localeCompare(b.examDate ?? b.examName),
+          )
+        }
+      }
+
       // ── canonical fee ledger (class teacher only) ─────────────────────
       const fees: StudentFeesDto | null = isClassTeacher
         ? deriveStudentFees(feeRows, txnRows, endOfToday)
@@ -200,7 +327,7 @@ export async function GET(
         isClassTeacher,
         taughtSubjects,
         attendance: deriveAttendanceSummary(attRows),
-        academics: { latestExam },
+        academics: { latestExam, exams },
         fees,
         growth: {
           score: growth ?? null,
