@@ -52,6 +52,11 @@ export interface ConversationSummary {
   id: string
   category: ConversationCategory
   pinned: boolean
+  /** manual "needs reply" flag persisted on the row (a latest message from
+   *  the parent ALSO implies it — the UI ORs the two) */
+  needsReply: boolean
+  /** teacher-side archive — archived threads leave the default list view */
+  archived: boolean
   createdAt: string
   lastMessageAt: string | null
   /** parent messages the teacher has not read yet */
@@ -77,6 +82,8 @@ export interface ThreadPayload {
     id: string
     category: ConversationCategory
     pinned: boolean
+    needsReply: boolean
+    archived: boolean
     createdAt: string
     parent: { id: string; name: string; phone: string | null }
     student: StudentRef
@@ -92,13 +99,19 @@ export interface MessageTemplateItem {
   category: string
 }
 
-/** A student the teacher may start a conversation about (has a linked guardian user). */
+/** A student in the teacher's authorized scope the Communication Hub can
+ *  address — the guardian fields power parent threads; `studentUserId`
+ *  powers direct student messages (present only when the school has issued
+ *  the student an active account, which is the policy gate for the
+ *  student audience). */
 export interface ParentLinkableStudent {
   student: StudentRef
   guardianName: string | null
   guardianPhone: string | null
   parentUserId: string | null
   existingConversationId: string | null
+  /** User.id of the student's own account (null = no account → cannot receive) */
+  studentUserId: string | null
 }
 
 export interface ParentConnectStats {

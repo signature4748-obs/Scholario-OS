@@ -198,10 +198,19 @@ export async function sendParentThreadMessage(
   return d.message
 }
 
-/** PATCH /api/teacher/parent-connect/[conversationId] — pin / re-categorize. */
+/** PATCH /api/teacher/parent-connect/[conversationId] — persist conversation
+ *  state: pin / re-categorize / needs-reply / archive / mark-read /
+ *  mark-unread (all flags live on the row — never React state). */
 export async function patchParentConversation(
   conversationId: string,
-  patch: { pinned?: boolean; category?: ConversationCategory },
+  patch: {
+    pinned?: boolean
+    category?: ConversationCategory
+    needsReply?: boolean
+    archived?: boolean
+    markRead?: boolean
+    markUnread?: boolean
+  },
 ): Promise<void> {
   await commRequest(`/api/teacher/parent-connect/${conversationId}`, {
     method: 'PATCH',
@@ -309,6 +318,49 @@ export async function sendDirectMessage(
   return d.message
 }
 
+/** PATCH /api/teacher/communication/direct/[userId] — persist the viewer's
+ *  direct-thread state (pin / archive / needs-reply / mark-read /
+ *  mark-unread — DirectThreadState rows in the database). */
+export async function patchDirectThread(
+  counterpartId: string,
+  patch: {
+    pinned?: boolean
+    archived?: boolean
+    needsReply?: boolean
+    markRead?: boolean
+    markUnread?: boolean
+  },
+): Promise<void> {
+  await commRequest(`/api/teacher/communication/direct/${counterpartId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+}
+
+export interface ClassGroupMessageResult {
+  classLabel: string
+  audience: 'parents' | 'students' | 'everyone'
+  parentsReached: number
+  studentsReached: number
+  parentConversationIds: string[]
+  totalStudents: number
+}
+
+/** POST /api/teacher/communication/message-class — a class group message to
+ *  the teacher's OWN appointed class. Real rows: one ParentMessage per
+ *  guardian thread (upserted) and/or one Message per student account. */
+export async function sendClassGroupMessage(input: {
+  classId: string
+  audience: 'parents' | 'students' | 'everyone'
+  message: string
+  category?: ConversationCategory
+}): Promise<ClassGroupMessageResult> {
+  return commRequest<ClassGroupMessageResult>('/api/teacher/communication/message-class', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 // ─── Announcements ─────────────────────────────────────────────────────
 
 export interface AnnouncementResult {
@@ -316,17 +368,23 @@ export interface AnnouncementResult {
   title: string
   audience: string
   priority: string
+  publishAt: string | null
+  expiresAt: string | null
   createdAt: string
 }
 
-/** POST /api/teacher/communication/announcement — publish (permission-gated
- * on the client via the teachers-store; the server re-validates payload +
- * audience whitelist). */
+/** POST /api/teacher/communication/announcement — publish (permission-split:
+ *  class-scoped audiences need the class-teacher appointment; school-wide
+ *  audiences need the 'announcements' position permission — both re-checked
+ *  server-side). */
 export async function publishAnnouncement(input: {
   title: string
   message: string
+  /** structured audience: school-wide tag or class:<id> / class-parents:<id> / class-students:<id> */
   audience: string
   priority: string
+  publishAt?: string | null
+  expiresAt?: string | null
 }): Promise<AnnouncementResult> {
   return commRequest<AnnouncementResult>('/api/teacher/communication/announcement', {
     method: 'POST',

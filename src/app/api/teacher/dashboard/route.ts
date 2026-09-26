@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf, requireTeacher, authorizedStudentWhere } from '@/lib/teacher-hub'
 import { getTeachingAssignments, getLessonPlan } from '@/lib/lesson-planner'
-import { audienceAllows } from '@/lib/notices'
+import { audienceAllows, notificationVisibilityWhere } from '@/lib/notices'
 import { dayKey } from '@/lib/lesson-schedule'
 import { growthScoresFor } from '@/lib/growth/service'
 import { bandOf } from '@/lib/growth/shared'
@@ -137,7 +137,7 @@ export async function GET() {
       // ── Latest notices for staff ─────────────────────────────────────
       const noticeRows = (
         await db.notification.findMany({
-          where: { schoolId },
+          where: { schoolId, ...notificationVisibilityWhere() },
           include: { sender: { select: { name: true } } },
           orderBy: { createdAt: 'desc' },
           take: 40,

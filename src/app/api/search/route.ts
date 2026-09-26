@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withUser } from '@/lib/api'
 import { requireStudent, authorizedMaterials } from '@/lib/learning'
 import { requireTeacher, authorizedStudentWhere, classLabelOf } from '@/lib/teacher-hub'
+import { notificationVisibilityWhere } from '@/lib/notices'
 import type { SearchResultItem } from '@/lib/search-service/types'
 
 export const runtime = 'nodejs'
@@ -162,6 +163,7 @@ export async function GET(req: NextRequest) {
     const notifications = await db.notification.findMany({
       where: {
         schoolId,
+        ...notificationVisibilityWhere(),
         OR: [{ title: { contains: q } }, { message: { contains: q } }],
       },
       take: 18,

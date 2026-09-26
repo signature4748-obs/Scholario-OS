@@ -94,6 +94,32 @@ model School {
   growthRules       GrowthRule[]
   growthEvalRuns    GrowthEvalRun[]
   growthSetting     GrowthSetting?
+
+  // Communication Hub — per-user direct-thread state rows
+  directThreadStates DirectThreadState[]
+}
+
+/// Per-user conversation state for DIRECT (Message-row) threads. The
+/// Message engine itself is 1:1 and stateless; pin / archive / needs-reply
+/// are viewer-owned flags persisted here (one row per user↔counterpart).
+model DirectThreadState {
+  id            String   @id @default(cuid())
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// the viewer who owns this state row
+  userId        String
+  user          User     @relation("DirectThreadStateOwner", fields: [userId], references: [id], onDelete: Cascade)
+  /// the other participant of the thread this state belongs to
+  counterpartId String
+  counterpart   User     @relation("DirectThreadStateCounterpart", fields: [counterpartId], references: [id], onDelete: Cascade)
+  pinned        Boolean  @default(false)
+  archived      Boolean  @default(false)
+  needsReply    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, counterpartId])
+  @@index([schoolId, userId])
 }
 
 model User {
@@ -140,6 +166,11 @@ model User {
   // Teacher Exam Proctoring — duty sign-offs + reported irregularities
   examDutyCompletions  ExamDutyCompletion[]
   reportedExamIncidents ExamIncident[]
+
+  // Communication Hub — per-user direct-thread state (pin / archive /
+  // needs-reply persist in the DB, never in React state or localStorage)
+  ownedDirectThreadStates     DirectThreadState[] @relation("DirectThreadStateOwner")
+  counterpartDirectThreadStates DirectThreadState[] @relation("DirectThreadStateCounterpart")
 }
 
 model Teacher {
@@ -855,6 +886,10 @@ model Notification {
   senderId  String?
   sender    User?    @relation(fields: [senderId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
+  /// scheduled publish — null/absent = already public (readers filter it)
+  publishAt DateTime?
+  /// optional expiry — readers stop serving the row after this instant
+  expiresAt DateTime?
 
   reads NotificationRead[]
 }
@@ -1652,6 +1687,11 @@ model ParentConversation {
   /// general | academic | attendance | behavior | wellbeing | urgent
   category      String    @default("general")
   pinned        Boolean   @default(false)
+  /// manual "needs reply" flag set by the teacher (persists across sessions;
+  /// a latest message from the parent also implies it at read time)
+  needsReply    Boolean   @default(false)
+  /// teacher-side archive — archived threads leave the default list view
+  archived      Boolean   @default(false)
   lastMessageAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

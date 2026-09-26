@@ -2,23 +2,28 @@
 
 /**
  * communication/index — the Communication Hub composition: the teacher's
- * single messaging surface.
+ * single messaging + announcements surface.
  *
- *   · quiet context toolbar (the app bar carries the module name)
- *   · 4 honest summary cards — Unread / Active Conversations / Needs Reply /
- *     Follow-ups — every number is a real count from
+ *   · 4 honest summary cards — Unread / Active Conversations / Needs
+ *     Reply / Follow-ups — every number is a real count from
  *     /api/teacher/communication (no delivery rates, no fabricated metrics)
  *   · MESSAGES tab — the proven two-pane workspace: LEFT the unified
- *     conversation list (parent threads + direct staff threads), RIGHT the
- *     selected thread. Follow-ups underneath.
- *   · ANNOUNCEMENTS tab — Notification rows this role may see
- *     (audienceAllows), expandable inline, persistent "Mark as read",
- *     plus what the teacher has actually sent.
- *   · New Message — recipient type is permission-aware by construction:
- *     guardians of in-scope students, or same-school staff.
- *   · New Announcement — rendered ONLY when the teacher's active position
- *     permissions include 'announcements' (teachers-store, the same system
- *     that gates the teacher nav). Normal teachers never see it.
+ *     conversation list (parent threads + direct threads incl. students)
+ *     with per-row kebab actions (open / read / unread / pin / needs
+ *     reply / archive — ALL persisted), RIGHT the selected thread.
+ *     Follow-ups underneath.
+ *   · ANNOUNCEMENTS tab — searchable, audience-filtered Notification rows
+ *     this role may see, expandable inline, persistent "Mark as read".
+ *   · SENT tab — what the teacher has actually sent (parent + direct).
+ *
+ * Composers:
+ *   · New Message — audience-aware by construction: guardians of in-scope
+ *     students (multi-select), in-scope students with accounts, the
+ *     class-teacher's OWN class groups (Parents / Students / Everyone) or
+ *     same-school staff.
+ *   · New Announcement — rendered for class teachers (class-scoped
+ *     audiences) and, when the position permission exists, school-wide
+ *     audiences. The server enforces the same split independently.
  *
  * Parent Connect was absorbed here: the parent-thread engine
  * (/api/teacher/parent-connect) is unchanged, so threads stay unified.
@@ -51,11 +56,18 @@ import { getTeacherActivePermissions, useTeachersStore } from '@/lib/store/teach
 import type { ThreadMessage } from '@/lib/teacher-hub-types'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ConversationList, directKey, parentKey, type SelectionKey } from './conversation-list'
+import {
+  ConversationList,
+  directKey,
+  parentKey,
+  type RowActions,
+  type SelectionKey,
+} from './conversation-list'
 import { DirectThreadView } from './direct-thread-view'
 import { FollowUpDialog, type FollowUpContext } from './follow-up-dialog'
 import { FollowUpsCard } from './follow-ups-card'
 import {
+  patchDirectThread,
   patchParentConversation,
   useCommunicationHub,
   useDirectThread,
@@ -83,7 +95,7 @@ const SKELETON_STATS: HubStat[] = [
   { key: 'followups', label: 'Follow-ups', value: null, icon: AlarmClock, tone: 'violet' },
 ]
 
-type Tab = 'messages' | 'announcements'
+type Tab = 'messages' | 'announcements' | 'sent'
 
 export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string) => void }) {
   const { data, loading, error, reload } = useCommunicationHub()
@@ -181,7 +193,7 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
     useFocusStore.getState().clearFocus()
   }, [data])
 
-  // ── Announcement permission gate (REAL check — no fake grants) ────────
+  // ── Permissions (REAL checks — no fake grants) ────────────────────────
   const { teachers, positionsList } = useTeachersStore()
   const currentTeacher = teachers.find((t) => t.id === 'T-014') || teachers[0]
   const isRelieved =
@@ -196,7 +208,10 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
         : [],
     [currentTeacher, isRelieved, positionsList],
   )
-  const canAnnounce = activePermissions.includes('announcements')
+  const canAnnounceSchoolWide = activePermissions.includes('announcements')
+  const isClassTeacher = (data?.teacher.classes.length ?? 0) > 0
+  /** class-scoped announcements need the appointment; school-wide the permission */
+  const canAnnounce = canAnnounceSchoolWide || isClassTeacher
 
   // ── Handlers ──────────────────────────────────────────────────────────
 
@@ -228,6 +243,7 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
             ? {
                 ...c,
                 lastMessageAt: message.createdAt,
+                needsReply: false,
                 lastMessage: {
                   body: message.body,
                   fromTeacher: true,
@@ -258,6 +274,9 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
           lastMessageAt: message.createdAt,
           unread: 0,
           awaitingReply: false,
+          pinned: existing?.pinned ?? false,
+          archived: existing?.archived ?? false,
+          needsReply: false,
         }
         if (!existing) return [row, ...prev]
         return prev.map((c) => (c.counterpartId === counterpartId ? row : c))
@@ -283,6 +302,85 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
     [reload],
   )
 
+  // ── Row action menu (kebab) — every action persists server-side ───────
+  const rowActions: RowActions = useMemo(
+    () => ({
+      onTogglePin: (key, pinned) => {
+        if (key.startsWith('pc:')) {
+          void handleTogglePin(key.slice(3), pinned)
+        } else {
+          const id = key.slice(3)
+          setDirects((prev) =>
+            [...prev]
+              .sort((a, b) => {
+                if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+                if (a.archived !== b.archived) return a.archived ? 1 : -1
+                return Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt)
+              })
+              .map((c) => (c.counterpartId === id ? { ...c, pinned } : c)),
+          )
+          patchDirectThread(id, { pinned }).catch((e: unknown) => {
+            toast.error('Could not update the conversation', {
+              description: e instanceof Error ? e.message : undefined,
+            })
+            reload()
+          })
+        }
+      },
+      onMarkRead: (key) => {
+        if (key.startsWith('pc:')) {
+          const id = key.slice(3)
+          setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)))
+          patchParentConversation(id, { markRead: true }).catch(() => reload())
+        } else {
+          const id = key.slice(3)
+          setDirects((prev) => prev.map((c) => (c.counterpartId === id ? { ...c, unread: 0 } : c)))
+          patchDirectThread(id, { markRead: true }).catch(() => reload())
+        }
+      },
+      onMarkUnread: (key) => {
+        if (key.startsWith('pc:')) {
+          const id = key.slice(3)
+          setConversations((prev) =>
+            prev.map((c) => (c.id === id ? { ...c, unread: Math.max(1, c.unread) } : c)),
+          )
+          patchParentConversation(id, { markUnread: true }).catch(() => reload())
+        } else {
+          const id = key.slice(3)
+          setDirects((prev) =>
+            prev.map((c) => (c.counterpartId === id ? { ...c, unread: Math.max(1, c.unread) } : c)),
+          )
+          patchDirectThread(id, { markUnread: true }).catch(() => reload())
+        }
+      },
+      onSetNeedsReply: (key, needsReply) => {
+        if (key.startsWith('pc:')) {
+          const id = key.slice(3)
+          setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, needsReply } : c)))
+          patchParentConversation(id, { needsReply }).catch(() => reload())
+        } else {
+          const id = key.slice(3)
+          setDirects((prev) => prev.map((c) => (c.counterpartId === id ? { ...c, needsReply } : c)))
+          patchDirectThread(id, { needsReply }).catch(() => reload())
+        }
+      },
+      onToggleArchive: (key, archived) => {
+        if (key.startsWith('pc:')) {
+          const id = key.slice(3)
+          setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, archived } : c)))
+          if (archived && selectedKey === key) setSelectedKey(null)
+          patchParentConversation(id, { archived }).catch(() => reload())
+        } else {
+          const id = key.slice(3)
+          setDirects((prev) => prev.map((c) => (c.counterpartId === id ? { ...c, archived } : c)))
+          if (archived && selectedKey === key) setSelectedKey(null)
+          patchDirectThread(id, { archived }).catch(() => reload())
+        }
+      },
+    }),
+    [handleTogglePin, reload, selectedKey],
+  )
+
   const handleMarkFollowUp = useCallback((ctx: FollowUpContext) => {
     setFollowUpCtx(ctx)
     setFollowUpOpen(true)
@@ -293,19 +391,27 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
     reload()
   }, [reload])
 
-  const handleOpenedParent = useCallback((conversationId: string) => {
-    setMessageOpen(false)
-    setSelectedKey(parentKey(conversationId))
-    setTab('messages')
-    reload()
-  }, [reload])
+  const handleOpenedParent = useCallback(
+    (conversationId: string) => {
+      setMessageOpen(false)
+      if (conversationId) {
+        setSelectedKey(parentKey(conversationId))
+        setTab('messages')
+      }
+      reload()
+    },
+    [reload],
+  )
 
-  const handleOpenedDirect = useCallback((counterpartId: string) => {
-    setMessageOpen(false)
-    setSelectedKey(directKey(counterpartId))
-    setTab('messages')
-    reload()
-  }, [reload])
+  const handleOpenedDirect = useCallback(
+    (counterpartId: string) => {
+      setMessageOpen(false)
+      setSelectedKey(directKey(counterpartId))
+      setTab('messages')
+      reload()
+    },
+    [reload],
+  )
 
   // ── First load: skeleton · error without data: quiet retry state ─────
   if (loading && !data) {
@@ -348,7 +454,7 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
       key: 'active',
       label: 'Active Conversations',
       value: stats.activeConversations,
-      context: `${stats.conversations} parent · ${stats.directConversations} staff`,
+      context: `${stats.conversations} parent · ${stats.directConversations} staff & students`,
       icon: MessagesSquare,
       tone: 'sky',
     },
@@ -385,6 +491,12 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
       label: 'Announcements',
       icon: <Megaphone className="h-3.5 w-3.5" aria-hidden="true" />,
       count: data.announcements.length,
+    },
+    {
+      id: 'sent',
+      label: 'Sent',
+      icon: <Send className="h-3.5 w-3.5" aria-hidden="true" />,
+      count: stats.messagesSent,
     },
   ]
 
@@ -441,6 +553,9 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
               className={cn(
                 'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
                 tab === t.id ? 'bg-primary-foreground/20' : 'bg-muted',
+                t.id === 'announcements' && unreadAnnouncements > 0 && tab !== t.id
+                  ? 'bg-primary/15 text-primary'
+                  : undefined,
               )}
             >
               {t.count}
@@ -451,8 +566,9 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
 
       {tab === 'messages' ? (
         <div className="space-y-4">
-          {/* Two-pane workspace — the proven Principal messaging layout,
-              powered by the teacher's real threads. */}
+          {/* Two-pane workspace — desktop/tablet: list | thread. Mobile:
+              tapping a conversation replaces the pane (full-screen thread
+              with a back button) — never squeezed side by side. */}
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="grid h-[540px] lg:h-[600px] lg:grid-cols-[340px_1fr]">
               <div
@@ -467,6 +583,7 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
                   activeKey={selectedKey}
                   onSelect={setSelectedKey}
                   onNewMessage={() => setMessageOpen(true)}
+                  actions={rowActions}
                 />
               </div>
               <div className={cn('flex min-h-0 min-w-0 flex-col', !selectedKey && 'hidden lg:flex')}>
@@ -501,7 +618,7 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
                   <HubEmptyState
                     icon={CheckCheck}
                     title="Select a conversation"
-                    hint="Choose a parent thread or staff conversation from the list to read and reply."
+                    hint="Choose a parent thread or a direct conversation from the list to read and reply."
                     className="h-full"
                   />
                 )}
@@ -515,14 +632,17 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
             onChanged={reload}
           />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      ) : tab === 'announcements' ? (
+        <div className="grid grid-cols-1 gap-4">
           <AnnouncementsCard
             announcements={data.announcements}
             isRead={isRead}
             onMarkRead={handleMarkRead}
             onNewAnnouncement={canAnnounce ? () => setAnnouncementOpen(true) : undefined}
           />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
           <SentMessagesCard
             messages={data.sentMessages}
             onNewMessage={() => setMessageOpen(true)}
@@ -538,15 +658,18 @@ export function CommunicationModule({ onNavigate }: { onNavigate?: (key: string)
         templates={data.templates}
         staffDirectory={data.staffDirectory}
         teacherName={data.teacher.name}
+        classes={data.teacher.classes}
         onOpenedParent={handleOpenedParent}
         onOpenedDirect={handleOpenedDirect}
+        onSent={reload}
       />
 
       {canAnnounce && (
         <CreateAnnouncementDialog
           open={announcementOpen}
           onOpenChange={setAnnouncementOpen}
-          classLabels={data.teacher.classLabels}
+          classes={data.teacher.classes}
+          canAnnounceSchoolWide={canAnnounceSchoolWide}
           onPublished={reload}
         />
       )}

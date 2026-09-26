@@ -2803,3 +2803,54 @@ Stage Summary:
 - Fixed latent bugs along the way: summary-strip empty-column when showPercentage=false; co-scholastic orphan cells when >4 areas; school header off-center on mobile.
 - QA artifacts: `.qa/polish-attendance-1440.png`, `.qa/polish-attendance-390.png`, `.qa/polish-marksheet-print.pdf`, `.qa/polish-print-page-1.png`.
 - Known-remaining (unchanged from Task 2): no live FINALIZED exam yet; co-scholastic grades honest "—" until a canonical source exists; grade-scale fallback labelled "(school default)" when the school table is empty.
+
+---
+Task ID: 4
+Agent: Z.ai Code (main orchestrator)
+Task: COMMUNICATION HUB + STUDENT GROWTH UX REFINEMENT — build the real communication workflows (class/group messaging, permission-split announcements, persisted pin/read/needs-reply/archive) and unify Performance Analytics into Student Growth.
+
+Work Log:
+- SCHEMA (prisma/schema.prisma + `bun run db:push`):
+  * ParentConversation: + needsReply, + archived (Boolean flags, persisted).
+  * NEW DirectThreadState model (per-user pin/archive/needs-reply for direct Message threads; unique [userId, counterpartId]).
+  * Notification: + publishAt / expiresAt (scheduled publish + optional expiry).
+- NOTICES (src/lib/notices.ts — rewritten):
+  * Audience vocabulary: CLASS:<label> (students+parents), CLASS_STUDENTS:<label> (students), CLASS_PARENTS:<label> (parents); staff roles see all for oversight.
+  * audienceAllows: parents now match class audiences via their wards' classes (classMatches: exact/grade-wide/leading-grade-number); students only CLASS:/CLASS_STUDENTS:.
+  * NEW notificationVisibilityWhere() (publishAt ≤ now, not expired) applied to ALL 8 notification readers (notifications-feed, announcements, notifications, student/notices, search, student/dashboard, teacher/dashboard, teacher/communication).
+- COMMUNICATION BACKEND:
+  * GET /api/teacher/communication: merges DirectThreadState into direct summaries (pinned-first, archived-last sort); parent summaries carry needsReply/archived; students list now covers ALL in-scope students with studentUserId (ACTIVE account = the student-messaging policy gate); teacher payload carries classes [{id,label}].
+  * PATCH /api/teacher/parent-connect/[id]: + needsReply/archived/markRead/markUnread (markUnread flips ONLY the latest parent message readAt→null).
+  * NEW PATCH /api/teacher/communication/direct/[userId]: pin/archive/needsReply via DirectThreadState upsert + markRead/markUnread on Message rows.
+  * NEW POST /api/teacher/communication/message-class: class GROUP messaging (parents → real ParentMessage per guardian thread upserted; students → real Message rows to ACTIVE accounts; everyone → both). Authorization: classId MUST be in ctx.classTeacherOf — subject-taught classes rejected.
+  * POST /api/teacher/communication/announcement (rewritten): structured audiences (class/class-parents/class-students:<classId> + school-wide tags), publishAt/expiresAt, SPLIT permissions — class-scoped needs only the class-teacher appointment; school-wide needs the 'announcements' position permission (fail-closed).
+- COMMUNICATION FRONTEND (modules/communication/*):
+  * conversation-list.tsx: per-row kebab action menu (Open · Mark read/unread · Pin/Unpin · Mark/Clear needs reply · Archive/Unarchive — ALL persisted via the PATCH routes); pinned rows pinned-first with pin indicator; 'Archived' filter chip (archived hidden from all other views); needs-reply + follow-up icons.
+  * new-message-dialog.tsx: full audience model — Parents (multi-select guardians of in-scope students), Students (in-scope with active accounts), My Class (ONLY appointed classes: Parents/Students/Everyone groups with live recipient estimates), Staff. Real sends through the canonical endpoints.
+  * create-announcement-dialog.tsx: audience selector (class Everyone/Parents/Students + school-wide when permitted), priority, publishAt (schedule), expiresAt, PREVIEW step before publish.
+  * announcements-card.tsx: search + audience filter chips (All / My classes / School).
+  * index.tsx: Messages | Announcements | Sent tabs; canAnnounce = class-teacher OR 'announcements' permission; rowActions wiring; two-pane desktop + full-screen mobile thread (back button) preserved.
+  * hooks.ts/types.ts: patchDirectThread, sendClassGroupMessage, structured announcement publish, DirectConversationSummary (+pinned/archived/needsReply), teacher.classes.
+- STUDENT GROWTH UNIFICATION:
+  * nav-registry.tsx: 'Insights & Reviews' (Performance Analytics) group REMOVED; sidebar = Overview / Academics & Teaching (incl. Student Growth) / Class Teacher Hub / In-charge Duties / Communication / Account.
+  * teacher-panel.tsx: 'analytics' removed from TEACHER_MODULE_KEYS; normalizeModuleKey redirects analytics→growth (deep-link + session memory); effect normalizes stale 'analytics' state + strips the retired ?module=analytics param (prevents lazy-compile remount bounce).
+  * module-router.tsx: TeacherAnalyticsModule lazy import + render removed (no dead route, no duplicate page).
+  * quick-actions.tsx: 'View Analytics' → 'Student Growth' (key 'growth').
+  * /api/teacher/analytics: + assessments[] (every configured∪graded exam, newest first: status, studentsGraded/studentCount, classAveragePct, highest/lowest, subjectsEntered/Configured, entered/expected — ungraded exams NEVER show completed) + improvingStudents[] (real exam-over-exam avg% deltas, two most recent graded exams, positive only) + dateMs on trend points/assessments.
+  * analytics/types.ts: AssessmentSummary, ImprovingStudent interfaces + loading in useAnalytics.
+  * student-growth/index.tsx (rebuilt): unified page — header context, controls (Class · Time period · Subject), 4 summary cards (Average Growth · Class/Subject Average · Students Improving · Needs Attention), Growth Overview (ring+bands) + 8-week trend, NEW academic-performance.tsx (animated subject bars from real marks; subject filter highlight), NEW assessment-performance.tsx (honest statuses + completion bars), Improving students card, Performance Trend + Attendance Trend (reused analytics cards, time-filtered), Students Needing Attention (reused), Point Activity (reused). Two canonical engines (useGrowth + useAnalytics) — no second analytics system.
+  * ANIMATIONS (subtle, 150–900ms, prefers-reduced-motion respected): hub-stat-cards now COUNT UP numeric values (reduced-motion: static); subject/marks bars animate width 0→pct; cards/rows fade+slide with small stagger; suffix support (%) on stat values.
+- QA (lint ✓ clean, tsc ✓ clean, dev.log ✓ no new errors; agent-browser E2E as rohan.mehta):
+  * Sidebar: Performance Analytics gone; Student Growth present; ?module=analytics → redirects to Student Growth (param stripped so lazy-compile remounts don't bounce).
+  * Student Growth: 4 summary cards (86 avg growth, 81% class avg, 0 improving honest "needs two graded assessments", 0 attention), real subject bars (Mathematics 84.9% · English 82.9% · Social Science 82.2% · Science 78.9% · Hindi 76.2% — 11 of 11 graded each), Assessment Performance (PA1: Graded, 11/11, 81%, 89.6%·68.4%, 5/5 subjects, 55/55 marks), attendance weekly trend, honest empty performance trend (1 graded exam), point activity 61 events. VLM 9/10.
+  * Communication: 4 stat cards real counts; Messages/Announcements/Sent tabs; kebab actions WORK + PERSIST (pin verified across full reload; needs-reply cleared via UI → DB; mark-unread flips exactly 1 latest message → badge shows → mark-read clears); New Message composer has Parents/Students/My Class/Staff with real estimates; class group message to Grade 9-A Parents → 9 REAL ParentMessage rows landed in guardian threads; announcement composer class-scoped for Rohan (school-wide hidden, no permission) with preview step → publish → live list update (14→15→16 counts verified); announcements search + My classes filter.
+  * SECURITY: forged classId rejected; real subject-taught class (Grade 10-B, teaches but not class teacher) rejected; school-wide announcement without permission rejected — all server-side.
+  * AUDIENCE VOCABULARY E2E: CLASS_STUDENTS:Grade 9-A announcement visible to student Aarav (notices API), CLASS_PARENTS: NOT visible to the student; student path unbroken after notices.ts rewrite.
+  * RESPONSIVE: zero horizontal overflow at 320/390/768/1024/1440 on BOTH modules; mobile 390 conversation = full-screen thread + back button; VLM hub 9/10.
+  * QA test data cleaned from DB (2 QA notifications round 1, 9 QA parent messages + 3 empty conversations, 2 audience-check notifications, neutral thread state rows).
+- Screenshots: .qa/growth-1440.png, .qa/hub-messages-1440.png, .qa/hub-announcements-1440.png.
+
+Stage Summary:
+- The Communication Hub is now an active workflow surface: class-group messaging writes real rows through the canonical engines, announcements are permission-split (appointment vs position permission) with scheduled publish/expiry honoured by every feed reader, and pin/read/needs-reply/archive persist in the database (ParentConversation flags + DirectThreadState rows).
+- Student Growth is the single unified growth + performance experience: the former Performance Analytics engine feeds it (same API, no duplicate system), the sidebar entry is gone with a compatibility redirect, and every metric is real (marks, assessments, attendance, growth scores, exam-over-exam deltas).
+- Known-remaining: only ONE graded exam exists in the demo data so Improving/Performance-Trend show honest empty states until a second exam is graded; position permissions for school-wide announcements are still read from the canonical seed roster server-side (in-session principal edits to positions are not yet persisted server-side — pre-existing honest limitation); parent-facing web surface for parent threads is the same as before (no parent panel exists — parents are reached through their threads, which remain the canonical store).

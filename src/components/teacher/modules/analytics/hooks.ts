@@ -34,6 +34,7 @@ export function useAnalytics() {
   const [data, setData] = useState<AnalyticsPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [staleError, setStaleError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [reloadToken, setReloadToken] = useState(0)
   const dataRef = useRef<AnalyticsPayload | null>(null)
   dataRef.current = data
@@ -44,6 +45,7 @@ export function useAnalytics() {
     let cancelled = false
     const hadData = dataRef.current != null
     if (hadData) setStaleError(null)
+    if (!hadData) setLoading(true)
     requestAnalytics()
       .then((payload) => {
         if (cancelled) return
@@ -61,10 +63,13 @@ export function useAnalytics() {
           setError(message)
         }
       })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
   }, [reloadToken])
 
-  return { data, error, staleError, reload }
+  return { data, error, staleError, loading, reload }
 }

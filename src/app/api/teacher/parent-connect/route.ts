@@ -73,10 +73,10 @@ export async function GET() {
           orderBy: { sortOrder: 'asc' },
         }),
         db.student.findMany({
-          where: { guardianId: { not: null }, ...authorizedStudentWhere(ctx) },
+          where: { ...authorizedStudentWhere(ctx) },
           include: {
             class: { select: { name: true, section: true } },
-            user: { select: { name: true } },
+            user: { select: { id: true, name: true, status: true } },
           },
           orderBy: { rollNo: 'asc' },
           take: 300,
@@ -139,6 +139,8 @@ export async function GET() {
           id: c.id,
           category: (CATEGORIES.includes(c.category) ? c.category : 'general') as ConversationSummary['category'],
           pinned: c.pinned,
+          needsReply: c.needsReply,
+          archived: c.archived,
           createdAt: c.createdAt.toISOString(),
           lastMessageAt: c.lastMessageAt ? c.lastMessageAt.toISOString() : null,
           unread: unreadByConversation.get(c.id) ?? 0,
@@ -226,6 +228,10 @@ export async function GET() {
           guardianPhone: s.guardianPhone ?? null,
           parentUserId: s.guardianId ?? null,
           existingConversationId: existing,
+          // the school's policy gate for the student audience: an ACTIVE
+          // student account (issued by the school) is what makes a student
+          // directly reachable — no account, no direct messages
+          studentUserId: s.user?.status === 'ACTIVE' ? s.user.id : null,
         }
       })
 

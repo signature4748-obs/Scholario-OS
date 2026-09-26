@@ -2,7 +2,7 @@
 
 /**
  * hub-stat-cards — the shared summary-card system for the Teacher Hub
- * modules (Parent Connect / Student Behavior).
+ * modules.
  *
  * Visual recipe copied VERBATIM from "My Attendance" (personal-attendance.tsx),
  * the documented design benchmark:
@@ -12,12 +12,45 @@
  *   value font-display text-2xl sm:text-3xl font-bold tabular-nums
  *   context text-[10px] text-muted-foreground mt-1
  *   framer-motion entrance (opacity/y, 0.05 stagger, respects reduced motion)
+ *   numeric values gently COUNT UP from 0 → value (reduced-motion: static)
  * No shadows, no icon containers, no giant cards.
  */
 
+import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+/** Count-up hook — animates 0 → value on mount (reduced motion: instant). */
+function useCountUp(value: number, duration = 700): number {
+  const reduce = useReducedMotion()
+  const [display, setDisplay] = useState(reduce ? value : 0)
+  const valueRef = useRef(value)
+  useEffect(() => {
+    valueRef.current = value
+    if (reduce) {
+      setDisplay(value)
+      return
+    }
+    let raf = 0
+    const start = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3) // ease-out cubic
+      setDisplay(Math.round(valueRef.current * eased))
+      if (t < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [value, duration, reduce])
+  return display
+}
+
+/** The animated numeric value line (used when the stat carries a bare number). */
+function CountUpValue({ value }: { value: number }) {
+  const shown = useCountUp(value)
+  return <>{shown}</>
+}
 
 export type HubStatTone = 'emerald' | 'amber' | 'rose' | 'sky' | 'violet' | 'slate'
 
@@ -31,6 +64,8 @@ export interface HubStat {
   tone?: HubStatTone
   /** optional denominator shown beside the value ("11 / 14") */
   total?: number
+  /** optional unit rendered right after the value ("%", " pts") */
+  suffix?: string
   /** optional 0–1 fraction rendered as a hairline progress bar */
   progress?: number
   /** optional override for the value line (e.g. text-valued stats: truncate, smaller size) */
@@ -128,11 +163,17 @@ export function HubStatCards({
                 >
                   {stat.value ?? '—'}
                 </motion.span>
+              ) : typeof stat.value === 'number' ? (
+                /* bare numbers gently count up from 0 → value */
+                <CountUpValue value={stat.value} />
               ) : (
                 <>{stat.value ?? '—'}</>
               )}
               {stat.total != null && (
                 <span className="text-base font-normal text-muted-foreground"> / {stat.total}</span>
+              )}
+              {typeof stat.value === 'number' && stat.suffix && (
+                <span className="text-lg font-bold">{stat.suffix}</span>
               )}
             </p>
             {stat.progress != null && (

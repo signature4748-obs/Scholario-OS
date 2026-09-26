@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withUser } from '@/lib/api'
-import { audienceAllows, audienceLabel } from '@/lib/notices'
+import { audienceAllows, audienceLabel, notificationVisibilityWhere } from '@/lib/notices'
 import {
   requireStudent,
   materialVisibleToStudent,
@@ -289,7 +289,7 @@ export async function GET(_req: NextRequest) {
 
       const noticesSection = async () => {
         const rows = await db.notification.findMany({
-          where: { schoolId: ctx.schoolId },
+          where: { schoolId: ctx.schoolId, ...notificationVisibilityWhere() },
           orderBy: { createdAt: 'desc' },
           take: 40,
           include: {

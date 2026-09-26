@@ -1,17 +1,17 @@
 'use client'
 
 /**
- * communication/announcements-card — the SCHOOL ANNOUNCEMENTS card: the
+ * communication/announcements-card — the ANNOUNCEMENTS pane: the
  * Notification rows this teacher is allowed to see (audience-scoped via
  * audienceAllows, class fan-outs deduped on the server — same rule as the
- * bell feed), newest first. A row expands inline to the full announcement;
- * unread items can be acknowledged ("Mark as read" persists a
- * NotificationRead through the SAME /api/notifications-feed PATCH the bell
- * feed uses, so the state is shared).
+ * bell feed), newest first, as a searchable LIST (not a wall of cards).
+ * A row expands inline to the full announcement; unread items can be
+ * acknowledged ("Mark as read" persists a NotificationRead through the
+ * SAME /api/notifications-feed PATCH the bell feed uses).
  */
 
-import { useState } from 'react'
-import { Check, ChevronDown, Loader2, Megaphone, Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, ChevronDown, Loader2, Megaphone, Plus, Search } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
 import { HubEmptyState } from '@/components/teacher/modules/shared/hub-stat-cards'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,8 @@ import type { CommunicationAnnouncement } from './types'
 
 const THIN_SCROLLBAR =
   '[scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5'
+
+type AudienceFilter = 'all' | 'own' | 'school'
 
 interface AnnouncementsCardProps {
   announcements: CommunicationAnnouncement[]
@@ -38,16 +40,71 @@ export function AnnouncementsCard({
   onNewAnnouncement,
 }: AnnouncementsCardProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [audienceFilter, setAudienceFilter] = useState<AudienceFilter>('all')
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return announcements.filter((a) => {
+      if (audienceFilter === 'own' && !a.ownClass) return false
+      if (audienceFilter === 'school' && a.ownClass) return false
+      if (!q) return true
+      return (
+        a.title.toLowerCase().includes(q) ||
+        a.message.toLowerCase().includes(q) ||
+        a.senderName.toLowerCase().includes(q)
+      )
+    })
+  }, [announcements, query, audienceFilter])
+
+  const ownCount = announcements.filter((a) => a.ownClass).length
 
   return (
-    <GlassCard className="flex flex-col p-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-2.5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          School Announcements
-        </p>
-        <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
-          {announcements.length} visible
-        </span>
+    <GlassCard className="flex flex-col overflow-hidden p-0">
+      <div className="space-y-2.5 border-b border-border bg-muted/30 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            School Announcements
+          </p>
+          <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums">
+            {visible.length} of {announcements.length} visible
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search announcements…"
+              aria-label="Search announcements"
+              className="w-full rounded-lg border border-border bg-card/50 py-1.5 pl-8 pr-3 text-xs outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/50"
+            />
+          </div>
+          <div className="flex shrink-0 gap-1.5" role="group" aria-label="Filter by audience">
+            {([
+              { value: 'all', label: 'All' },
+              { value: 'own', label: `My classes${ownCount ? ` (${ownCount})` : ''}` },
+              { value: 'school', label: 'School' },
+            ] as { value: AudienceFilter; label: string }[])
+              .filter((f) => f.value !== 'own' || ownCount > 0)
+              .map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setAudienceFilter(f.value)}
+                  aria-pressed={audienceFilter === f.value}
+                  className={cn(
+                    'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                    audienceFilter === f.value
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+          </div>
+        </div>
       </div>
 
       {announcements.length === 0 ? (
@@ -67,13 +124,17 @@ export function AnnouncementsCard({
             )
           }
         />
+      ) : visible.length === 0 ? (
+        <p className="px-4 py-10 text-center text-xs text-muted-foreground">
+          No announcements match your search or filter.
+        </p>
       ) : (
         <div
           className={cn('max-h-[26rem] divide-y divide-border/50 overflow-y-auto', THIN_SCROLLBAR)}
           role="list"
           aria-label="School announcements for teachers"
         >
-          {announcements.map((a) => {
+          {visible.map((a) => {
             const read = isRead(a)
             const expanded = expandedId === a.id
             const priority = priorityTone(a.priority)

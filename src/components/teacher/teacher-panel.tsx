@@ -40,13 +40,23 @@ function QuietNoRecord({ label }: { label: string }) {
   )
 }
 
-/** Module keys the ModuleRouter knows — validates ?module= deep-links. */
+/** Module keys the ModuleRouter knows — validates ?module= deep-links.
+ *  ('analytics' is intentionally ABSENT: the former Performance Analytics
+ *  module was merged into Student Growth. Old links are redirected there
+ *  as a compatibility route — see normalizeModuleKey.) */
 const TEACHER_MODULE_KEYS = [
   'dashboard', 'payroll', 'my-attendance', 'my-timetable', 'attendance',
   'lesson-planner', 'marks', 'students', 'app-reviews', 'growth',
-  'class-hub', 'fee-collection', 'analytics', 'settings', 'communication', 'profile',
+  'class-hub', 'fee-collection', 'settings', 'communication', 'profile',
   'fee-management',
 ] as const
+
+/** Compatibility redirect: the retired 'analytics' module → Student Growth
+ *  (the unified growth + performance experience). No dead route, no
+ *  duplicate menu item. */
+function normalizeModuleKey(key: string): string {
+  return key === 'analytics' ? 'growth' : key
+}
 
 /** Per-tab module memory (sessionStorage). The FIRST visit to a lazily-
  *  compiled module (webpack lazyCompilation) triggers a Fast-Refresh FULL
@@ -63,13 +73,13 @@ function initialActiveModule(isRelieved: boolean): string {
   // ?module=<key> deep-link — opens a specific module directly (bookmarks,
   // shared links). Unknown keys fall through to the memory/fallback.
   const requested = new URLSearchParams(window.location.search).get('module')
-  if (requested && (TEACHER_MODULE_KEYS as readonly string[]).includes(requested)) {
-    return requested
+  if (requested && (TEACHER_MODULE_KEYS as readonly string[]).includes(normalizeModuleKey(requested))) {
+    return normalizeModuleKey(requested)
   }
   try {
     const remembered = window.sessionStorage.getItem(MODULE_MEMORY_KEY)
-    if (remembered && (TEACHER_MODULE_KEYS as readonly string[]).includes(remembered)) {
-      return remembered
+    if (remembered && (TEACHER_MODULE_KEYS as readonly string[]).includes(normalizeModuleKey(remembered))) {
+      return normalizeModuleKey(remembered)
     }
   } catch {
     /* storage disabled (Safari private mode) — honest fallback */
@@ -93,6 +103,26 @@ export function TeacherPanel() {
     : null
   const isRelieved = currentTeacher != null && currentTeacher.status === 'Relieved'
   const [active, setActive] = useState(() => initialActiveModule(isRelieved))
+
+  // 'analytics' (retired) can still arrive through a stale effect or an
+  // unnormalized setActive call — normalize on every render cycle.
+  useEffect(() => {
+    if (active === 'analytics') setActive('growth')
+  }, [active])
+
+  // The retired 'analytics' deep-link is redirected to Student Growth —
+  // strip the stale query param once on mount so a lazy-compile FULL
+  // remount (first visit to any lazily-compiled module) doesn't bounce
+  // the teacher back to Growth: without this, the ?module= param would
+  // keep winning over the per-tab module memory.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('module') === 'analytics') {
+      url.searchParams.delete('module')
+      window.history.replaceState(null, '', url.toString())
+    }
+  }, [])
 
   // Remember the open module for this tab (see initialActiveModule) — a
   // lazy-compile full remount then re-opens exactly where the teacher was.

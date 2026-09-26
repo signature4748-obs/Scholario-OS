@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
+import { notificationVisibilityWhere } from '@/lib/notices'
 
 export const runtime = 'nodejs'
 
@@ -8,7 +9,7 @@ export async function GET() {
   return withUser(async (user) => {
     const schoolId = schoolScoped(user)
     const notifs = await db.notification.findMany({
-      where: { schoolId },
+      where: { schoolId, ...notificationVisibilityWhere() },
       orderBy: { createdAt: 'desc' },
       take: 100,
       include: { sender: { select: { name: true } } },

@@ -93,15 +93,9 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
     ],
   })
 
-  // Add Insights
-  navGroups.push({
-    label: 'Insights & Reviews',
-    items: [
-      { key: 'analytics', label: 'Performance Analytics', icon: <BarChart3 className="h-4.5 w-4.5" /> },
-    ],
-  })
-
-  // Account — personal settings in their own quiet group
+  // Account — personal settings in their own quiet group. (Student Growth
+  // is the UNIFIED growth + performance experience — the former Performance
+  // Analytics module was merged into it; no duplicate analytics entry.)
   navGroups.push({
     label: 'Account',
     items: [

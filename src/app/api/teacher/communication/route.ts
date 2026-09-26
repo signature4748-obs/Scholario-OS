@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { withUser } from '@/lib/api'
-import { audienceAllows, audienceLabel } from '@/lib/notices'
+import { audienceAllows, audienceLabel, notificationVisibilityWhere } from '@/lib/notices'
 import {
   requireTeacher,
   authorizedStudentWhere,
@@ -66,9 +66,10 @@ export async function GET() {
         sentDirectRows,
         directRows,
         staffDirectory,
+        directStates,
       ] = await Promise.all([
         db.notification.findMany({
-          where: { schoolId: ctx.schoolId },
+          where: { schoolId: ctx.schoolId, ...notificationVisibilityWhere() },
           orderBy: { createdAt: 'desc' },
           take: ANNOUNCEMENT_FETCH_WINDOW,
           include: {
@@ -118,10 +119,10 @@ export async function GET() {
           orderBy: { sortOrder: 'asc' },
         }),
         db.student.findMany({
-          where: { guardianId: { not: null }, ...authorizedStudentWhere(ctx) },
+          where: { ...authorizedStudentWhere(ctx) },
           include: {
             class: { select: { name: true, section: true } },
-            user: { select: { name: true } },
+            user: { select: { id: true, name: true, status: true } },
           },
           orderBy: { rollNo: 'asc' },
           take: 300,
@@ -177,6 +178,11 @@ export async function GET() {
           select: { id: true, name: true, role: true },
           orderBy: [{ role: 'asc' }, { name: 'asc' }],
           take: 100,
+        }),
+        // the teacher's per-user state rows for DIRECT threads (pin /
+        // archive / needs-reply — persisted, merged into the summaries)
+        db.directThreadState.findMany({
+          where: { schoolId: ctx.schoolId, userId: ctx.userId },
         }),
       ])
 
@@ -258,6 +264,8 @@ export async function GET() {
           id: c.id,
           category: (CATEGORIES.includes(c.category) ? c.category : 'general') as ConversationSummary['category'],
           pinned: c.pinned,
+          needsReply: c.needsReply,
+          archived: c.archived,
           createdAt: c.createdAt.toISOString(),
           lastMessageAt: c.lastMessageAt ? c.lastMessageAt.toISOString() : null,
           unread: unreadByConversation.get(c.id) ?? 0,
@@ -292,7 +300,9 @@ export async function GET() {
 
       // ── Direct conversations: group Message rows by counterpart. Rows are
       //    newest-first, so the first row seen per counterpart is the last
-      //    message of that thread. ──
+      //    message of that thread. The teacher's DirectThreadState rows
+      //    (pin / archive / needs-reply) merge in — persisted per-user.
+      const stateByCounterpart = new Map(directStates.map((s) => [s.counterpartId, s]))
       const directByCounterpart = new Map<string, CommunicationHubPayload['directConversations'][number]>()
       for (const m of directRows) {
         const fromMe = m.senderId === ctx.userId
@@ -300,6 +310,7 @@ export async function GET() {
         if (!counterpart) continue
         const existing = directByCounterpart.get(counterpart.id)
         if (!existing) {
+          const state = stateByCounterpart.get(counterpart.id)
           directByCounterpart.set(counterpart.id, {
             counterpartId: counterpart.id,
             counterpartName: counterpart.name ?? 'User',
@@ -314,14 +325,19 @@ export async function GET() {
             lastMessageAt: m.createdAt.toISOString(),
             unread: !fromMe && !m.read ? 1 : 0,
             awaitingReply: !fromMe,
+            pinned: state?.pinned ?? false,
+            archived: state?.archived ?? false,
+            needsReply: state?.needsReply ?? false,
           })
         } else if (!fromMe && !m.read) {
           existing.unread++
         }
       }
-      const directConversations = [...directByCounterpart.values()].sort(
-        (a, b) => Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt),
-      )
+      const directConversations = [...directByCounterpart.values()].sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+        if (a.archived !== b.archived) return a.archived ? 1 : -1
+        return Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt)
+      })
 
       // ── Sent messages: parent-thread messages + direct rows, merged ──
       const sentMessages: CommunicationHubPayload['sentMessages'] = [
@@ -405,6 +421,10 @@ export async function GET() {
         existingConversationId: s.guardianId
           ? conversationByStudentParent.get(`${s.id}\u0000${s.guardianId}`) ?? null
           : null,
+        // the school's policy gate for the student audience: an ACTIVE
+        // student account (issued by the school) is what makes a student
+        // directly reachable — no account, no direct messages
+        studentUserId: s.user?.status === 'ACTIVE' ? s.user.id : null,
       }))
 
       const scopeLabel =
@@ -417,6 +437,9 @@ export async function GET() {
           name: ctx.name,
           scopeLabel,
           classLabels: ctx.classTeacherOf.map((c) => c.label),
+          /** the appointed classes (id + label) — powers the My Class group
+           *  audience in the composer (never other teachers' classes) */
+          classes: ctx.classTeacherOf.map((c) => ({ id: c.id, label: c.label })),
         },
         stats,
         conversations: conversationRows,

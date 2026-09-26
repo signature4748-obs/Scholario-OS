@@ -63,6 +63,8 @@ export async function GET(
             ? conversation.category
             : 'general') as ThreadPayload['conversation']['category'],
           pinned: conversation.pinned,
+          needsReply: conversation.needsReply,
+          archived: conversation.archived,
           createdAt: conversation.createdAt.toISOString(),
           parent: {
             id: conversation.parent.id,
@@ -139,7 +141,12 @@ export async function POST(
   )
 }
 
-// PATCH /api/teacher/parent-connect/[conversationId] — pin/unpin or re-categorize.
+// PATCH /api/teacher/parent-connect/[conversationId] — conversation state.
+// All flags persist on the ParentConversation row (never React state):
+//   pinned / category      — as before
+//   needsReply / archived  — the Communication Hub action menu
+//   markRead               — acknowledge unread parent messages WITHOUT opening
+//   markUnread             — flip the latest parent message back to unread
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ conversationId: string }> },
@@ -153,19 +160,47 @@ export async function PATCH(
       const body = await req.json().catch(() => null)
       if (!body || typeof body !== 'object') throw new Error('Invalid request body')
 
-      const data: { pinned?: boolean; category?: string } = {}
+      const data: { pinned?: boolean; category?: string; needsReply?: boolean; archived?: boolean } = {}
       if (typeof body.pinned === 'boolean') data.pinned = body.pinned
+      if (typeof body.needsReply === 'boolean') data.needsReply = body.needsReply
+      if (typeof body.archived === 'boolean') data.archived = body.archived
       if (typeof body.category === 'string' && CATEGORIES.includes(body.category)) {
         data.category = body.category
       }
-      if (Object.keys(data).length === 0) throw new Error('Nothing to update')
 
-      await db.parentConversation.update({ where: { id: conversation.id }, data })
+      if (body.markRead === true) {
+        await db.parentMessage.updateMany({
+          where: { conversationId: conversation.id, senderId: { not: ctx.userId }, readAt: null },
+          data: { readAt: new Date() },
+        })
+      }
+      if (body.markUnread === true) {
+        // Flip only the LATEST parent message back to unread — the honest
+        // "badge re-appears" semantics without resurrecting old history.
+        const latestFromParent = await db.parentMessage.findFirst({
+          where: { conversationId: conversation.id, senderId: { not: ctx.userId } },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        })
+        if (latestFromParent) {
+          await db.parentMessage.update({
+            where: { id: latestFromParent.id },
+            data: { readAt: null },
+          })
+        }
+      }
+
+      if (Object.keys(data).length === 0 && body.markRead !== true && body.markUnread !== true) {
+        throw new Error('Nothing to update')
+      }
+      if (Object.keys(data).length > 0) {
+        await db.parentConversation.update({ where: { id: conversation.id }, data })
+      }
       await auditTeacherAction(
         user,
         ctx.schoolId,
         'PARENT_CONVERSATION_UPDATED',
-        `Conversation ${conversation.id} updated (${Object.keys(data).join(', ')})`,
+        `Conversation ${conversation.id} updated (${[...Object.keys(data), ...(body.markRead ? ['markRead'] : []), ...(body.markUnread ? ['markUnread'] : [])].join(', ')})`,
       )
       return { ok: true }
     },

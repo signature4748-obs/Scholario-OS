@@ -58,6 +58,12 @@ export interface DirectConversationSummary {
   unread: number
   /** the latest message in the thread is from the counterpart (teacher owes a reply) */
   awaitingReply: boolean
+  /** viewer-pinned (DirectThreadState) — pinned rows float to the top */
+  pinned: boolean
+  /** viewer-archived (DirectThreadState) — hidden from the default list */
+  archived: boolean
+  /** manual "needs reply" flag (DirectThreadState) */
+  needsReply: boolean
 }
 
 /** A staff member the teacher may message (same school, active). */
@@ -134,6 +140,9 @@ export interface CommunicationHubPayload {
     scopeLabel: string
     /** labels of the classes this teacher is class teacher of */
     classLabels: string[]
+    /** the appointed classes (id + label) — powers the My Class group
+     *  audience in the composer. A non-class-teacher gets []. */
+    classes: { id: string; label: string }[]
   }
   stats: CommunicationStats
   /** the teacher's parent conversations (full list, pinned first) */

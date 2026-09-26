@@ -1,42 +1,67 @@
 'use client'
 
 /**
- * Student Growth — module composition (§12/§33).
+ * Student Growth — the UNIFIED growth + performance experience (§12/§33 +
+ * Performance-Analytics merge). The former Performance Analytics module
+ * was absorbed here; there is no second analytics page.
  *
- * Hierarchy (top → bottom, §32):
+ * Hierarchy (top → bottom):
  *   toolbar (context + [+ Add Points])
- *   → class selector pills (All + per class)
- *   → summary card (average score ring + improving/steady/attention bands)
- *   → growth trend (8 weeks, light)
- *   → point activity (the ledger with compact filters)
+ *   → controls: class · time period · subject
+ *   → 4 summary cards (Average Growth · Class Average · Students
+ *     Improving · Needs Attention — every value a real count/score)
+ *   → Growth Overview (score ring + bands) + 8-week growth trend
+ *   → Academic Performance (subject bars from real marks) | Improving
+ *     Students (real exam-over-exam change)
+ *   → Assessment Performance (real exams, honest statuses)
+ *   → Performance Trend + Attendance Trend (the former analytics charts)
+ *   → Students Needing Attention (documented thresholds)
+ *   → Point Activity (the ledger)
+ *
+ * TWO canonical engines feed the page — /api/teacher/growth (points,
+ * scores, classes) and /api/teacher/analytics (ExamMark / attendance
+ * rows). Neither is duplicated; both are role-scoped server-side. The
+ * academic sections render for the FOCUSED class (default: the first
+ * class-teacher class) and label it clearly.
  *
  * The per-student drill-down is the shared TeacherStudentProfileSheet
- * (Growth tab) — the same canonical profile opened from the Directory,
- * My Class and Fees.
- *
- * State contract:
- *   · loading  → HubModuleSkeleton
- *   · error    → quiet inline error card with retry
- *   · zero events → honest empty state with the Add Points action
- *   · everything comes from /api/teacher/growth — the httpOnly
- *     erp_session cookie resolves the teacher, her school and her scope.
- *
- * Command-palette focus deep-links are consumed once on mount: `grw-<id>`
- * opens the owning student's profile sheet once the aggregate has loaded.
+ * (Growth tab). Animations are subtle (150–300ms) and every one of them
+ * respects prefers-reduced-motion.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Sparkles } from 'lucide-react'
+import {
+  AlertTriangle,
+  CalendarRange,
+  GraduationCap,
+  Plus,
+  Sparkles,
+  TrendingUp,
+  Users,
+} from 'lucide-react'
 import { GlassCard, PageTransition } from '@/components/shared/ui'
 import { ModuleToolbar } from '@/components/teacher/teacher-panel/module-toolbar'
 import {
   HubModuleSkeleton,
   HubSectionError,
+  HubStatCards,
+  type HubStat,
 } from '@/components/teacher/modules/shared/hub-stat-cards'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useFocusStore } from '@/lib/store/focus-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 import { cn } from '@/lib/utils'
 import { useGrowth } from './hooks'
+import { useAnalytics } from '../analytics/hooks'
+import type { ClassAnalytics } from '../analytics/types'
+import { AttentionList } from '../analytics/attention-list'
+import { AttendanceTrendCard, PerformanceTrendCard } from '../analytics/trend-charts'
 import {
   ACTIVITY_FILTERS,
   ActivityList,
@@ -44,6 +69,9 @@ import {
   type ActivityFilter,
 } from './activity-list'
 import { AddPointsDialog } from './add-points-dialog'
+import { AcademicPerformance } from './academic-performance'
+import { AssessmentPerformance } from './assessment-performance'
+import { ImprovingStudents } from './improving-students'
 import {
   GrowthScoreRing,
   GrowthTrendCard,
@@ -53,8 +81,41 @@ import { PRIMARY_ACTION_CLASS, signedDelta } from './shared'
 import { ClassSelect } from '../shared/class-select'
 import { TeacherStudentProfileSheet } from '../shared/student-profile-sheet'
 
+/** Time-period options — real rolling windows over real exam dates. */
+const PERIOD_OPTIONS = [
+  { value: 'all', label: 'All assessments', months: null },
+  { value: '6m', label: 'Last 6 months', months: 6 },
+  { value: '3m', label: 'Last 3 months', months: 3 },
+] as const
+type PeriodValue = (typeof PERIOD_OPTIONS)[number]['value']
+
+/** Quiet amber strip — a failed refresh never wipes a readable module. */
+function StaleStrip({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3.5 py-2.5 text-xs text-amber-700 dark:text-amber-400"
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="truncate">
+          Couldn&rsquo;t refresh the academic sections — showing your last loaded data. {message}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="shrink-0 font-semibold underline underline-offset-2 hover:opacity-80"
+      >
+        Try again
+      </button>
+    </div>
+  )
+}
+
 export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string) => void }) {
   const { data, loading, error, reload } = useGrowth()
+  const analytics = useAnalytics()
   const currentUserId = useCurrentUser((s) => s.me?.id) ?? null
 
   const [addOpen, setAddOpen] = useState(false)
@@ -63,6 +124,8 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
   const [classFilter, setClassFilter] = useState<string | null>(null) // null = all
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
   const [studentFilter, setStudentFilter] = useState<string>('')
+  const [subjectFilter, setSubjectFilter] = useState<string>('all')
+  const [period, setPeriod] = useState<PeriodValue>('all')
 
   // ── focus deep-links (consumed exactly once, on mount) ──
   //   · `grw-<eventId>` → open the owning student's profile sheet
@@ -93,6 +156,41 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
     const event = data.events.find((e) => e.id === eventId)
     if (event) setProfileStudentId(event.studentId)
   }, [data])
+
+  // ── The FOCUSED class for the academic sections. Defaults to the first
+  //    analytics class (class-teacher classes are listed first) so a
+  //    single-class teacher never has to pick; multi-class teachers can
+  //    switch via the class selector. Labelled on every section. ──
+  const focusedClassId =
+    classFilter ?? analytics.data?.classes[0]?.id ?? null
+  const focused: ClassAnalytics | null =
+    analytics.data?.classAnalytics.find((c) => c.classId === focusedClassId) ?? null
+
+  // Time-period window over real exam dates.
+  const periodStartMs = useMemo(() => {
+    const opt = PERIOD_OPTIONS.find((p) => p.value === period)
+    if (!opt?.months) return null
+    const d = new Date()
+    d.setMonth(d.getMonth() - opt.months)
+    return d.getTime()
+  }, [period])
+
+  const periodFilteredTrend = useMemo(() => {
+    if (!focused) return []
+    if (periodStartMs == null) return focused.examTrend
+    return focused.examTrend.filter(
+      (p) => p.dateMs == null || p.dateMs >= periodStartMs,
+    )
+  }, [focused, periodStartMs])
+
+  // Reset the subject filter when the focused class's subjects change.
+  useEffect(() => {
+    setSubjectFilter('all')
+  }, [focusedClassId])
+
+  const subjectOptions = focused?.subjectAverages ?? []
+  const activeSubject =
+    subjectFilter !== 'all' ? subjectOptions.find((s) => s.subject === subjectFilter) ?? null : null
 
   // students of the selected class (activity filter helper)
   const classStudentIds = useMemo(() => {
@@ -125,6 +223,80 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
     )
   }
 
+  // ── Summary cards (all real values from the two payloads) ──────────
+  const summaryStats: HubStat[] = data
+    ? [
+        {
+          key: 'avg-growth',
+          label: 'Average Growth',
+          value: summary?.average ?? null,
+          suffix: summary?.average != null ? '' : undefined,
+          context:
+            summary == null
+              ? 'no scores yet'
+              : `${signedDelta(summaryMonthPoints)} points this month · ${
+                  (summary.scoredCount ?? 0) < (summary.studentCount ?? 0)
+                    ? `${summary.scoredCount} of ${summary.studentCount} scored`
+                    : `${summary.studentCount} students`
+                }`,
+          icon: TrendingUp,
+          tone:
+            summary?.average == null
+              ? 'slate'
+              : summary.average >= 75
+                ? 'emerald'
+                : summary.average >= 55
+                  ? 'amber'
+                  : 'rose',
+        },
+        {
+          key: 'class-average',
+          label: activeSubject ? 'Subject Average' : 'Class Average',
+          value: activeSubject ? activeSubject.pct : (focused?.classAveragePct ?? null),
+          suffix: '%',
+          context: activeSubject
+            ? `${activeSubject.subject} · ${focused?.latestAssessment?.name ?? 'latest graded'}`
+            : focused?.latestAssessment
+              ? `${focused.label} · ${focused.latestAssessment.name}`
+              : focused
+                ? `${focused.label} · no marks entered yet`
+                : 'no class in scope',
+          icon: GraduationCap,
+          tone: 'emerald',
+        },
+        {
+          key: 'improving',
+          label: 'Students Improving',
+          value: focused?.improvingStudents.length ?? null,
+          context: focused
+            ? focused.improvingStudents.length > 0
+              ? `rose between ${focused.improvingStudents[0].previousExamName} → ${focused.improvingStudents[0].latestExamName}`
+              : 'needs two graded assessments'
+            : 'no class in scope',
+          icon: Sparkles,
+          tone: 'sky',
+        },
+        {
+          key: 'attention',
+          label: 'Needs Attention',
+          value: focused?.needingAttention.length ?? null,
+          context: focused
+            ? focused.needingAttention.length > 0
+              ? `${focused.needingAttention.length} of ${focused.studentCount} students cross a threshold`
+              : `${focused.studentCount} students within thresholds`
+            : 'no class in scope',
+          icon: Users,
+          tone: (focused?.needingAttention.length ?? 0) > 0 ? 'amber' : 'slate',
+        },
+      ]
+    : []
+
+  const toolbarContext = selectedClass
+    ? `${selectedClass.label} · ${selectedClass.studentCount} students · academic growth and performance`
+    : data
+      ? `${data.summary.studentCount} students across ${data.classes.length} ${data.classes.length === 1 ? 'class' : 'classes'} · academic growth and performance`
+      : 'academic growth and performance'
+
   return (
     <PageTransition className="space-y-4">
       {error && !data ? (
@@ -134,7 +306,7 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
       ) : data ? (
         <>
           <ModuleToolbar
-            context={`${data.scopeLabel} · ${data.summary.studentCount} students · ${signedDelta(data.summary.monthPoints)} points this month`}
+            context={toolbarContext}
             action={
               <button type="button" onClick={() => openAdd()} className={PRIMARY_ACTION_CLASS}>
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -143,38 +315,72 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
             }
           />
 
-          {/* ── compact class selector (refinement §13/§14 — one dropdown,
-              not a pill row; mobile opens the same list as a bottom
-              sheet). Only classes the teacher is authorized to see are
-              ever in `data.classes` (assignment-driven scope). ──────── */}
-          {data.classes.length > 1 && (
-            <ClassSelect
-              classes={data.classes.map((c) => ({
-                id: c.classId,
-                label: c.label,
-                meta: c.average != null ? `${c.average} avg` : null,
-                isClassTeacher: c.isClassTeacher,
-              }))}
-              value={classFilter}
-              onChange={(id) => {
-                setClassFilter(id)
-                setStudentFilter('')
-              }}
-              allLabel="All classes"
-              allMeta={data.summary.average != null ? `${data.summary.average} avg` : null}
-              ariaLabel="Select class"
-            />
-          )}
+          {/* ── controls: class · time period · subject ─────────────── */}
+          <div className="flex flex-wrap items-center gap-2">
+            {data.classes.length > 1 && (
+              <ClassSelect
+                classes={data.classes.map((c) => ({
+                  id: c.classId,
+                  label: c.label,
+                  meta: c.average != null ? `${c.average} avg` : null,
+                  isClassTeacher: c.isClassTeacher,
+                }))}
+                value={classFilter}
+                onChange={(id) => {
+                  setClassFilter(id)
+                  setStudentFilter('')
+                }}
+                allLabel="All classes"
+                allMeta={data.summary.average != null ? `${data.summary.average} avg` : null}
+                ariaLabel="Select class"
+              />
+            )}
+            {focused && (
+              <>
+                <Select value={period} onValueChange={(v) => setPeriod(v as PeriodValue)}>
+                  <SelectTrigger className="h-9 w-auto max-w-[190px] gap-1.5" aria-label="Time period">
+                    <CalendarRange className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PERIOD_OPTIONS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {subjectOptions.length > 0 && (
+                  <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                    <SelectTrigger className="h-9 w-auto max-w-[210px] gap-1.5" aria-label="Subject">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All subjects</SelectItem>
+                      {subjectOptions.map((s) => (
+                        <SelectItem key={s.subject} value={s.subject}>
+                          {s.subject}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </>
+            )}
+          </div>
 
-          {/* ── summary + trend ─────────────────────────────────────── */}
+          {/* ── summary cards ───────────────────────────────────────── */}
+          <HubStatCards stats={summaryStats} />
+
+          {/* ── growth overview + trend (the growth engine) ─────────── */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <GlassCard hover={false} className="p-4 sm:p-5 lg:col-span-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">
                   {selectedClass ? `${selectedClass.label} Growth` : 'Growth Overview'}
                 </h3>
-                {/* §5/§24 — the average is transparent about who is in it:
-                    building students are counted, never silently averaged */}
+                {/* the average is transparent about who is in it: building
+                    students are counted, never silently averaged */}
                 <span className="shrink-0 text-[10px] text-muted-foreground">
                   {(() => {
                     const total = selectedClass?.studentCount ?? data.summary.studentCount
@@ -223,6 +429,54 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
             </div>
           </div>
 
+          {/* ── academic sections (the analytics engine, focused class) ── */}
+          {analytics.error && !analytics.data && (
+            <HubSectionError message={analytics.error} onRetry={analytics.reload} />
+          )}
+          {analytics.staleError && (
+            <StaleStrip message={analytics.staleError} onRetry={analytics.reload} />
+          )}
+
+          {focused ? (
+            <>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <AcademicPerformance
+                  a={focused}
+                  subjectFilter={subjectFilter === 'all' ? null : subjectFilter}
+                />
+                <ImprovingStudents a={focused} onOpenStudent={setProfileStudentId} />
+              </div>
+
+              <AssessmentPerformance a={focused} periodStartMs={periodStartMs} />
+
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
+                <PerformanceTrendCard
+                  a={{ ...focused, examTrend: periodFilteredTrend }}
+                  className="lg:col-span-2"
+                />
+                <AttendanceTrendCard a={focused} />
+              </div>
+
+              <AttentionList a={focused} onNavigate={onNavigate} />
+            </>
+          ) : (
+            !analytics.loading &&
+            !analytics.error && (
+              <GlassCard hover={false}>
+                <div className="flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted/60">
+                    <GraduationCap className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">No classes in scope yet</p>
+                  <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+                    Academic performance, assessments and attendance context appear once you are a
+                    class teacher or teach a subject in a class.
+                  </p>
+                </div>
+              </GlassCard>
+            )
+          )}
+
           {/* ── point activity ──────────────────────────────────────── */}
           <GlassCard hover={false} className="p-4 sm:p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -249,7 +503,7 @@ export function StudentGrowthModule({ onNavigate }: { onNavigate?: (key: string)
               </div>
             </div>
 
-            {/* compact filters (§12 — a single quiet row) */}
+            {/* compact filters — a single quiet row */}
             <div className="mb-3 flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Point activity filters">
               {ACTIVITY_FILTERS.map((f) => (
                 <button

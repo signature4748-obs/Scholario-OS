@@ -3,9 +3,9 @@
 /**
  * QuickActions + NoticeBoard (TWC-FE-4).
  *
- * QuickActions — unchanged navigation surface (all six module keys exist in
+ * QuickActions — unchanged navigation surface (all module keys exist in
  * the reduced Teacher Workspace: attendance, lesson-planner, marks,
- * communication, analytics, students).
+ * communication, growth, students).
  *
  * NoticeBoard — rebuilt on REAL Notification rows from the dashboard
  * aggregate (audience-scoped, latest three). The old
@@ -28,7 +28,7 @@ const quickActions = [
   { label: "Today's Lesson", icon: 'BookMarked', color: 'from-emerald-500 to-teal-600', key: 'lesson-planner' },
   { label: 'Enter Marks', icon: 'FileText', color: 'from-rose-500 to-pink-600', key: 'marks' },
   { label: 'Message Parents', icon: 'Megaphone', color: 'from-cyan-500 to-sky-600', key: 'communication' },
-  { label: 'View Analytics', icon: 'TrendingUp', color: 'from-lime-500 to-green-600', key: 'analytics' },
+  { label: 'Student Growth', icon: 'TrendingUp', color: 'from-lime-500 to-green-600', key: 'growth' },
   { label: 'Student Directory', icon: 'Users', color: 'from-violet-500 to-purple-600', key: 'students' },
 ] as const
 
