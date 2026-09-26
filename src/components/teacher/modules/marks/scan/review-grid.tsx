@@ -163,8 +163,11 @@ function ReviewRow({
       input.value = valueOnFocus.current
       input.blur()
     } else if (e.key === 'Tab') {
-      // Native Tab/Shift+Tab order = DOM order = next/previous row.
+      // The edited cell REMOUNTS on commit (its value key changes), which
+      // cancels the browser's default Tab focus move — drive it manually.
+      e.preventDefault()
       commit(input)
+      focusRow(e.shiftKey ? idx - 1 : idx + 1)
     }
   }
 
