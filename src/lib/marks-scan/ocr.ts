@@ -87,7 +87,11 @@ async function setMode(worker: OcrWorker, mode: 'digits' | 'text'): Promise<void
   if (currentMode === mode) return
   const params =
     mode === 'digits'
-      ? { tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: '7' }
+      ? // Digits plus the canonical ABSENT marker — the standard sheet
+        // instructs teachers to write "AB" in the marks column, so the
+        // marks/roll cells must be able to read it (classifyMarks already
+        // routes "AB" readings to REVIEW for teacher confirmation).
+        { tessedit_char_whitelist: '0123456789AB', tessedit_pageseg_mode: '7' }
       : { tessedit_char_whitelist: '', tessedit_pageseg_mode: '7' }
   await worker.setParameters(params)
   currentMode = mode

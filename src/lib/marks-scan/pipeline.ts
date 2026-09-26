@@ -165,6 +165,35 @@ export function otsuThreshold(src: CanvasRenderingContext2D, w: number, h: numbe
   return threshold
 }
 
+/** Dilate a binary mask by ±tol rows ("v") or ±tol columns ("h"). */
+function dilateMask(mask: Uint8Array, w: number, h: number, tol: number, dir: 'v' | 'h'): Uint8Array {
+  const out = new Uint8Array(mask.length)
+  if (dir === 'v') {
+    for (let y = 0; y < h; y += 1) {
+      const lo = Math.max(0, y - tol)
+      const hi = Math.min(h - 1, y + tol)
+      for (let s = lo; s <= hi; s += 1) {
+        const base = s * w
+        const dst = y * w
+        for (let x = 0; x < w; x += 1) {
+          if (mask[base + x]) out[dst + x] = 1
+        }
+      }
+    }
+  } else {
+    for (let y = 0; y < h; y += 1) {
+      const base = y * w
+      for (let x = 0; x < w; x += 1) {
+        if (!mask[base + x]) continue
+        const lo = Math.max(0, x - tol)
+        const hi = Math.min(w - 1, x + tol)
+        for (let d = lo; d <= hi; d += 1) out[base + d] = 1
+      }
+    }
+  }
+  return out
+}
+
 /** Row-projection count of ink for the mask rotated by `deg` (center origin). */
 function projectionVariance(mask: Uint8Array, w: number, h: number, deg: number): number {
   const rad = (deg * Math.PI) / 180
@@ -248,6 +277,15 @@ function detectRulingLines(
 ): LineRuns {
   const mask = inkMask(src, w, h, threshold)
 
+  // Residual-skew tolerance. Deskew quantises to 0.5° steps, so after
+  // correction a ruling line can still drift up to ~4–5 px vertically
+  // across the sheet width. A drifted line never reaches the ≥55% ink
+  // threshold in a single pixel row, so the projection is computed on a
+  // mask dilated ±2px ALONG the line direction — enough to absorb the
+  // drift without merging adjacent rows (rows are ≥14px apart).
+  const maskV = dilateMask(mask, w, h, 2, 'v') // for horizontal lines
+  const maskH = dilateMask(mask, w, h, 2, 'h') // for vertical lines
+
   // Horizontal lines: rows where ≥55% of the analysed width is ink.
   const x0 = Math.floor(w * 0.08)
   const x1 = Math.ceil(w * 0.92)
@@ -257,7 +295,7 @@ function detectRulingLines(
     let count = 0
     const base = y * w
     for (let x = x0; x < x1; x += 1) {
-      if (mask[base + x]) count += 1
+      if (maskV[base + x]) count += 1
     }
     rowInk[y] = count
   }
@@ -271,7 +309,12 @@ function detectRulingLines(
         end += 1
         if (rowInk[end] > rowInk[peak]) peak = end
       }
-      hLines.push((y + end) / 2)
+      // A THICK qualifying run is a filled band (the standard sheet's dark
+      // header strip ≈7.5 mm ≈44px, not a ruling line ≤~13px even after
+      // dilation). The row-divider the student rows attach to is the band's
+      // BOTTOM edge — using the run centre would fuse the header with
+      // row 1 and OCR would see both texts in a single cell.
+      hLines.push(end - y > 16 ? end : (y + end) / 2)
       y = end + 1
     } else {
       y += 1
@@ -288,7 +331,7 @@ function detectRulingLines(
     for (let x = 1; x < w - 1; x += 1) {
       let count = 0
       for (let yy = y0; yy <= y1; yy += 1) {
-        if (mask[yy * w + x]) count += 1
+        if (maskH[yy * w + x]) count += 1
       }
       // Group adjacent hits so one thick line = one detection.
       if (count >= vNeed) {
@@ -297,7 +340,7 @@ function detectRulingLines(
         while (endX + 1 < w - 1) {
           let c2 = 0
           for (let yy = y0; yy <= y1; yy += 1) {
-            if (mask[yy * w + endX + 1]) c2 += 1
+            if (maskH[yy * w + endX + 1]) c2 += 1
           }
           if (c2 < vNeed) break
           endX += 1
@@ -321,8 +364,11 @@ export interface TableDetectionResult {
 
 /**
  * Detect the marks table on a processed (deskewed, grayscale) canvas.
- * Geometry model (matches the standard SCHOLARIO blank sheet):
- *   vLines: [table-left, roll|name divider, name|marks divider, table-right]
+ * Geometry model — matches the standard SCHOLARIO blank marks sheet, a
+ * 4-column grid (ROLL 13% | NAME 45% | MARKS 19% | REMARKS 23% → five
+ * vertical ruling lines). The teacher writes marks in the MARKS column,
+ * i.e. the SECOND-TO-LAST column band. Generic 3-column sheets (roll |
+ * name | marks → four lines) keep marks as the last band.
  * Rows = bands between consecutive horizontal ruling lines (≥3 required).
  */
 export function detectTable(
@@ -338,11 +384,11 @@ export function detectTable(
     return { table: null, hLineCount: hLines.length, vLineCount: vLines.length, contrastScore }
   }
 
-  // Column assignment: leftmost→roll, middle→name, rightmost→marks.
+  // Column assignment: leftmost→roll, then the marks band (see model
+  // above). Anchors are the standard sheet's measured fractions.
   const tableLeft = vLines[0]
   const tableRight = vLines[vLines.length - 1]
-  // Prefer the two inner dividers closest to the 25% / 72% positions of the
-  // table width (standard sheet: narrow roll column, wide name, wide marks).
+  // Prefer the inner dividers closest to the standard sheet's positions.
   const tableW = tableRight - tableLeft
   const pickNear = (target: number): number => {
     let best = vLines[1]
@@ -356,9 +402,13 @@ export function detectTable(
     }
     return best
   }
-  const rollDivider = pickNear(0.24)
-  const marksDivider = pickNear(0.72)
-  if (marksDivider <= rollDivider + tableW * 0.15) {
+  const standardSheet = vLines.length >= 5 // 4 printed columns
+  const rollDivider = pickNear(standardSheet ? 0.132 : 0.24)
+  // MARKS = [name|marks divider, marks|remarks divider] on the standard
+  // sheet (≈58%→77% of the table width); the LAST band on a 3-column sheet.
+  const marksStart = pickNear(standardSheet ? 0.582 : 0.72)
+  const marksEnd = standardSheet ? pickNear(0.769) : tableRight
+  if (marksEnd <= rollDivider + tableW * 0.15) {
     return { table: null, hLineCount: hLines.length, vLineCount: vLines.length, contrastScore }
   }
 
@@ -373,8 +423,8 @@ export function detectTable(
       y: top,
       h: rowH,
       roll: { x: tableLeft, y: top, w: rollDivider - tableLeft, h: rowH },
-      name: { x: rollDivider, y: top, w: marksDivider - rollDivider, h: rowH },
-      marks: { x: marksDivider, y: top, w: tableRight - marksDivider, h: rowH },
+      name: { x: rollDivider, y: top, w: marksStart - rollDivider, h: rowH },
+      marks: { x: marksStart, y: top, w: marksEnd - marksStart, h: rowH },
     })
   }
 

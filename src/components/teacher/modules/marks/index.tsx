@@ -22,7 +22,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ClipboardList, Keyboard, Printer, ScanLine, Send } from 'lucide-react'
+import { ClipboardList, Keyboard, Lock, Printer, ScanLine, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { GlassCard, PageTransition, StatusBadge } from '@/components/shared/ui'
 import { ModuleToolbar } from '../../teacher-panel/module-toolbar'
@@ -308,10 +308,15 @@ export function MarksEntryModule() {
     grid.data && stats ? { grid: grid.data, stats, invalidCount } : null
 
   // ── Entry-method helpers ────────────────────────────────────────────
+  // Why [Scan Marks Sheet] may be locked. Empty = scanning is available.
+  // The exam-level submission lock is INTENTIONAL (same rule as manual
+  // entry: once any row of this exam × class × subject is SUBMITTED the
+  // whole sheet locks — corrections flow through the exam office). The
+  // reason must be visible, never a silent dead button.
   const scanDisabledReason = !grid.data
     ? 'The roster is still loading'
     : submitted
-      ? 'Marks already submitted'
+      ? 'Marks already submitted. Reopen/edit permission is required to change them.'
       : null
 
   const enterManual = useCallback(() => {
@@ -482,6 +487,7 @@ export function MarksEntryModule() {
             aria-selected={mode === 'scan'}
             onClick={enterScan}
             disabled={!!scanDisabledReason}
+            aria-disabled={!!scanDisabledReason || undefined}
             title={scanDisabledReason ?? 'Upload or photograph a completed marks sheet'}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
               mode === 'scan'
@@ -493,6 +499,14 @@ export function MarksEntryModule() {
             Scan Marks Sheet
           </button>
         </div>
+        {/* Visible lock explanation — a hover title is invisible on touch
+            devices; the submission lock must say WHY it is locked. */}
+        {submitted && mode === 'manual' && (
+          <p className="flex w-full items-center gap-1.5 px-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+            <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+            Scanning is locked — marks already submitted. Reopen/edit permission is required to change them.
+          </p>
+        )}
         <Button
           size="sm"
           variant="ghost"
