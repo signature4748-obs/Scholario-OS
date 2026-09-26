@@ -52,7 +52,7 @@ function chunkReloadAllowed(): boolean {
   }
 }
 
-async function importWithRetry<T>(loader: () => Promise<T>, attempts = 2): Promise<T> {
+async function importWithRetry<T>(loader: () => Promise<T>, attempts = 5): Promise<T> {
   try {
     return await loader()
   } catch (err) {
@@ -60,8 +60,12 @@ async function importWithRetry<T>(loader: () => Promise<T>, attempts = 2): Promi
     if (CHUNK_ERROR.test(message)) {
       if (attempts > 0) {
         // Give the dev server (or the browser cache) a beat, then retry —
-        // the recompiled chunk usually exists by the next attempt.
-        await new Promise((r) => setTimeout(r, 350))
+        // the recompiled chunk usually exists by the next attempt. First-
+        // visit lazy compiles of heavy modules can take a few seconds on a
+        // busy dev box; 5 × 500ms keeps the wait well under the perceived-
+        // hang threshold while covering slow compiles WITHOUT the full
+        // reload (which resets the viewer's place in the app).
+        await new Promise((r) => setTimeout(r, 500))
         return importWithRetry(loader, attempts - 1)
       }
       // Retries exhausted: the chunk graph this runtime references is
@@ -84,6 +88,9 @@ async function importWithRetry<T>(loader: () => Promise<T>, attempts = 2): Promi
 interface ModuleErrorBoundaryProps {
   /** Builds a FRESH loadable component — called again on retry. */
   build: () => React.ComponentType<any>
+  /** Diagnostic label (e.g. "lazyModule(StudentsClassesModule)") — used
+   *  ONLY for the traceability console.error when the module fails. */
+  label?: string
   children: (Comp: React.ComponentType<any>) => ReactNode
 }
 
@@ -97,6 +104,13 @@ export class ModuleErrorBoundary extends Component<ModuleErrorBoundaryProps, Mod
 
   static getDerivedStateFromError(error: Error): Partial<ModuleErrorBoundaryState> {
     return { error }
+  }
+
+  // Traceability (stabilization §21): the compact card is intentionally
+  // quiet for users, but the actual error must never be swallowed — log
+  // it with the module label so QA/dev can connect the card to its cause.
+  componentDidCatch(error: Error, info: unknown) {
+    console.error(`[lazyModule] ${this.props.label ?? 'module'} failed to load:`, error, info)
   }
 
   private retry = () => {
@@ -149,7 +163,7 @@ export function lazyModule(
 
   function LazyModule(props: Record<string, any>) {
     return (
-      <ModuleErrorBoundary build={build}>
+      <ModuleErrorBoundary build={build} label={LazyModule.displayName}>
         {(Comp) => <Comp {...props} />}
       </ModuleErrorBoundary>
     )

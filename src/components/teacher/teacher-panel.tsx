@@ -130,11 +130,14 @@ export function TeacherPanel() {
   // strip the stale query param once on mount so a lazy-compile FULL
   // remount (first visit to any lazily-compiled module) doesn't bounce
   // the teacher back to Growth: without this, the ?module= param would
-  // keep winning over the per-tab module memory.
+  // keep winning over the per-tab module memory. The param is consumed
+  // on first mount for ALL keys — after that the per-tab memory owns
+  // restore duty, so later in-app navigation is never shadowed by a
+  // stale deep-link on the next recovery reload.
   useEffect(() => {
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
-    if (url.searchParams.get('module') === 'analytics') {
+    if (url.searchParams.has('module')) {
       url.searchParams.delete('module')
       window.history.replaceState(null, '', url.toString())
     }

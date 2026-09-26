@@ -113,15 +113,31 @@ const navGroups: NavGroup[] = [
   },
 ]
 
-export function PrincipalPanel() {
+// Per-tab module memory (sessionStorage) — same pattern as the Teacher
+// panel: a lazy-chunk recovery reload (stale chunk graph after a dev
+// recompile / server restart) must land the principal back on the module
+// they opened, not silently reset them to the dashboard. The memory dies
+// with the tab; an explicit ?module= deep-link always wins.
+const MODULE_MEMORY_KEY = 'scholario-principal-module'
+
+function initialActiveModule(): string {
+  if (typeof window === 'undefined') return 'dashboard'
   // ?module=<key> deep-link — lets a bookmark (or a colleague-shared link)
   // open a specific module directly. The value must exist in the registry;
-  // anything else falls back to the dashboard.
-  const [active, setActive] = useState(() => {
-    if (typeof window === 'undefined') return 'dashboard'
-    const requested = new URLSearchParams(window.location.search).get('module')
-    return requested && moduleRegistry[requested] ? requested : 'dashboard'
-  })
+  // anything else falls through to the memory / dashboard.
+  const requested = new URLSearchParams(window.location.search).get('module')
+  if (requested && moduleRegistry[requested]) return requested
+  try {
+    const remembered = window.sessionStorage.getItem(MODULE_MEMORY_KEY)
+    if (remembered && moduleRegistry[remembered]) return remembered
+  } catch {
+    /* storage disabled (private mode) — honest fallback */
+  }
+  return 'dashboard'
+}
+
+export function PrincipalPanel() {
+  const [active, setActive] = useState(initialActiveModule)
   const alertCount = useLiveAlerts((s) => s.alerts.length)
   const { isModuleEnabled } = useFeatureGate()
   const pendingAdmissions = useAdmissionStore((s) =>
@@ -153,6 +169,29 @@ export function PrincipalPanel() {
       }
       return g
     }), [alertCount, pendingAdmissions, isModuleEnabled])
+
+  // Remember the open module for this tab (see initialActiveModule) — a
+  // lazy-chunk recovery reload then re-opens exactly where the principal
+  // was instead of silently bouncing to the dashboard.
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(MODULE_MEMORY_KEY, active)
+    } catch {
+      /* storage disabled — nothing to remember */
+    }
+  }, [active])
+
+  // Consume the ?module= deep-link once (strip it from the URL) so later
+  // in-app navigation isn't shadowed by the stale param on the next
+  // recovery reload — the per-tab memory takes over from here.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('module')) {
+      url.searchParams.delete('module')
+      window.history.replaceState(null, '', url.toString())
+    }
+  }, [])
 
   // If the active module gets disabled while viewing it (platform toggle
   // + tenant switch), fall back to the dashboard — never render a module

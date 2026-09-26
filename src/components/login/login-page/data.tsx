@@ -40,12 +40,13 @@ export const credentials: CredentialCard[] = [
     role: 'student',
     title: 'Student',
     name: 'Aarav Sharma',
-    // REAL seeded account (prisma/seed.ts) — the DB session this login
-    // creates is what authorises the student's server-verified payment
-    // rails (/api/student/payments/*). The client-side demo profile is
-    // still applied after login to keep the showcase deterministic.
-    email: 'student1@demoschool.edu',
-    password: 'password123',
+    // REAL seeded account (prisma/seed.ts greenwood section) — the
+    // canonical Aarav Sharma user tied to the Grade 9-A roll-01 student
+    // record. (The retired student1@demoschool.edu no longer exists in
+    // the DB — the quick-access chip must point at the account that
+    // actually authorises the student's server-verified rails.)
+    email: 'aarav.sharma@greenwood.edu.in',
+    password: 'student123',
     icon: <User className="h-5 w-5" />,
     gradient: 'from-violet-500 to-purple-600',
     accent: 'violet',

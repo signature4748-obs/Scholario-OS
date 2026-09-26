@@ -185,9 +185,31 @@ function withLiveBadges(items: NavGroup['items'], unreadNotifs: number, unreadMs
 }
 
 export function StudentPanel() {
-  const [active, setActive] = useState('dashboard')
+  const [active, setActive] = useState(initialActiveModule)
   // Deep-link tab target for the consolidated modules (see LEGACY_TAB).
   const [pendingTab, setPendingTab] = useState<string | null>(null)
+
+  // Remember the open module for this tab (see initialActiveModule) — a
+  // lazy-chunk recovery reload then re-opens exactly where the student was.
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(MODULE_MEMORY_KEY, active)
+    } catch {
+      /* storage disabled — nothing to remember */
+    }
+  }, [active])
+
+  // Consume the ?module= deep-link once (strip it from the URL) so later
+  // in-app navigation isn't shadowed by the stale param on the next
+  // recovery reload — the per-tab memory takes over from here.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('module')) {
+      url.searchParams.delete('module')
+      window.history.replaceState(null, '', url.toString())
+    }
+  }, [])
   // Canonical identity — the SERVER session decides who this student is
   // (user → Student row → classId/roll/admission). The client-side demo
   // roster id (STU-58) is retired; positions gate on the canonical id.
@@ -336,6 +358,34 @@ const staticModules: Record<string, React.ReactNode> = {
   'my-certificates': <MyCertificatesModule />,
   applications: <StudentApplicationsModule />,
   bus: <BusTrackingModule />,
+}
+
+/** Per-tab module memory (sessionStorage) — same pattern as the Teacher
+ *  and Principal panels: a lazy-chunk recovery reload (stale chunk graph
+ *  after a dev recompile / server restart) re-opens exactly where the
+ *  student was instead of silently resetting them to the Dashboard.
+ *  Permission-derived modules (my-class, bus) are accepted optimistically
+ *  here; those modules render their own honest empty state if the
+ *  position/assignment has since ended. */
+const MODULE_MEMORY_KEY = 'scholario-student-module'
+const STUDENT_MODULE_KEYS: ReadonlySet<string> = new Set([
+  'dashboard', 'profile', 'learning', 'notices', 'my-class', 'settings',
+  ...Object.keys(staticModules),
+])
+
+function initialActiveModule(): string {
+  if (typeof window === 'undefined') return 'dashboard'
+  // ?module=<key> deep-link (bookmarks, shared links) — validated against
+  // the student registry; unknown keys fall through to the memory.
+  const requested = new URLSearchParams(window.location.search).get('module')
+  if (requested && STUDENT_MODULE_KEYS.has(requested)) return requested
+  try {
+    const remembered = window.sessionStorage.getItem(MODULE_MEMORY_KEY)
+    if (remembered && STUDENT_MODULE_KEYS.has(remembered)) return remembered
+  } catch {
+    /* storage disabled (private mode) — honest fallback */
+  }
+  return 'dashboard'
 }
 
 function renderStaticModule(key: string) {
