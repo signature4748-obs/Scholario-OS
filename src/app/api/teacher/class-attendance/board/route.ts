@@ -126,18 +126,6 @@ export async function GET(request: Request) {
       // boundary honestly; finalization itself is an explicit POST.
       const settings = await attendanceSettingsFor(schoolId)
 
-      // The caller's own subject sessions for the date.
-      const teacher = await db.teacher.findUnique({ where: { userId: user.id } })
-      const sessions = teacher
-        ? await db.subjectAttendanceSession.findMany({
-            where: { schoolId, classId, teacherId: teacher.id, date: { gte: day, lt: nextDay } },
-            include: {
-              subject: { select: { id: true, name: true } },
-              entries: { select: { studentId: true, status: true } },
-            },
-          })
-        : []
-
       // Recent history: the last 10 MARKED school days for this class (the
       // official baselines), inside a 30-calendar-day lookback window ending
       // at TODAY (not the viewed date — the week strip and insights describe
@@ -185,17 +173,6 @@ export async function GET(request: Request) {
             entries: Object.fromEntries(entries) as Record<string, string>,
           }
         })
-      const mySessions = Object.fromEntries(
-        sessions.map((s) => [
-          s.subject.id,
-          {
-            subjectId: s.subject.id,
-            subjectName: s.subject.name,
-            savedAt: s.createdAt.toISOString(),
-            entries: Object.fromEntries(s.entries.map((e) => [e.studentId, e.status])) as Record<string, string>,
-          },
-        ])
-      )
 
       return {
         classId,
@@ -209,7 +186,6 @@ export async function GET(request: Request) {
         draft,
         audit,
         autosave: settings,
-        mySessions,
         history: { days: historyDays },
       }
     },

@@ -132,7 +132,6 @@ async function main() {
   await db.flashcardReviewState.updateMany({ where: { studentId: F }, data: { studentId: G } })
   await db.studyMaterialTarget.updateMany({ where: { studentId: F }, data: { studentId: G } })
   await db.bookIssue.updateMany({ where: { studentId: F }, data: { studentId: G } })
-  await db.examIncident.updateMany({ where: { studentId: F }, data: { studentId: G } })
   // Relations with their own unique constraints (e.g. ExamAttendance's
   // examId+studentId+subjectId+date) — reassign row-by-row, deleting the
   // filler's copy when the canonical student already has one.
@@ -178,12 +177,6 @@ async function main() {
     (id) => db.homeworkSubmission.update({ where: { id }, data: { studentId: G } }),
     (id) => db.homeworkSubmission.delete({ where: { id } }),
     'homeworkSubmission',
-  )
-  await migrateUnique(
-    () => db.subjectAttendanceEntry.findMany({ where: { studentId: F }, select: { id: true } }),
-    (id) => db.subjectAttendanceEntry.update({ where: { id }, data: { studentId: G } }),
-    (id) => db.subjectAttendanceEntry.delete({ where: { id } }),
-    'subjectAttendanceEntry',
   )
 
   // 1c — delete the filler user (cascades: sessions, its Student row)

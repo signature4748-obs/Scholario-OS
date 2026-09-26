@@ -1272,7 +1272,16 @@ interface PayableSource {
 }
 
 export function netPayableFor(src: PayableSource, employeeId: string, periodKey: string): number {
-  const base = src.salaries[employeeId]?.salary.netBase ?? 0
+  const state = src.salaries[employeeId]
+  // The salary as it stood DURING `periodKey`: the latest change effective
+  // on or before that month. A future-dated raise (e.g. accepted today but
+  // effective from next month) must never rewrite past months' payable —
+  // those months were earned under the previous salary. Falls back to the
+  // current net only when no history exists at all.
+  const applicable = [...(state?.history ?? [])]
+    .filter((h) => h.date.slice(0, 7) <= periodKey)
+    .sort((a, b) => b.date.localeCompare(a.date))[0]
+  const base = applicable?.toNet ?? state?.salary.netBase ?? 0
   const adj = src.adjustments
     .filter((a) => a.employeeId === employeeId && a.periodKey === periodKey)
     .reduce((s, a) => s + a.amount, 0)

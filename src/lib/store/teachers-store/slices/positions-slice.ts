@@ -187,7 +187,7 @@ export const createPositionsSlice: StateCreator<
       actorRole: 'Teacher',
       targetTeacherId: teacher.id,
       targetTeacherName: teacher.name,
-      details: `Accepted position assignment: "${pos.positionTitle}"${pos.classAssigned ? ` for ${pos.classAssigned}` : ''}. Permissions activated.`,
+      details: `Accepted position assignment: "${pos.positionTitle}"${pos.classAssigned ? ` for ${pos.classAssigned}` : ''}.`,
     })
   },
 

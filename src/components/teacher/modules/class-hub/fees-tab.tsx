@@ -276,7 +276,7 @@ export function FeesTab({ classId }: { classId: string }) {
             ))}
           </SelectContent>
         </Select>
-        <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto sm:flex-1 sm:pb-0">
+        <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto sm:pb-0">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.key}
@@ -291,10 +291,12 @@ export function FeesTab({ classId }: { classId: string }) {
               {f.label}
             </button>
           ))}
-          <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground">
-            Showing {filteredTxns.length} of {klass.transactions.length}
-          </span>
         </div>
+        {/* live count on its own line — inside the chip scroll row it was
+            pushed off-screen at 320px (ml-auto inside overflow-x-auto) */}
+        <p className="w-full text-right text-[11px] text-muted-foreground">
+          Showing {filteredTxns.length} of {klass.transactions.length}
+        </p>
       </div>
 
       <SectionCard

@@ -412,7 +412,7 @@ export function CreateAnnouncementDialog({
               ) : (
                 <Megaphone className="h-3.5 w-3.5" aria-hidden="true" />
               )}
-              {publishAt ? 'Schedule' : 'Publish'}
+              {publishAtIso ? 'Schedule' : 'Publish'}
             </button>
           )}
         </div>

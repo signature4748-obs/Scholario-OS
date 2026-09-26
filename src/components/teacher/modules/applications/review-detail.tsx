@@ -304,6 +304,11 @@ function SubmissionRow({ app, sub, onReview }: {
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold truncate">{sub.studentName}</p>
           <p className="text-[10px] text-muted-foreground truncate font-mono">{sub.admissionNo}</p>
+          {/* compact status inline on mobile — the fixed-width status column
+              is hidden below sm so the row can never clip at 320px */}
+          <span className="mt-1 sm:hidden">
+            <SubmissionStatusChip status={cs} />
+          </span>
         </div>
         <div className="w-20 shrink-0 hidden lg:block text-[10px] font-medium">
           {sub.className}-{sub.section}
@@ -340,10 +345,10 @@ function SubmissionRow({ app, sub, onReview }: {
         <div className="w-24 shrink-0 hidden md:block">
           <DocChip status={sub.physicalDoc.status} />
         </div>
-        <div className="w-[150px] shrink-0 flex justify-end">
+        <div className="w-[130px] shrink-0 hidden sm:flex justify-end">
           <SubmissionStatusChip status={cs} />
         </div>
-        <div className="w-[72px] shrink-0 flex justify-end">
+        <div className="shrink-0 flex justify-end">
           <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={onReview}>
             Review
           </Button>

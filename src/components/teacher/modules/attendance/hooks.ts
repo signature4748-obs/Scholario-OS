@@ -395,22 +395,24 @@ export function useAttendanceModule(
   }, [])
   const markAllPresent = useCallback(() => {
     if (!board || board.students.length === 0) return
+    // No-op guard: when everyone is already PRESENT there is nothing to
+    // save — no spurious dirty flag, no "Unsaved" badge, no draft write.
+    if (board.students.every((s) => draft[s.id] === 'PRESENT')) {
+      toast.info('Everyone is already marked present')
+      return
+    }
     setDraft((prev) => {
       const next = { ...prev }
-      let changed = false
       for (const s of board.students) {
-        if (next[s.id] !== 'PRESENT') {
-          next[s.id] = 'PRESENT'
-          changed = true
-        }
+        next[s.id] = 'PRESENT'
       }
-      return changed ? next : prev
+      return next
     })
     setDirty(true)
     toast.success('All students marked present', {
       description: 'Review and save the attendance.',
     })
-  }, [board])
+  }, [board, draft])
 
   const counts: SaveCounts = useMemo(
     () => draftCounts(board?.students ?? [], draft),

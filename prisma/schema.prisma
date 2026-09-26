@@ -57,8 +57,6 @@ model School {
   examTypes            ExamTypeConfig[]
   gradeScales          GradeScale[]
   examRules            ExamRule[]
-  examDutyCompletions  ExamDutyCompletion[]
-  examIncidents        ExamIncident[]
   admitCardConfigs     AdmitCardConfig[]
   reportCardConfigs    ReportCardConfig[]
   homeworks            Homework[]
@@ -84,10 +82,9 @@ model School {
   teacherFollowUps     TeacherFollowUp[]
   messageTemplates     MessageTemplate[]
 
-  // Teacher Workspace v2.15 — curriculum, lesson planning & subject attendance
+  // Teacher Workspace v2.15 — curriculum & lesson planning
   curriculumTopics        CurriculumTopic[]
   lessonTopicCompletions  LessonTopicCompletion[]
-  subjectAttendanceSessions SubjectAttendanceSession[]
 
   // Student Growth v2.16 — points, rules, evaluation runs, settings
   growthEvents      GrowthEvent[]
@@ -163,10 +160,6 @@ model User {
   // carry no creating user)
   growthEvents     GrowthEvent[] @relation("GrowthEventCreator")
 
-  // Teacher Exam Proctoring — duty sign-offs + reported irregularities
-  examDutyCompletions  ExamDutyCompletion[]
-  reportedExamIncidents ExamIncident[]
-
   // Communication Hub — per-user direct-thread state (pin / archive /
   // needs-reply persist in the DB, never in React state or localStorage)
   ownedDirectThreadStates     DirectThreadState[] @relation("DirectThreadStateOwner")
@@ -216,9 +209,7 @@ model Student {
   examAttendance      ExamAttendance[]
   seatAssignments     ExamSeatAssignment[]
   resultOutcomes      ExamResultOutcome[]
-  examIncidents       ExamIncident[]
   homeworkSubmissions HomeworkSubmission[]
-  subjectAttendanceEntries SubjectAttendanceEntry[]
 
   // L2D — Learning Experience 2.0 (student-scoped, always school-scoped too
   // via the parent rows: material/deck/group carry schoolId).
@@ -267,9 +258,8 @@ model Class {
   homeworks          Homework[]
   subjectAssignments ClassSubjectAssignment[]
 
-  // Teacher Workspace v2.15 — curriculum & subject attendance
+  // Teacher Workspace v2.15 — curriculum
   curriculumTopics          CurriculumTopic[]
-  subjectAttendanceSessions SubjectAttendanceSession[]
 }
 
 model Subject {
@@ -301,7 +291,6 @@ model Subject {
 
   // Teacher Workspace v2.15
   curriculumTopics        CurriculumTopic[]
-  subjectAttendanceSessions SubjectAttendanceSession[]
 
   // L2D — Learning Experience 2.0 subject-linked entities.
   flashcardDecks   FlashcardDeck[]
@@ -373,7 +362,6 @@ model Exam {
   examAttendance  ExamAttendance[]
   seatAssignments ExamSeatAssignment[]
   resultOutcomes  ExamResultOutcome[]
-  examIncidents  ExamIncident[]
 }
 
 model ExamClass {
@@ -422,8 +410,6 @@ model ExamScheduleItem {
   createdAt       DateTime @default(now())
 
   examAttendance   ExamAttendance[]
-  dutyCompletion   ExamDutyCompletion?
-  examIncidents    ExamIncident[]
 }
 
 model ExamMark {
@@ -513,49 +499,6 @@ model ExamSeatAssignment {
 
   @@unique([examId, classId, studentId])
   @@unique([examId, room, seatNumber])
-}
-
-/// Invigilator sign-off for ONE ExamScheduleItem duty — written once, after
-/// exam-day attendance is fully marked (teacher proctoring module).
-model ExamDutyCompletion {
-  id             String           @id @default(cuid())
-  schoolId       String
-  school         School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  scheduleItemId String           @unique
-  scheduleItem   ExamScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
-  teacherId      String
-  teacher        User             @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  startedAt      DateTime
-  completedAt    DateTime
-  presentCount   Int
-  absentCount    Int
-  lateCount      Int
-  incidentCount  Int
-  createdAt      DateTime         @default(now())
-}
-
-/// Irregularity report filed by an invigilator during a paper
-/// (LATE_ARRIVAL · UNFAIR_MEANS · MEDICAL_ISSUE · PAPER_ISSUE · OTHER).
-model ExamIncident {
-  id              String           @id @default(cuid())
-  schoolId        String
-  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  examId          String
-  exam            Exam             @relation(fields: [examId], references: [id], onDelete: Cascade)
-  scheduleItemId  String
-  scheduleItem    ExamScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
-  studentId       String?
-  student         Student?         @relation(fields: [studentId], references: [id], onDelete: SetNull)
-  incidentType    String
-  occurredAt      DateTime
-  description     String
-  reportedById    String
-  reportedBy      User             @relation(fields: [reportedById], references: [id], onDelete: Cascade)
-  reportedByName  String?
-  createdAt       DateTime         @default(now())
-
-  @@index([scheduleItemId])
-  @@index([examId])
 }
 
 model ExamResultOutcome {
@@ -1908,47 +1851,6 @@ model LessonTopicCompletion {
   createdAt         DateTime        @default(now())
 
   @@index([schoolId, classId, subjectId])
-}
-
-// ─── Teacher Workspace v2.15 — Subject Attendance Sessions ────────────
-//
-// Attendance model (two layers):
-//   • Baseline: the CLASS TEACHER'S daily attendance — the existing
-//     `Attendance` rows (unique per student+date). This is the school's
-//     official daily record and what students/parents see.
-//   • Subject sessions: a SUBJECT teacher's own session for a class she
-//     teaches (separate, per subject+date+teacher). Opening the roster
-//     PREFILLS from the class teacher's baseline — viewing never writes;
-//     the teacher explicitly submits her session.
-
-model SubjectAttendanceSession {
-  id        String   @id @default(cuid())
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  classId   String
-  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subjectId String
-  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  teacherId String
-  date      DateTime
-  createdAt DateTime @default(now())
-
-  entries   SubjectAttendanceEntry[]
-
-  @@unique([classId, subjectId, teacherId, date])
-  @@index([schoolId, classId, date])
-}
-
-model SubjectAttendanceEntry {
-  id        String                   @id @default(cuid())
-  sessionId String
-  session   SubjectAttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  studentId String
-  student   Student                  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// PRESENT | ABSENT | LATE | LEAVE
-  status    String
-
-  @@unique([sessionId, studentId])
 }
 
 // ─── Student Growth v2.16 — smart points & growth profiles ──────────────

@@ -139,11 +139,6 @@ export function buildNewTeacherRecord(form: AddTeacherForm): TeacherRecord {
   const seq = String(Math.floor(100 + Math.random() * 899))
   const empId = `EMP-${seq}`
   const teacherId = `TCH-2025-${seq}`
-  const basic = Math.round(form.salary * 0.5)
-  const hra = Math.round(form.salary * 0.2)
-  const da = Math.round(form.salary * 0.15)
-  const sa = Math.round(form.salary * 0.1)
-  const pf = Math.round(form.salary * 0.05)
 
   const finalDepartment = form.inchargePosition !== 'None' ? form.inchargePosition : 'Academic'
   const finalDesignation = form.classTeacherRole !== 'None'
@@ -234,7 +229,6 @@ export function buildNewTeacherRecord(form: AddTeacherForm): TeacherRecord {
     status: 'Active',
     attendance: 100,
     salary: Number(form.salary),
-    salaryBreakdown: { basic, hra, da, specialAllowance: sa, pfDeduction: pf, netPay: form.salary - pf },
     bankDetails: { bankName: form.bankName, accountNo: form.accountNo, ifscCode: form.ifscCode, branchName: form.branchName },
     subjects: form.selectedSubjects,
     classes: form.selectedClasses,

@@ -748,7 +748,10 @@ export function TeacherStudentProfileSheet({
                   {data.fees.payments.map((p) => {
                     const pending = p.status === 'UNDER_VERIFICATION'
                     const rejected = p.status === 'REJECTED'
-                    const verified = p.status === 'SUCCESS' && !!p.txnId
+                    // SUCCESS = verified payment. The two-stage flow always
+                    // carries a txnId; legacy office rows may not — still a
+                    // real verified payment, NEVER a rejection.
+                    const verified = p.status === 'SUCCESS'
                     return (
                       <div key={p.id} className="rounded-lg border border-border/70 bg-card px-2.5 py-2">
                         <div className="flex items-start justify-between gap-2">
@@ -795,7 +798,7 @@ export function TeacherStudentProfileSheet({
                             <p className="min-w-0 flex items-center gap-1 text-[10px] text-muted-foreground">
                               <Receipt className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                               <span className="truncate font-semibold tabular-nums text-foreground">
-                                {p.receiptNo ?? `Receipt ${p.txnId!.slice(-8)}`}
+                                {p.receiptNo ?? (p.txnId ? `Receipt ${p.txnId.slice(-8)}` : 'Receipt on file')}
                               </span>
                               {p.verifiedBy && <span className="truncate">· verified by {p.verifiedBy}</span>}
                             </p>
@@ -804,7 +807,7 @@ export function TeacherStudentProfileSheet({
                               {pending ? 'No final receipt yet — awaiting the Principal’s verification.' : 'No receipt — this payment was rejected.'}
                             </p>
                           )}
-                          {verified && (
+                          {verified && p.txnId && (
                             <div className="flex shrink-0 items-center gap-1">
                               <Button
                                 variant="ghost"

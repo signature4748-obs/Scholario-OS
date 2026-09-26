@@ -522,7 +522,7 @@ export function MarksEntryModule() {
 
       {mode === 'scan' && selection && grid.data ? (
         <ScanWorkspace
-          key={`scan-${scanKey}-${grid.data.classId}-${grid.data.subjectId}-${grid.data.exam.id}`}
+          key={`scan-${scanKey}-${grid.data.classId}-${selection.subjectId}-${grid.data.exam.id}`}
           selection={selection}
           grid={grid.data}
           onSubmitted={handleScanSubmitted}

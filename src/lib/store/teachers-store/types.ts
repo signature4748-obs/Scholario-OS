@@ -122,16 +122,9 @@ export interface TeacherRecord {
   status: 'Active' | 'On Leave' | 'Suspended' | 'Probation' | 'Relieved'
   attendance: number // %
 
-  // Salary
+  // Salary — the SIMPLE model (audit §9): one gross monthly number. The
+  // old Basic/HRA/DA/PF component split is retired everywhere.
   salary: number // Gross Monthly
-  salaryBreakdown: {
-    basic: number
-    hra: number
-    da: number
-    specialAllowance: number
-    pfDeduction: number
-    netPay: number
-  }
   bankDetails: {
     bankName: string
     accountNo: string
@@ -161,21 +154,6 @@ export interface TeacherRecord {
     lastLogin?: string
   }
 
-  pendingPayrollUpdate?: {
-    proposalId: string
-    proposedSalary: number
-    code: string
-    date: string
-    proposedBreakdown: {
-      basic: number
-      hra: number
-      da: number
-      specialAllowance: number
-      pfDeduction: number
-      netPay: number
-    }
-  }
-
   remarks?: string
 }
 
@@ -195,8 +173,6 @@ export interface TeachersStoreState {
   regenerateAppointmentLetter: (teacherId: string, customTerms?: string[], newSalary?: number) => void
   resetTeacherPassword: (teacherId: string) => { username: string; tempPassword: string }
   toggleLockTeacherAccount: (teacherId: string, locked: boolean, reason?: string) => void
-  requestPayrollRevision: (teacherId: string, newSalary: number) => { code: string }
-  confirmPayrollRevision: (teacherId: string, code: string) => boolean
   terminateTeacher: (teacherId: string, reason: string, lockLogin: boolean) => void
 
   // Teacher Actions (Approval Workflow)

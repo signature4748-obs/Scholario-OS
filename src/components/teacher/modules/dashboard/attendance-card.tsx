@@ -17,6 +17,7 @@ import { motion } from 'framer-motion'
 import { ArrowRight, CalendarCheck, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { GlassCard } from '@/components/shared/ui'
+import { useFocusStore } from '@/lib/store/focus-store'
 import type { AttendanceSnapshot } from './types'
 
 interface AttendanceCardProps {
@@ -71,7 +72,18 @@ function UnmarkedRow({ s, i, onNavigate }: {
           </div>
           <Button
             size="sm"
-            onClick={() => onNavigate('attendance')}
+            onClick={() => {
+              // Deep-link with the EXACT class this prompt is about (the
+              // attendance module consumes it on mount) — a multi-class
+              // teacher lands on the right class instead of the first.
+              useFocusStore.getState().setFocus({
+                type: 'class',
+                id: s.classId,
+                title: s.classLabel,
+                moduleKey: 'attendance',
+              })
+              onNavigate('attendance')
+            }}
             className="h-8 shrink-0 gap-1.5"
           >
             Mark now <ArrowRight className="h-3.5 w-3.5" aria-hidden />

@@ -18,7 +18,7 @@
 
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { school } from '@/lib/mock/school'
+import { schoolPrintIdentity } from '@/lib/school-print-identity'
 
 export interface PayslipPdfComponent {
   name: string
@@ -87,16 +87,18 @@ export function downloadTeacherPayslip(input: TeacherPayslipInput): void {
   const gross = earnings.reduce((s, c) => s + c.amount, 0)
   const totalDeductions = deductions.reduce((s, c) => s + c.amount, 0)
 
-  // ── Official school header ───────────────────────────────────────────
+  // ── Official school header (active tenant identity — never a hardcoded
+  //    demo school profile on another tenant's documents) ──────────────
+  const schoolIdentity = schoolPrintIdentity()
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
   doc.setTextColor(16, 24, 40)
-  doc.text(school.name, marginX, 46)
+  doc.text(schoolIdentity.name, marginX, 46)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(100, 116, 139)
-  doc.text(`${school.tagline}  ·  ${school.affiliation}`, marginX, 60)
+  doc.text(schoolIdentity.line2, marginX, 60)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
@@ -239,7 +241,7 @@ export function downloadTeacherPayslip(input: TeacherPayslipInput): void {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(148, 163, 184)
-  doc.text(`${school.name} — system-generated payslip for employee records`, marginX, pageHeight - 26)
+  doc.text(`${schoolIdentity.name} — system-generated payslip for employee records`, marginX, pageHeight - 26)
   doc.text(`Generated ${generatedAt}`, pageWidth - marginX, pageHeight - 26, { align: 'right' })
 
   doc.save(payslipFileName(input.teacherName, input.monthLabel))

@@ -30,6 +30,8 @@
  *      document + a real PDF download (enabled once confirmed).
  *   5. Payment History       — every payment with honestly derived
  *      per-month gross/deductions and the actual paid amount.
+ *   6. Salary History         — your own salary progression this session
+ *      (initial set + every accepted change, with dates and notes).
  */
 
 import { useMemo, useState } from 'react'
@@ -643,6 +645,55 @@ export function MySalaryModule({ employeeId }: { employeeId: string }) {
           </div>
         )}
       </div>
+
+      {/* ── 6 · Salary history ─────────────────────────────────────── */}
+      {salaryState && salaryState.history.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="px-4 pt-4 pb-3 sm:px-5">
+            <p className="text-sm font-bold">Salary History</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Every change to your monthly salary this session.
+            </p>
+          </div>
+          <div className="divide-y divide-border border-t border-border">
+            {[...salaryState.history]
+              .sort((a, b) => b.date.localeCompare(a.date))
+              .map((h) => (
+                <div key={h.id} className="flex items-center gap-3 px-4 py-3 flex-wrap sm:px-5">
+                  <span
+                    className={cn(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                      h.fromNet != null
+                        ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {h.fromNet != null
+                      ? <ArrowUpRight className="h-4 w-4" aria-hidden />
+                      : <Wallet className="h-4 w-4" aria-hidden />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold tabular-nums">
+                      {h.fromNet != null ? (
+                        <>
+                          {moneyMy(h.fromNet)}
+                          <span className="mx-1 font-normal text-muted-foreground" aria-hidden>→</span>
+                          <span className="text-violet-600 dark:text-violet-400">{moneyMy(h.toNet)}</span>
+                        </>
+                      ) : (
+                        moneyMy(h.toNet)
+                      )}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {h.note || 'Monthly salary'} · by {h.by}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-[11px] text-muted-foreground">{fmtDayYear(h.date)}</p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Dialogs ────────────────────────────────────────────────── */}
 

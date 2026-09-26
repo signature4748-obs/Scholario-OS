@@ -311,7 +311,10 @@ function buildSyllabusInfo(
   }))
   const totalTopics = flattenCurriculum(curriculum).length
   return {
-    board: 'CBSE',
+    // Honest board derivation — a UP-Board school's curriculum now badges
+    // as UP BOARD (the badge map in syllabus-library falls back to CBSE
+    // only for genuinely unknown boards).
+    board: curriculum.sourceBoard,
     boardLabel: `${curriculum.sourceBoard.replace('-', ' · ')} syllabus`,
     bookLabel: curriculum.bookLabel,
     subjectLabel: curriculum.subjectLabel,

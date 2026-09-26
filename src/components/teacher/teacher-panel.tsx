@@ -12,7 +12,6 @@ import {
   getPendingAssignments,
 } from './teacher-panel/nav-registry'
 import { AccountLockedBanner } from './teacher-panel/banners/account-locked-banner'
-import { PayrollRevisionBanner } from './teacher-panel/banners/payroll-revision-banner'
 import { PendingAssignmentsBanner } from './teacher-panel/banners/pending-assignments-banner'
 import { SalaryConfirmationsBanner } from './teacher-panel/banners/salary-confirmations-banner'
 import { RelievedViews } from './teacher-panel/relieved-views'
@@ -67,19 +66,36 @@ function normalizeModuleKey(key: string): string {
  *  explicit ?module= deep-link always wins over the memory. */
 const MODULE_MEMORY_KEY = 'scholario-teacher-module'
 
+/** Relieved staff see ONLY the restricted set (Profile / Payroll / Fee
+ *  collections). The same filter that builds their sidebar also validates
+ *  deep-links and the module memory — a relieved teacher can no longer
+ *  hand-craft `?module=marks` past the restricted banner. Server APIs
+ *  re-check authorization on every call regardless; this is the UI half
+ *  of the promise the banner makes. */
+const RELIEVED_MODULE_KEYS: readonly string[] = ['profile', 'payroll', 'fee-management']
+
+function allowedModuleKey(key: string, isRelieved: boolean): string | null {
+  const normalized = normalizeModuleKey(key)
+  if (!(TEACHER_MODULE_KEYS as readonly string[]).includes(normalized)) return null
+  if (isRelieved && !RELIEVED_MODULE_KEYS.includes(normalized)) return null
+  return normalized
+}
+
 function initialActiveModule(isRelieved: boolean): string {
   const fallback = isRelieved ? 'profile' : 'dashboard'
   if (typeof window === 'undefined') return fallback
   // ?module=<key> deep-link — opens a specific module directly (bookmarks,
   // shared links). Unknown keys fall through to the memory/fallback.
   const requested = new URLSearchParams(window.location.search).get('module')
-  if (requested && (TEACHER_MODULE_KEYS as readonly string[]).includes(normalizeModuleKey(requested))) {
-    return normalizeModuleKey(requested)
+  if (requested) {
+    const allowed = allowedModuleKey(requested, isRelieved)
+    if (allowed) return allowed
   }
   try {
     const remembered = window.sessionStorage.getItem(MODULE_MEMORY_KEY)
-    if (remembered && (TEACHER_MODULE_KEYS as readonly string[]).includes(normalizeModuleKey(remembered))) {
-      return normalizeModuleKey(remembered)
+    if (remembered) {
+      const allowed = allowedModuleKey(remembered, isRelieved)
+      if (allowed) return allowed
     }
   } catch {
     /* storage disabled (Safari private mode) — honest fallback */
@@ -88,7 +104,7 @@ function initialActiveModule(isRelieved: boolean): string {
 }
 
 export function TeacherPanel() {
-  const { teachers, confirmPayrollRevision } = useTeachersStore()
+  const { teachers } = useTeachersStore()
   // Live server-derived Teacher Hub counts (published by the Communication Hub
   // module after each load) — drives the sidebar badge. One store, one truth.
   const hubUnread = useTeacherHubStore((s) => s.parentUnread)
@@ -150,6 +166,16 @@ export function TeacherPanel() {
     }
   }, [role, active])
 
+  // Relieved staff: only the restricted set is ever reachable. A stale
+  // memory or hand-crafted deep-link outside the set lands on the honest
+  // profile landing (their dashboard equivalent), never inside a full
+  // module the restricted banner promised they cannot open.
+  useEffect(() => {
+    if (isRelieved && !RELIEVED_MODULE_KEYS.includes(active)) {
+      setActive('profile')
+    }
+  }, [isRelieved, active])
+
   // Check pending position assignments for approval workflow
   const pendingAssignments = getPendingAssignments(currentTeacher ?? undefined, isRelieved)
 
@@ -173,12 +199,6 @@ export function TeacherPanel() {
       roleLabel={`Teacher · ${currentTeacher?.name || 'Faculty Member'}`}
     >
       <AccountLockedBanner show={!!currentTeacher?.isLocked} />
-
-      <PayrollRevisionBanner
-        teacherId={currentTeacher?.id || ''}
-        pendingPayrollUpdate={currentTeacher?.pendingPayrollUpdate}
-        confirmPayrollRevision={confirmPayrollRevision}
-      />
 
       <PendingAssignmentsBanner
         assignments={pendingAssignments}

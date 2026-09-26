@@ -9,9 +9,11 @@
  *   • Classes Today    — the teacher's own timetable cells for today
  *   • Lessons Today    — curriculum assignments with a topic scheduled today
  *   • Unread Messages  — parent + staff messages awaiting a read
- *   • Pending Actions  — behavior concerns + scheduled follow-ups (the same
- *                        rows the Pending Actions queue below renders); a
- *                        quiet "all caught up" only when both are zero.
+ *   • Pending Actions  — behavior concerns + scheduled follow-ups + class
+ *                        attendance baselines still open (the same rows the
+ *                        Pending Actions queue and the attendance prompt
+ *                        below render); a quiet "all caught up" only when
+ *                        every source is genuinely zero.
  */
 
 import { AlarmClock, BookMarked, CalendarCheck, Inbox, MailOpen } from 'lucide-react'
@@ -29,7 +31,11 @@ export function TeacherKpiCards({ data }: TeacherKpiCardsProps) {
   const periodsToday = data.today.periods.length
   const lessonsToday = data.curriculum.filter((c) => c.todayTopic != null).length
 
-  const pendingActions = data.hub.needsAttention + data.hub.openFollowUps
+  // Unmarked class-attendance baselines are pending work TOO — a class
+  // teacher with an open baseline must never read "nothing needs attention"
+  // while the attendance prompt below says "not marked yet".
+  const unmarkedAttendance = data.attendance.filter((s) => !s.marked).length
+  const pendingActions = data.hub.needsAttention + data.hub.openFollowUps + unmarkedAttendance
 
   const stats: HubStat[] = [
     {
@@ -61,10 +67,13 @@ export function TeacherKpiCards({ data }: TeacherKpiCardsProps) {
       key: 'pending',
       label: 'Pending Actions',
       value: pendingActions,
-      context:
-        pendingActions > 0
-          ? `${data.hub.needsAttention} need attention · ${data.hub.openFollowUps} follow-ups`
-          : 'nothing needs attention',
+      context: pendingActions > 0
+        ? [
+            data.hub.needsAttention > 0 ? `${data.hub.needsAttention} need attention` : '',
+            data.hub.openFollowUps > 0 ? `${data.hub.openFollowUps} follow-ups` : '',
+            unmarkedAttendance > 0 ? `${unmarkedAttendance} attendance open` : '',
+          ].filter(Boolean).join(' · ')
+        : 'nothing needs attention',
       icon: pendingActions > 0 ? AlarmClock : Inbox,
       tone: pendingActions > 0 ? 'violet' : 'emerald',
     },

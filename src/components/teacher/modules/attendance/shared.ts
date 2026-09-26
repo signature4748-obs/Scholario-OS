@@ -104,14 +104,6 @@ export interface AutosaveSettings {
   endOfDayMinutes: number
 }
 
-/** The caller's own saved subject session for the viewed date. */
-export interface SubjectSessionInfo {
-  subjectId: string
-  subjectName: string
-  savedAt: string
-  entries: Record<string, string>
-}
-
 export interface AttendanceBoard {
   classId: string
   label: string
@@ -126,7 +118,6 @@ export interface AttendanceBoard {
   draft: DraftInfo
   audit: AuditRow[]
   autosave: AutosaveSettings
-  mySessions: Record<string, SubjectSessionInfo>
   /** last 10 marked school days (30-day lookback) — absent when server predates it */
   history?: AttendanceHistory
 }

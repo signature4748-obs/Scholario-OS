@@ -9,10 +9,10 @@
  *
  * CRITICAL MARKS PERMISSION RULE (§15): being the class teacher does NOT
  * make the teacher the subject teacher for every subject. The completion
- * matrix shows every subject's status; only the subjects she actually
- * teaches get an "Enter marks" deep link into the ONE global Marks Entry
- * (subject-scoped work). MY CLASS = overall class results; GLOBAL MARKS
- * ENTRY = subject-scoped entry — different purposes, never merged.
+ * matrix shows every subject's status read-only; marks ENTRY happens only
+ * in the ONE global, subject-scoped Marks Entry module — MY CLASS = overall
+ * class results; GLOBAL MARKS ENTRY = subject-scoped entry — different
+ * purposes, never merged.
  *
  * ONE MARKSHEET ACTION (simplification round §4): the duplicate "Open
  * marksheet" button in the exam-summary strip was REMOVED. The ONE

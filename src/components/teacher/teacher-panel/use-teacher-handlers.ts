@@ -17,8 +17,11 @@ export function useTeacherHandlers(currentTeacher: TeacherRecord | undefined) {
   const handleAcceptAssignment = (paId: string, title: string) => {
     if (!currentTeacher) return
     acceptPosition(currentTeacher.id, paId)
-    toast.success(`Position "${title}" Accepted!`, {
-      description: 'Your permissions and Teacher Panel modules have been updated automatically.',
+    // Honest copy: accepting records the position and (when the assignment
+    // carries a class) adds that class to this teacher's scope. It never
+    // silently flips unrelated module permissions.
+    toast.success(`Position "${title}" accepted`, {
+      description: 'The responsibility is now on your record. The Principal has been notified.',
     })
   }
 

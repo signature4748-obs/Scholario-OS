@@ -261,6 +261,23 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      // ── Pending-collection guard (audit: no double receipts) ──────────
+      // Pending collections deliberately do NOT reduce the ledger's
+      // outstanding — so without this check, two overlapping collections
+      // could EACH pass the outstanding check and verification would mint
+      // a receipt for money not owed. The guard keeps the SAME invariant
+      // pending-money holds as verified-money: never beyond the balance.
+      const pendingOnFee = await db.feeTransaction.findMany({
+        where: { feeId: fee.id, status: TXN_STATUS.PENDING_VERIFICATION },
+        select: { amount: true },
+      })
+      const pendingSum = pendingOnFee.reduce((s, t) => s + t.amount, 0)
+      if (pendingSum > 0 && pendingSum + amount > outstanding) {
+        throw new Error(
+          `₹${pendingSum.toLocaleString('en-IN')} towards "${fee.title}" is already awaiting the Principal's verification. Once verified (or rejected), you can collect up to the remaining balance of ₹${Math.max(0, outstanding - pendingSum).toLocaleString('en-IN')}.`,
+        )
+      }
+
       await assertReferenceUnique(schoolId, referenceNumber)
 
       const studentName = student.user.name ?? 'Student'

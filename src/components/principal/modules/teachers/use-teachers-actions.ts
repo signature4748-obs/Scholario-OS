@@ -46,24 +46,6 @@ export function useTeachersActions(s: TeachersState) {
     s.setCredentialsModalOpen(true)
   }
 
-  const handleOpenPayrollModal = (t: TeacherRecord) => {
-    s.setSelectedTeacher(t)
-    s.setProposedSalaryInput(t.salary)
-    s.setPayrollModalOpen(true)
-  }
-
-  const handleSubmitPayrollRevision = () => {
-    if (!s.selectedTeacher || s.proposedSalaryInput <= 0) {
-      toast.error('Invalid Proposed Salary Amount')
-      return
-    }
-    const { code } = s.requestPayrollRevision(s.selectedTeacher.id, s.proposedSalaryInput)
-    s.setPayrollModalOpen(false)
-    toast.success(`Payroll Revision Requested (Code: ${code})`, {
-      description: `Confirmation code sent to ${s.selectedTeacher.name}'s panel. Change will apply upon teacher code entry.`,
-    })
-  }
-
   const handleOpenTerminationModal = (t: TeacherRecord) => {
     s.setSelectedTeacher(t)
     s.setConfirmTerminateText('')
@@ -152,8 +134,6 @@ export function useTeachersActions(s: TeachersState) {
     handleLoginAsTeacher,
     handleOpenAppointmentLetter,
     handleResetPassword,
-    handleOpenPayrollModal,
-    handleSubmitPayrollRevision,
     handleOpenTerminationModal,
     handleConfirmTermination,
     handleConfirmAssignPosition,

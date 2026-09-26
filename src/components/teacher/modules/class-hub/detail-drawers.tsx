@@ -674,10 +674,3 @@ export function MarksheetDrawer({
     </HubSheet>
   )
 }
-
-/** Kept for the composition root — the style lives inside the drawer so
- *  it applies only while the marksheet is open (printing other pages of
- *  the app is never affected). */
-export function MarksheetPrintStyle() {
-  return null
-}

@@ -34,7 +34,6 @@ export function useTeachersState() {
     regenerateAppointmentLetter,
     resetTeacherPassword,
     toggleLockTeacherAccount,
-    requestPayrollRevision,
     terminateTeacher,
   } = useTeachersStore()
 
@@ -52,8 +51,6 @@ export function useTeachersState() {
   const [lockModalOpen, setLockModalOpen] = useState(false)
   const [lockConfirmText, setLockConfirmText] = useState('')
 
-  const [payrollModalOpen, setPayrollModalOpen] = useState(false)
-  const [proposedSalaryInput, setProposedSalaryInput] = useState<number>(65000)
 
   const [terminationModalOpen, setTerminationModalOpen] = useState(false)
   const [terminationReason, setTerminationReason] = useState('Contract Completion')
@@ -111,7 +108,7 @@ export function useTeachersState() {
     assignPositionToTeacher, emergencyOverridePosition,
     removePositionFromTeacher, assignSubjectsAndClasses,
     regenerateAppointmentLetter, resetTeacherPassword,
-    toggleLockTeacherAccount, requestPayrollRevision, terminateTeacher,
+    toggleLockTeacherAccount, terminateTeacher,
     // navigation
     activeTab, setActiveTab,
     // search / filter
@@ -131,9 +128,6 @@ export function useTeachersState() {
     // lock modal
     lockModalOpen, setLockModalOpen,
     lockConfirmText, setLockConfirmText,
-    // payroll modal
-    payrollModalOpen, setPayrollModalOpen,
-    proposedSalaryInput, setProposedSalaryInput,
     // termination modal
     terminationModalOpen, setTerminationModalOpen,
     terminationReason, setTerminationReason,

@@ -135,25 +135,3 @@ export function feeShortLabel(status: FeeStatusKey, outstanding: number): string
   if (status === 'OVERDUE') return `Overdue`
   return `₹${outstanding.toLocaleString('en-IN')} due`
 }
-
-// ─── small presentational primitives ─────────────────────────────────
-
-export function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
-      <span className="w-24 shrink-0 text-muted-foreground">{label}:</span>
-      <span className="min-w-0 flex-1 break-words font-medium">{value}</span>
-    </div>
-  )
-}
-
-/** The quiet uppercase section label used in the grid card + profile sheet. */
-export function SectionLabel({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <p className="mb-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-      {icon}
-      {children}
-    </p>
-  )
-}

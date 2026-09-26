@@ -3,7 +3,7 @@ import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf, requireTeacher, authorizedStudentWhere } from '@/lib/teacher-hub'
 import { getTeachingAssignments, getLessonPlan } from '@/lib/lesson-planner'
 import { audienceAllows, notificationVisibilityWhere } from '@/lib/notices'
-import { dayKey } from '@/lib/lesson-schedule'
+import { istDayKey } from '@/lib/class-attendance'
 import { growthScoresFor } from '@/lib/growth/service'
 import { bandOf } from '@/lib/growth/shared'
 
@@ -23,8 +23,12 @@ export async function GET() {
     async (user) => {
       const schoolId = schoolScoped(user)
       const today = new Date()
-      const todayDayKey = dayKey(today)
-      const weekday = WEEKDAY_NAMES[today.getDay()]
+      // IST contract (audit): attendance rows live at UTC-midnight of the
+      // IST day key, and "today's" weekday is the school's calendar day —
+      // a plain UTC dayKey pointed at the previous day between 00:00 and
+      // 05:30 IST.
+      const todayDayKey = istDayKey(today)
+      const weekday = WEEKDAY_NAMES[new Date(today.getTime() + 330 * 60_000).getUTCDay()]
       const teacherName = (user.name || '').trim().toLowerCase()
 
       const teacher = await db.teacher.findUnique({ where: { userId: user.id } })

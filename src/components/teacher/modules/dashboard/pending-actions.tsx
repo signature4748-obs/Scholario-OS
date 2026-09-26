@@ -15,20 +15,25 @@
 
 import { useEffect, useState } from 'react'
 import {
-  AlarmClock, ArrowRight, MessageSquareHeart, Shield, Inbox,
+  AlarmClock, ArrowRight, CalendarCheck, MessageSquareHeart, Shield, Inbox,
 } from 'lucide-react'
 import { GlassCard, GradientAvatar } from '@/components/shared/ui'
+import { useFocusStore } from '@/lib/store/focus-store'
 import { cn } from '@/lib/utils'
 import type {
   FollowUpItem,
   GrowthWorkspacePayload,
   ParentConnectPayload,
 } from '@/lib/teacher-hub-types'
+import type { AttendanceSnapshot } from './types'
 
 interface PendingActionsProps {
   onNavigate: (key: string) => void
   /** true only for appointed class teachers (drives the hub card) */
   isClassTeacher?: boolean
+  /** Today's class-attendance baselines (dashboard aggregate) — unmarked
+   *  ones are pending actions exactly like follow-ups. */
+  attendance?: AttendanceSnapshot[]
 }
 
 interface FollowUpRow extends FollowUpItem {
@@ -49,7 +54,7 @@ function dueLabel(due: string): { text: string; tone: 'overdue' | 'today' | 'lat
   return { text: `Due in ${days}d`, tone: 'later' }
 }
 
-export function PendingActions({ onNavigate, isClassTeacher = false }: PendingActionsProps) {
+export function PendingActions({ onNavigate, isClassTeacher = false, attendance = [] }: PendingActionsProps) {
   const [state, setState] = useState<
     | { phase: 'loading' }
     | { phase: 'error' }
@@ -60,38 +65,47 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
         followUps: FollowUpRow[]
       }
   >({ phase: 'loading' })
+  // Tick-driven loads: the "Try again" action re-runs the effect (a bare
+  // setState could never re-fire the old mount-only fetch).
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      try {
-        const [pc, growth] = await Promise.allSettled([
-          fetch('/api/teacher/parent-connect', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('pc')))),
-          fetch('/api/teacher/growth', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('growth')))),
-        ])
-        if (cancelled) return
-        const pcData = pc.status === 'fulfilled' ? (pc.value.data as ParentConnectPayload) : null
-        const growthData = growth.status === 'fulfilled' ? (growth.value.data as GrowthWorkspacePayload) : null
-
-        const rows: FollowUpRow[] = []
-        pcData?.followUps
-          ?.filter((f) => f.status === 'open')
-          .forEach((f) => rows.push({ ...f, moduleKey: 'communication' }))
-        rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-
-        setState({
-          phase: 'ready',
-          unread: pcData?.stats?.unread ?? 0,
-          needsAttention: growthData?.summary?.needsAttention ?? 0,
-          followUps: rows.slice(0, 4),
-        })
-      } catch {
-        if (!cancelled) setState({ phase: 'error' })
+      // Both sources fail independently; a TOTAL failure must surface the
+      // error card — never an "all caught up" lie built from two nulls.
+      const [pc, growth] = await Promise.allSettled([
+        fetch('/api/teacher/parent-connect', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('pc')))),
+        fetch('/api/teacher/growth', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('growth')))),
+      ])
+      if (cancelled) return
+      const pcData = pc.status === 'fulfilled' ? (pc.value.data as ParentConnectPayload) : null
+      const growthData = growth.status === 'fulfilled' ? (growth.value.data as GrowthWorkspacePayload) : null
+      if (!pcData && !growthData) {
+        setState({ phase: 'error' })
+        return
       }
+
+      const rows: FollowUpRow[] = []
+      pcData?.followUps
+        ?.filter((f) => f.status === 'open')
+        .forEach((f) => rows.push({ ...f, moduleKey: 'communication' }))
+      rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+
+      setState({
+        phase: 'ready',
+        unread: pcData?.stats?.unread ?? 0,
+        needsAttention: growthData?.summary?.needsAttention ?? 0,
+        followUps: rows.slice(0, 4),
+      })
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [tick])
+
+  // Unmarked attendance baselines (server truth from the dashboard
+  // aggregate) — same queue, same honesty: they count as pending work.
+  const unmarked = attendance.filter((s) => !s.marked)
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -118,7 +132,7 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
             <Inbox className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">Pending actions could not load.</p>
             <button
-              onClick={() => setState({ phase: 'loading' })}
+              onClick={() => { setState({ phase: 'loading' }); setTick((t) => t + 1) }}
               className="mt-2 text-xs text-primary font-medium hover:underline"
             >
               Try again
@@ -126,7 +140,7 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
           </div>
         )}
 
-        {state.phase === 'ready' && state.followUps.length === 0 && state.unread === 0 && state.needsAttention === 0 && (
+        {state.phase === 'ready' && state.followUps.length === 0 && state.unread === 0 && state.needsAttention === 0 && unmarked.length === 0 && (
           <div className="py-8 text-center">
             <Inbox className="h-8 w-8 mx-auto text-emerald-500/40 mb-2" />
             <p className="text-sm font-medium text-muted-foreground">You&apos;re all caught up</p>
@@ -136,6 +150,33 @@ export function PendingActions({ onNavigate, isClassTeacher = false }: PendingAc
 
         {state.phase === 'ready' && (
           <div className="space-y-2.5">
+            {unmarked.map((s) => (
+              <button
+                key={s.classId}
+                onClick={() => {
+                  // Same deep-link the attendance prompt uses — the exact
+                  // class lands focused in the Class Attendance module.
+                  useFocusStore.getState().setFocus({
+                    type: 'class',
+                    id: s.classId,
+                    title: s.classLabel,
+                    moduleKey: 'attendance',
+                  })
+                  onNavigate('attendance')
+                }}
+                className="w-full flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-left hover:bg-amber-500/10 transition-colors"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+                  <CalendarCheck className="h-4.5 w-4.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm">{s.classLabel} attendance not marked</p>
+                  <p className="text-xs text-muted-foreground">Class Attendance · today&rsquo;s baseline is still open</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </button>
+            ))}
+
             {state.unread > 0 && (
               <button
                 onClick={() => onNavigate('communication')}

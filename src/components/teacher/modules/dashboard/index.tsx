@@ -101,8 +101,12 @@ export function TeacherDashboard({ onNavigate }: DashboardProps) {
         <NoticeBoard notices={data.notices} onNavigate={onNavigate} />
       </div>
 
-      {/* 6 · Real pending queue (fetches the Teacher Hub aggregates itself) */}
-      <PendingActions onNavigate={onNavigate} isClassTeacher={(data.classTeacherOf?.length ?? 0) > 0} />
+      {/* 6 · Real pending queue (hub aggregates + unmarked attendance) */}
+      <PendingActions
+        onNavigate={onNavigate}
+        isClassTeacher={(data.classTeacherOf?.length ?? 0) > 0}
+        attendance={data.attendance}
+      />
     </div>
   )
 }

@@ -40,7 +40,6 @@ export const SEED_TEACHERS: TeacherRecord[] = [
     status: 'Active',
     attendance: 98,
     salary: 185000,
-    salaryBreakdown: { basic: 92500, hra: 37000, da: 27750, specialAllowance: 18500, pfDeduction: 9250, netPay: 166500 },
     bankDetails: { bankName: 'HDFC Bank', accountNo: '50100293847102', ifscCode: 'HDFC0000240', branchName: 'DLF Phase 3' },
     subjects: ['Physics'],
     classes: [],
@@ -115,7 +114,6 @@ export const SEED_TEACHERS: TeacherRecord[] = [
     status: 'Active',
     attendance: 98,
     salary: 64000,
-    salaryBreakdown: { basic: 32000, hra: 12800, da: 9600, specialAllowance: 6400, pfDeduction: 3200, netPay: 57600 },
     bankDetails: { bankName: 'ICICI Bank', accountNo: '002101589342', ifscCode: 'ICIC0000021', branchName: 'Sector 31' },
     subjects: ['Mathematics', 'Computer Science'],
     classes: ['Class 2-A', 'Class 2-B', 'Class 2-C'],
@@ -173,15 +171,6 @@ function numFromSeed(seed: string, min: number, max: number): number {
   let h = 0
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
   return min + (h % Math.max(1, max - min + 1))
-}
-
-function salaryBreakdown(gross: number) {
-  const basic = Math.round(gross * 0.5)
-  const hra = Math.round(gross * 0.2)
-  const da = Math.round(gross * 0.15)
-  const specialAllowance = gross - basic - hra - da
-  const pfDeduction = Math.round(gross * 0.05)
-  return { basic, hra, da, specialAllowance, pfDeduction, netPay: gross - pfDeduction }
 }
 
 const BANKS = [
@@ -250,7 +239,6 @@ function deriveTeacherRecord(mt: (typeof MOCK_ROSTER)[number], idx: number): Tea
     status: mt.status === 'On Leave' ? 'On Leave' : 'Active',
     attendance: mt.attendance,
     salary: gross,
-    salaryBreakdown: salaryBreakdown(gross),
     bankDetails: {
       bankName: bank.bankName,
       accountNo: String(numFromSeed(mt.id + 'acc', 100000000, 999999999)),

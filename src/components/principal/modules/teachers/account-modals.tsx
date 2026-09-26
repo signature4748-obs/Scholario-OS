@@ -1,6 +1,6 @@
 'use client'
 
-import { Lock, Key, Coins, ShieldCheck, ShieldAlert, Copy } from 'lucide-react'
+import { Lock, Key, ShieldAlert, Copy } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { formatINR } from '@/lib/format'
 import type { TeacherRecord } from '@/lib/store/teachers-store'
 import type { TeacherCredentials } from './use-teachers-state'
 
@@ -121,74 +120,6 @@ export function CredentialsSlipModal({ credentials, open, onClose }: Credentials
             className="text-xs"
           >
             <Copy className="h-3.5 w-3.5" /> Copy Details
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-/* ---------- PAYROLL REVISION PROPOSAL MODAL ---------- */
-interface PayrollModalProps extends CommonProps {
-  teacher: TeacherRecord | null
-  proposedSalaryInput: number
-  setProposedSalaryInput: (v: number) => void
-  onConfirm: () => void
-}
-
-export function PayrollRevisionModal({ teacher, proposedSalaryInput, setProposedSalaryInput, open, onClose, onConfirm }: PayrollModalProps) {
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-emerald-700">
-            <Coins className="h-5 w-5" /> Request Payroll Revision
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            Propose salary revision for {teacher?.name}. A 6-digit confirmation code will be issued to the teacher's portal for explicit acceptance.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2 text-xs">
-          <div className="p-3 bg-muted/40 rounded-xl space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Current Gross Salary:</span>
-              <span className="font-bold text-foreground">{teacher ? formatINR(teacher.salary) : '₹0'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Teacher Name & ID:</span>
-              <span className="font-semibold">{teacher?.name} ({teacher?.employeeId})</span>
-            </div>
-          </div>
-
-          <div>
-            <Label className="text-xs font-semibold mb-1 block">New Monthly Gross Salary (₹ INR)</Label>
-            <Input
-              type="number"
-              value={proposedSalaryInput}
-              onChange={(e) => setProposedSalaryInput(Number(e.target.value))}
-              className="font-mono text-base font-bold"
-              placeholder="e.g. 68000"
-            />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Basic Pay, HRA, DA, and PF deductions will automatically recalculate.
-            </p>
-          </div>
-
-          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 space-y-1">
-            <p className="font-bold flex items-center gap-1 text-[11px]">
-              <ShieldCheck className="h-4 w-4 text-emerald-700" /> Two-Way Confirmation Security
-            </p>
-            <p className="text-[10px] leading-relaxed text-emerald-800">
-              Salary changes require mutual consent. Upon submitting, a unique code (PAY-XXXXXX) is dispatched to the teacher's panel. The salary updates live once the teacher enters the code.
-            </p>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={onConfirm} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-            Dispatch Proposal & Generate Code
           </Button>
         </DialogFooter>
       </DialogContent>

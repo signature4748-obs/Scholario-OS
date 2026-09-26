@@ -36,7 +36,7 @@
  * authorization server-side anyway.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, BarChart3, BookOpenCheck, CalendarCheck, DoorOpen,
   GraduationCap, IndianRupee, RefreshCw, School, Search, TrendingUp,
@@ -89,6 +89,16 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
   const [reportKind, setReportKind] = useState<ReportKind | null>(null)
   const [marksheetExam, setMarksheetExam] = useState<{ examId: string; examName: string } | null>(null)
 
+  // A reload must refresh BOTH surfaces: the class LIST (KPIs, fee
+  // snapshot) and the loaded class DETAIL (directory, attendance report,
+  // performance). The detail hook used to receive a pinned tick of 0 —
+  // retries and post-edit refreshes never refetched it.
+  const [detailTick, setDetailTick] = useState(0)
+  const reloadAll = useCallback(() => {
+    reload()
+    setDetailTick((t) => t + 1)
+  }, [reload])
+
   // ── module-level states (the hooks above always run) ─────────────────
 
   if (error) {
@@ -135,7 +145,8 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
   return (
     <ClassHubLoaded
       classes={data.classes}
-      reload={reload}
+      reload={reloadAll}
+      detailTick={detailTick}
       classId={classId}
       setClassId={setClassId}
       tab={tab}
@@ -156,12 +167,13 @@ export function ClassHubModule({ onNavigate }: { onNavigate: (key: string) => vo
 }
 
 function ClassHubLoaded({
-  classes, reload, classId, setClassId, tab, setTab, search, setSearch,
+  classes, reload, detailTick, classId, setClassId, tab, setTab, search, setSearch,
   profileStudentId, setProfileStudentId, growthOpen, setGrowthOpen,
   reportKind, setReportKind, marksheetExam, setMarksheetExam, onNavigate,
 }: {
   classes: ClassHubClass[]
   reload: () => void
+  detailTick: number
   classId: string | null
   setClassId: (id: string | null) => void
   tab: HubTab
@@ -179,7 +191,7 @@ function ClassHubLoaded({
   onNavigate: (key: string) => void
 }) {
   const active = classes.find((c) => c.classId === classId) ?? classes[0]
-  const detail = useClassHubDetail(active.classId, 0)
+  const detail = useClassHubDetail(active.classId, detailTick)
 
   // §31 — a background class-list refresh (window-focus role sync) must
   // never yank the teacher off the class they are viewing: keep the last
