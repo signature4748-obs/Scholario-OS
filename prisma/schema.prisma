@@ -455,6 +455,28 @@ model ExamMark {
   @@unique([examId, classId, subjectId, studentId])
 }
 
+/// Scan Marks Sheet review draft (TWC-SCAN). OCR pre-review state ONLY —
+/// never a marks source of truth. Scoped to school + session + teacher +
+/// exam + class + subject; submission flows through the canonical
+/// marks-entry save/submit routes and deletes the draft.
+model MarksScanDraft {
+  id        String    @id @default(cuid())
+  schoolId  String
+  teacherId String
+  examId    String
+  classId   String
+  subjectId String
+  session   String?
+  maxMarks  Int
+  rowsJson  String
+  pagesJson String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([schoolId, teacherId, examId, classId, subjectId])
+  @@index([schoolId, teacherId])
+}
+
 model ExamAttendance {
   id             String            @id @default(cuid())
   examId         String

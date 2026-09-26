@@ -22,12 +22,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ClipboardList, Send } from 'lucide-react'
+import { ClipboardList, Keyboard, Printer, ScanLine, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { GlassCard, PageTransition, StatusBadge } from '@/components/shared/ui'
 import { ModuleToolbar } from '../../teacher-panel/module-toolbar'
 import { Button } from '@/components/ui/button'
 import { HubEmptyState, HubSectionError } from '../shared/hub-stat-cards'
+import { useSchoolProfile } from '@/lib/school-profile'
+import { downloadBlankMarksSheetPdf } from '@/lib/marks-scan/sheet-pdf'
 import {
   gridKeyOf,
   saveMarksEntries,
@@ -38,6 +40,7 @@ import {
 import { MarksTable } from './marks-table'
 import { SubmitMarksDialog, type SubmitSummary } from './publish-dialog'
 import { SaveIndicator, type SaveState } from './save-indicator'
+import { ScanWorkspace } from './scan/scan-workspace'
 import { SelectorsBar } from './selectors-bar'
 import { StatStrip } from './stat-strip'
 import {
@@ -55,10 +58,18 @@ const AUTOSAVE_DELAY_MS = 800
 /** Minimum gap between "Marks must be between 0 and N" toasts. */
 const INVALID_TOAST_COOLDOWN_MS = 1500
 
+/** Input-method ids for the entry bar: manual roster (default) or scan. */
+type EntryMode = 'manual' | 'scan'
+
 export function MarksEntryModule() {
   const exams = useMarksExams()
   const [selection, setSelection] = useState<GridSelection | null>(null)
   const grid = useMarksGrid(selection)
+  const school = useSchoolProfile()
+
+  // ── Second input method: Scan Marks Sheet (spec TWC-SCAN) ─────────
+  const [mode, setMode] = useState<EntryMode>('manual')
+  const [scanKey, setScanKey] = useState(0) // remount per grid selection
 
   // Input values per student ('' = not entered). Seeded from each fresh
   // grid payload; local edits accumulate on top until saved.
@@ -296,6 +307,49 @@ export function MarksEntryModule() {
   const submitSummary: SubmitSummary | null =
     grid.data && stats ? { grid: grid.data, stats, invalidCount } : null
 
+  // ── Entry-method helpers ────────────────────────────────────────────
+  const scanDisabledReason = !grid.data
+    ? 'The roster is still loading'
+    : submitted
+      ? 'Marks already submitted'
+      : null
+
+  const enterManual = useCallback(() => {
+    setMode('manual')
+  }, [])
+
+  const enterScan = useCallback(() => {
+    if (scanDisabledReason) {
+      toast.error('Scan is unavailable', { description: scanDisabledReason })
+      return
+    }
+    setScanKey((k) => k + 1) // fresh workspace per selection
+    setMode('scan')
+  }, [scanDisabledReason])
+
+  const printBlankSheet = useCallback(() => {
+    const g = gridRef.current
+    if (!g) return
+    downloadBlankMarksSheetPdf({
+      schoolName: school.name,
+      session: school.academicYear,
+      examName: g.exam.name,
+      className: g.label,
+      subjectName: g.subjectName,
+      maxMarks: g.maxMarks,
+      passMarks: g.passMarks,
+      roster: g.students.map((s) => ({ id: s.id, rollNo: s.rollNo, name: s.name })),
+    })
+    toast.success('Blank marks sheet downloaded', {
+      description: 'Print it, complete in ink, then Scan Marks Sheet for review.',
+    })
+  }, [school])
+
+  const handleScanSubmitted = useCallback(() => {
+    setMode('manual')
+    grid.reload()
+  }, [grid])
+
   // ── Submit flow ───────────────────────────────────────────────────────
   const confirmSubmit = useCallback(async () => {
     const sel = selectionRef.current
@@ -381,7 +435,9 @@ export function MarksEntryModule() {
       <ModuleToolbar
         context={toolbarContext}
         action={
-          submitted ? (
+          mode === 'scan' ? (
+            <StatusBadge status="Scan review" variant="warning" dot />
+          ) : submitted ? (
             <StatusBadge status="Marks submitted" variant="success" dot />
           ) : (
             <>
@@ -394,9 +450,71 @@ export function MarksEntryModule() {
         }
       />
 
-      <SelectorsBar exams={examList} selection={selection} onSelectionChange={changeSelection} />
+      <SelectorsBar
+        exams={examList}
+        selection={selection}
+        onSelectionChange={changeSelection}
+        disabled={mode === 'scan'}
+      />
 
-      {grid.error ? (
+      {/* ── Entry method: manual (default) | scan ───────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-2.5 py-2 shadow-sm">
+        <div
+          className="flex gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+          role="tablist"
+          aria-label="Marks entry method"
+        >
+          <button
+            role="tab"
+            aria-selected={mode === 'manual'}
+            onClick={enterManual}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              mode === 'manual'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Keyboard className="h-3.5 w-3.5" aria-hidden="true" />
+            Enter Manually
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === 'scan'}
+            onClick={enterScan}
+            disabled={!!scanDisabledReason}
+            title={scanDisabledReason ?? 'Upload or photograph a completed marks sheet'}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              mode === 'scan'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ScanLine className="h-3.5 w-3.5" aria-hidden="true" />
+            Scan Marks Sheet
+          </button>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 text-xs text-muted-foreground"
+          onClick={printBlankSheet}
+          disabled={!grid.data}
+          title="Print a blank sheet with the roster pre-printed — designed for scanning"
+        >
+          <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+          Print Blank Marks Sheet
+        </Button>
+      </div>
+
+      {mode === 'scan' && selection && grid.data ? (
+        <ScanWorkspace
+          key={`scan-${scanKey}-${grid.data.classId}-${grid.data.subjectId}-${grid.data.exam.id}`}
+          selection={selection}
+          grid={grid.data}
+          onSubmitted={handleScanSubmitted}
+          onEnterManually={enterManual}
+        />
+      ) : grid.error ? (
         <HubSectionError
           message={grid.error}
           onRetry={() => grid.reload()}

@@ -87,8 +87,14 @@ export function CreateAnnouncementDialog({
   const [audience, setAudience] = useState('')
   const [priority, setPriority] = useState('NORMAL')
   const [message, setMessage] = useState('')
-  const [publishAt, setPublishAt] = useState('') // datetime-local; '' = now
-  const [expiresAt, setExpiresAt] = useState('')
+  // Schedule fields — date + time pairs (native single-box datetime-local
+  // inputs render as oversized segmented editors in WebKit/iOS and can
+  // collide with the neighbouring column; two narrow inputs are the
+  // reliably-safe primitive on every engine). '' dates = publish now / no expiry.
+  const [publishDate, setPublishDate] = useState('')
+  const [publishTime, setPublishTime] = useState('')
+  const [expiresDate, setExpiresDate] = useState('')
+  const [expiresTime, setExpiresTime] = useState('')
   const [publishing, setPublishing] = useState(false)
 
   const defaultAudience = classes[0] ? `class:${classes[0].id}` : SCHOOL_AUDIENCES[0].value
@@ -100,11 +106,36 @@ export function CreateAnnouncementDialog({
       setAudience(defaultAudience)
       setPriority('NORMAL')
       setMessage('')
-      setPublishAt('')
-      setExpiresAt('')
+      setPublishDate('')
+      setPublishTime('')
+      setExpiresDate('')
+      setExpiresTime('')
       setPublishing(false)
     }
   }, [open])
+
+  // When a date is picked and no time is set, pre-fill a sensible school
+  // hour so the combined moment is always explicit on screen (never a
+  // hidden default). Clearing the date clears its time.
+  const changePublishDate = (date: string) => {
+    setPublishDate(date)
+    if (date && !publishTime) setPublishTime('09:00')
+    if (!date) setPublishTime('')
+  }
+  const changeExpiresDate = (date: string) => {
+    setExpiresDate(date)
+    if (date && !expiresTime) setExpiresTime('09:00')
+    if (!date) setExpiresTime('')
+  }
+
+  /** '' date → null; date(+time, default 09:00) → ISO string. */
+  const combineAt = (date: string, time: string): string | null =>
+    date ? new Date(`${date}T${time || '09:00'}`).toISOString() : null
+
+  const publishAtIso = combineAt(publishDate, publishTime)
+  const expiresAtIso = combineAt(expiresDate, expiresTime)
+  const expiresBeforePublish =
+    publishAtIso && expiresAtIso ? expiresAtIso <= publishAtIso : false
 
   const audienceOptions = useMemo(() => {
     const classOptions = classes.map((c) => [
@@ -138,7 +169,7 @@ export function CreateAnnouncementDialog({
   const priorityInfo = priorityTone(priority)
 
   const handlePublish = async () => {
-    if (publishing || !valid) return
+    if (publishing || !valid || expiresBeforePublish) return
     setPublishing(true)
     try {
       const result = await publishAnnouncement({
@@ -146,14 +177,14 @@ export function CreateAnnouncementDialog({
         message: message.trim(),
         audience,
         priority,
-        publishAt: publishAt ? new Date(publishAt).toISOString() : null,
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        publishAt: publishAtIso,
+        expiresAt: expiresAtIso,
       })
       toast.success(
         result.publishAt ? 'Announcement scheduled' : 'Announcement published',
         {
           description: result.publishAt
-            ? `Goes live on ${previewWhen(publishAt)} — hidden from every feed until then.`
+            ? `Goes live on ${previewWhen(`${publishDate}T${publishTime || '09:00'}`)} — hidden from every feed until then.`
             : `Visible now to: ${audienceLabelValue}.`,
         },
       )
@@ -249,32 +280,66 @@ export function CreateAnnouncementDialog({
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="ch-ann-publish">
+            {/* Schedule — two independent columns on desktop/tablet,
+                stacked full-width rows on mobile. Each field is its own
+                date + time pair so the inputs can never overlap in any
+                browser engine (WebKit renders single-box datetime-local
+                as a wide segmented editor). */}
+            <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5">
+                <Label htmlFor="ch-ann-publish-date">
                   Publish <span className="text-[10px] font-normal text-muted-foreground">(empty = now)</span>
                 </Label>
-                <Input
-                  id="ch-ann-publish"
-                  type="datetime-local"
-                  value={publishAt}
-                  onChange={(e) => setPublishAt(e.target.value)}
-                  className="text-xs"
-                />
+                <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-2">
+                  <Input
+                    id="ch-ann-publish-date"
+                    type="date"
+                    value={publishDate}
+                    max={expiresDate || undefined}
+                    onChange={(e) => changePublishDate(e.target.value)}
+                    className="h-9 text-sm tabular-nums"
+                  />
+                  <Input
+                    id="ch-ann-publish-time"
+                    type="time"
+                    value={publishTime}
+                    disabled={!publishDate}
+                    onChange={(e) => setPublishTime(e.target.value)}
+                    aria-label="Publish time"
+                    className="h-9 text-sm tabular-nums"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ch-ann-expiry">
+              <div className="min-w-0 space-y-1.5">
+                <Label htmlFor="ch-ann-expiry-date">
                   Expires <span className="text-[10px] font-normal text-muted-foreground">(optional)</span>
                 </Label>
-                <Input
-                  id="ch-ann-expiry"
-                  type="datetime-local"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                  className="text-xs"
-                />
+                <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-2">
+                  <Input
+                    id="ch-ann-expiry-date"
+                    type="date"
+                    value={expiresDate}
+                    min={publishDate || undefined}
+                    onChange={(e) => changeExpiresDate(e.target.value)}
+                    className="h-9 text-sm tabular-nums"
+                  />
+                  <Input
+                    id="ch-ann-expiry-time"
+                    type="time"
+                    value={expiresTime}
+                    disabled={!expiresDate}
+                    onChange={(e) => setExpiresTime(e.target.value)}
+                    aria-label="Expiry time"
+                    className="h-9 text-sm tabular-nums"
+                  />
+                </div>
               </div>
             </div>
+            {expiresBeforePublish && (
+              <p className="text-[11px] font-medium text-destructive">
+                Expiry must be after the publish moment.
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -297,9 +362,11 @@ export function CreateAnnouncementDialog({
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/70 pt-2 text-[10px] text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <CalendarClock className="h-3 w-3" aria-hidden="true" />
-                  {publishAt ? `Live ${previewWhen(publishAt)}` : 'Live immediately'}
+                  {publishAtIso ? `Live ${previewWhen(`${publishDate}T${publishTime || '09:00'}`)}` : 'Live immediately'}
                 </span>
-                {expiresAt && <span>Expires {previewWhen(expiresAt)}</span>}
+                {expiresAtIso && (
+                  <span>Expires {previewWhen(`${expiresDate}T${expiresTime || '09:00'}`)}</span>
+                )}
                 <span>By you</span>
               </div>
             </div>
@@ -327,8 +394,8 @@ export function CreateAnnouncementDialog({
           </button>
           {step === 'compose' ? (
             <button
-              onClick={() => valid && setStep('preview')}
-              disabled={!valid}
+              onClick={() => valid && !expiresBeforePublish && setStep('preview')}
+              disabled={!valid || expiresBeforePublish}
               className="flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
             >
               <Eye className="h-3.5 w-3.5" aria-hidden="true" />
@@ -337,7 +404,7 @@ export function CreateAnnouncementDialog({
           ) : (
             <button
               onClick={() => void handlePublish()}
-              disabled={publishing}
+              disabled={publishing || expiresBeforePublish}
               className="flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {publishing ? (
