@@ -1,155 +1,194 @@
 'use client'
 
 /**
- * QuickActions + NoticeBoard (TWC-FE-4).
+ * QuickActions (v2) — the role-aware, context-aware shortcut grid.
  *
- * QuickActions — unchanged navigation surface (all module keys exist in
- * the reduced Teacher Workspace: attendance, lesson-planner, marks,
- * communication, growth, students).
+ *   • My Class appears ONLY for appointed class teachers;
+ *   • when a class-attendance baseline is still open, Mark Attendance
+ *     moves to the front and carries a quiet amber emphasis — the most
+ *     time-critical action of a class teacher's day;
+ *   • Message Parents shows the live unread badge from the aggregate;
+ *   • Enter Marks shows a draft badge while marks entries sit in DRAFT;
+ *   • every tile is a real navigation target that exists for the role.
  *
- * NoticeBoard — rebuilt on REAL Notification rows from the dashboard
- * aggregate (audience-scoped, latest three). The old
- * `lib/mock/operations` announcements are gone: title + sender + relative
- * date, an Important badge for HIGH/URGENT priority, an honest "No notices"
- * empty state, and "View all" into the Communication module.
+ * Tiles use the SCHOLARIO tone language (500/10 icon chip, quiet border)
+ * — no loud gradients; one amber emphasis at a time, only when honest.
  */
 
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   CalendarCheck, BookMarked, FileText, Megaphone,
-  TrendingUp, Sparkles, ArrowRight, Users, School,
+  TrendingUp, Users, School, Sparkles,
 } from 'lucide-react'
-import { GlassCard, StatusBadge } from '@/components/shared/ui'
-import { relativeTime } from './hooks/use-teacher-dashboard'
-import type { TeacherNotice } from './types'
+import { cn } from '@/lib/utils'
+import { GlassCard } from '@/components/shared/ui'
 
-const quickActions = [
-  { label: 'Mark Attendance', icon: 'CalendarCheck', color: 'from-amber-500 to-orange-600', key: 'attendance' },
-  { label: "Today's Lesson", icon: 'BookMarked', color: 'from-emerald-500 to-teal-600', key: 'lesson-planner' },
-  { label: 'Enter Marks', icon: 'FileText', color: 'from-rose-500 to-pink-600', key: 'marks' },
-  { label: 'Message Parents', icon: 'Megaphone', color: 'from-cyan-500 to-sky-600', key: 'communication' },
-  { label: 'Student Growth', icon: 'TrendingUp', color: 'from-lime-500 to-green-600', key: 'growth' },
-  { label: 'Student Directory', icon: 'Users', color: 'from-violet-500 to-purple-600', key: 'students' },
-] as const
+type Tone = 'amber' | 'emerald' | 'rose' | 'sky' | 'violet' | 'teal'
 
-const classHubAction = {
-  label: 'My Class',
-  icon: 'School',
-  color: 'from-teal-500 to-emerald-600',
-  key: 'class-hub',
-} as const
+const TONE: Record<Tone, { chip: string; emphasis?: string }> = {
+  amber: { chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  emerald: { chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  rose: { chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+  sky: { chip: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
+  violet: { chip: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+  teal: { chip: 'bg-teal-500/10 text-teal-600 dark:text-teal-400' },
+}
 
-const actionIconMap: Record<string, React.ReactNode> = {
-  CalendarCheck: <CalendarCheck className="h-4 w-4" />,
-  BookMarked: <BookMarked className="h-4 w-4" />,
-  FileText: <FileText className="h-4 w-4" />,
-  Megaphone: <Megaphone className="h-4 w-4" />,
-  TrendingUp: <TrendingUp className="h-4 w-4" />,
-  Users: <Users className="h-4 w-4" />,
-  School: <School className="h-4 w-4" />,
+interface ActionDef {
+  key: string
+  label: string
+  icon: React.ReactNode
+  tone: Tone
+  /** numeric badge (rendered only when > 0) */
+  badge?: number
+  /** the one honest emphasis — the action the day is asking for */
+  emphasized?: boolean
 }
 
 interface QuickActionsProps {
   onNavigate: (key: string) => void
-  /** true when the teacher is an appointed class teacher — surfaces the
-   *  My Class (Class Teacher Hub) shortcut */
+  /** true only for appointed class teachers (surfaces the My Class tile) */
   isClassTeacher?: boolean
+  /** open class-attendance baselines today — lifts Mark Attendance */
+  unmarkedAttendance?: number
+  /** live unread parent/staff messages — badges Message Parents */
+  unreadMessages?: number
+  /** marks entries sitting in DRAFT — badges Enter Marks */
+  marksPending?: number
+  /** false for a CT-only teacher with no teaching subjects — hides the
+   *  lesson/marks shortcuts (their modules honestly have nothing to show) */
+  hasAssignments?: boolean
 }
 
-export function QuickActions({ onNavigate, isClassTeacher = false }: QuickActionsProps) {
-  const actions = isClassTeacher ? [classHubAction, ...quickActions] : [...quickActions]
+export function QuickActions({
+  onNavigate,
+  isClassTeacher = false,
+  unmarkedAttendance = 0,
+  unreadMessages = 0,
+  marksPending = 0,
+  hasAssignments = true,
+}: QuickActionsProps) {
+  const base: ActionDef[] = []
+
+  if (isClassTeacher) {
+    base.push({
+      key: 'class-hub',
+      label: 'My Class',
+      icon: <School className="h-4 w-4" aria-hidden />,
+      tone: 'teal',
+    })
+  }
+
+  base.push(
+    {
+      key: 'attendance',
+      label: 'Mark Attendance',
+      icon: <CalendarCheck className="h-4 w-4" aria-hidden />,
+      tone: 'amber',
+      badge: unmarkedAttendance,
+      // the open baseline is the day's most time-critical action — lift it
+      emphasized: unmarkedAttendance > 0,
+    },
+  )
+
+  if (hasAssignments) {
+    base.push(
+      {
+        key: 'lesson-planner',
+        label: "Today's Lesson",
+        icon: <BookMarked className="h-4 w-4" aria-hidden />,
+        tone: 'emerald',
+      },
+      {
+        key: 'marks',
+        label: 'Enter Marks',
+        icon: <FileText className="h-4 w-4" aria-hidden />,
+        tone: 'rose',
+        badge: marksPending,
+      },
+    )
+  }
+
+  base.push(
+    {
+      key: 'communication',
+      label: 'Message Parents',
+      icon: <Megaphone className="h-4 w-4" aria-hidden />,
+      tone: 'sky',
+      badge: unreadMessages,
+    },
+    {
+      key: 'growth',
+      label: 'Student Growth',
+      icon: <TrendingUp className="h-4 w-4" aria-hidden />,
+      tone: 'emerald',
+    },
+    {
+      key: 'students',
+      label: 'Student Directory',
+      icon: <Users className="h-4 w-4" aria-hidden />,
+      tone: 'violet',
+    },
+  )
+
+  // Contextual ordering — an emphasized action moves to the very front.
+  const actions = unmarkedAttendance > 0
+    ? [...base.filter((a) => a.emphasized), ...base.filter((a) => !a.emphasized)]
+    : base
+
+  const reduce = useReducedMotion()
+
   return (
-    <GlassCard className="p-3 sm:p-4 lg:p-5">
-      <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-amber-500" /> Quick Actions
+    <GlassCard className="p-3.5 sm:p-4 lg:p-5">
+      <h3 className="mb-3.5 flex items-center gap-2 font-display text-sm font-bold tracking-tight">
+        <Sparkles className="h-4 w-4 text-amber-500" aria-hidden /> Quick Actions
       </h3>
       <div className="grid grid-cols-2 gap-2.5">
-        {actions.map((a, i) => (
-          <motion.button
-            key={a.label}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.05 }}
-            whileHover={{ y: -2, scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onNavigate(a.key)}
-            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card/50 p-3 text-left hover:shadow-premium transition-shadow"
-          >
-            <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${a.color} text-white shadow-md`}>
-              {actionIconMap[a.icon]}
-            </div>
-            <span className="text-xs font-medium leading-tight">{a.label}</span>
-          </motion.button>
-        ))}
+        {actions.map((a, i) => {
+          const tone = TONE[a.tone]
+          // An odd count would strand the last tile — let it span the full
+          // row so the grid always closes cleanly (7 → 2·2·2·1-wide).
+          const isLastAlone = i === actions.length - 1 && actions.length % 2 === 1
+          return (
+            <motion.button
+              key={a.key}
+              type="button"
+              initial={reduce ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i * 0.04, 0.25), duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              whileHover={reduce ? undefined : { y: -2 }}
+              whileTap={reduce ? undefined : { scale: 0.98 }}
+              onClick={() => onNavigate(a.key)}
+              aria-label={a.badge && a.badge > 0 ? `${a.label} — ${a.badge} pending` : a.label}
+              className={cn(
+                'group relative flex min-h-[76px] flex-col items-start gap-2 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                isLastAlone && 'col-span-2',
+                a.emphasized
+                  ? 'border-amber-500/40 bg-amber-500/[0.06] hover:border-amber-500/60'
+                  : 'border-border bg-card/50 hover:border-primary/30 hover:bg-accent/40',
+              )}
+            >
+              {(a.badge ?? 0) > 0 && (
+                <span
+                  className={cn(
+                    'absolute right-2.5 top-2.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums',
+                    a.emphasized
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-primary text-primary-foreground',
+                  )}
+                  aria-hidden
+                >
+                  {a.badge}
+                </span>
+              )}
+              <span className={cn('flex h-8 w-8 items-center justify-center rounded-lg transition-transform group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100', tone.chip)}>
+                {a.icon}
+              </span>
+              <span className="pr-1 text-xs font-medium leading-tight">{a.label}</span>
+            </motion.button>
+          )
+        })}
       </div>
-    </GlassCard>
-  )
-}
-
-interface NoticeBoardProps {
-  notices: TeacherNotice[]
-  onNavigate: (key: string) => void
-}
-
-export function NoticeBoard({ notices, onNavigate }: NoticeBoardProps) {
-  return (
-    <GlassCard className="p-3 sm:p-4 lg:p-5 lg:col-span-2">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-sm">Notice Board</h3>
-        <button
-          type="button"
-          onClick={() => onNavigate('communication')}
-          className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
-        >
-          View all <ArrowRight className="h-3 w-3" />
-        </button>
-      </div>
-
-      {notices.length === 0 ? (
-        <div className="py-8 text-center">
-          <Megaphone className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" aria-hidden />
-          <p className="text-sm font-medium text-muted-foreground">No notices</p>
-          <p className="text-xs text-muted-foreground/70 mt-0.5">
-            School announcements will appear here.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-          {notices.map((n, i) => {
-            const important = n.priority === 'HIGH' || n.priority === 'URGENT'
-            return (
-              <motion.div
-                key={n.id}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.08 }}
-                className="flex gap-3 rounded-xl border border-border bg-card/40 p-3 hover:bg-accent/40 transition-colors"
-              >
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                  important
-                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                    : 'bg-muted/60 text-muted-foreground'
-                }`}>
-                  <Megaphone className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm">{n.title}</p>
-                    {important && (
-                      <StatusBadge status="Important" variant="danger" className="px-2 py-0 text-[10px]" />
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{n.message}</p>
-                  <p className="text-[10px] text-muted-foreground/70 mt-1 flex items-center gap-2">
-                    <Users className="h-2.5 w-2.5 inline" aria-hidden /> {n.sender}
-                    <span aria-hidden>·</span> {relativeTime(n.createdAt)}
-                  </p>
-                </div>
-              </motion.div>
-            )
-          })}
-        </div>
-      )}
     </GlassCard>
   )
 }

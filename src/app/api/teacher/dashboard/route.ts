@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf, requireTeacher, authorizedStudentWhere } from '@/lib/teacher-hub'
 import { getTeachingAssignments, getLessonPlan } from '@/lib/lesson-planner'
-import { audienceAllows, notificationVisibilityWhere } from '@/lib/notices'
+import { audienceAllows, notificationVisibilityWhere, audienceLabel } from '@/lib/notices'
 import { istDayKey } from '@/lib/class-attendance'
 import { growthScoresFor } from '@/lib/growth/service'
 import { bandOf } from '@/lib/growth/shared'
@@ -11,12 +11,20 @@ export const runtime = 'nodejs'
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+/** Weekday name of `today + offsetDays`, on the school's IST calendar. */
+function istWeekday(base: Date, offsetDays: number): string {
+  return WEEKDAY_NAMES[new Date(base.getTime() + 330 * 60_000 + offsetDays * 86_400_000).getUTCDay()]
+}
+
 /**
  * GET /api/teacher/dashboard — ONE aggregate for the Teacher Dashboard:
- * identity, teaching assignments, today's periods (real timetable),
- * class-teacher attendance snapshot for today, curriculum progress with
- * today's topic per assignment, Teacher Hub pending counts and the
- * latest school notices. Sections fail independently (allSettled).
+ * identity, teaching assignments, today's periods (real timetable) plus the
+ * next teaching day, class-teacher attendance snapshot for today (with
+ * marked-count for the partial state), curriculum progress with today's
+ * topic per assignment, Teacher Hub pending counts INCLUDING the open
+ * follow-up rows and draft marks entries (so the dashboard needs no second
+ * fetch), class-teacher hub stats (30-day rate, follow-ups) and the latest
+ * school notices with per-user read state. Sections fail independently.
  */
 export async function GET() {
   return withUser(
@@ -28,56 +36,140 @@ export async function GET() {
       // a plain UTC dayKey pointed at the previous day between 00:00 and
       // 05:30 IST.
       const todayDayKey = istDayKey(today)
-      const weekday = WEEKDAY_NAMES[new Date(today.getTime() + 330 * 60_000).getUTCDay()]
+      const weekday = istWeekday(today, 0)
       const teacherName = (user.name || '').trim().toLowerCase()
 
       const teacher = await db.teacher.findUnique({ where: { userId: user.id } })
 
       const assignments = await getTeachingAssignments(user)
 
-      // ── Today's periods (the teacher's own cells on today's weekday) ──
-      const myCells = teacherName
+      // ── The teacher's own timetable cells (ALL weekdays in ONE query) ──
+      // today's slice feeds "Today's Schedule"; the earliest future weekday
+      // with a period feeds the "no more periods today" Next-Up state.
+      const allMyCells = teacherName
         ? (
             await db.timetable.findMany({
-              where: { schoolId, day: weekday, teacherName: { not: null } },
+              where: { schoolId, teacherName: { not: null } },
               include: {
                 class: { select: { name: true, section: true } },
                 subject: { select: { name: true } },
               },
-              orderBy: { period: 'asc' },
+              orderBy: [{ day: 'asc' }, { period: 'asc' }],
             })
           ).filter((r) => (r.teacherName || '').trim().toLowerCase() === teacherName)
         : []
+      const toPeriod = (r: (typeof allMyCells)[number]) => ({
+        period: r.period,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        subjectName: r.subject?.name ?? 'Subject',
+        classLabel: classLabelOf(r.class),
+        room: r.room,
+        // ids let the dashboard deep-link a period into the Lesson Planner
+        classId: r.classId,
+        subjectId: r.subjectId,
+      })
+      const myCellsByDay = new Map<string, (typeof allMyCells)[number][]>()
+      for (const r of allMyCells) {
+        const list = myCellsByDay.get(r.day) ?? []
+        list.push(r)
+        myCellsByDay.set(r.day, list)
+      }
+      const todayCells = (myCellsByDay.get(weekday) ?? []).slice().sort((a, b) => a.period - b.period)
+
+      // Next teaching day after today (1–7 days ahead) and its first period.
+      let nextDay: { weekday: string; period: ReturnType<typeof toPeriod> } | null = null
+      for (let offset = 1; offset <= 7 && !nextDay; offset++) {
+        const dayName = istWeekday(today, offset)
+        const cells = (myCellsByDay.get(dayName) ?? []).slice().sort((a, b) => a.period - b.period)
+        if (cells.length > 0) nextDay = { weekday: dayName, period: toPeriod(cells[0]) }
+      }
 
       // ── Class-teacher classes + today's attendance snapshot ──────────
       const classTeacherOf = await db.class.findMany({
         where: { schoolId, classTeacherId: user.id },
-        select: { id: true, name: true, section: true, students: { select: { id: true } } },
+        select: {
+          id: true,
+          name: true,
+          section: true,
+          students: { select: { id: true } },
+        },
         orderBy: { name: 'asc' },
       })
-      const attendanceSnapshots = await Promise.all(
-        classTeacherOf.map(async (c) => {
-          const rows = await db.attendance.findMany({
-            where: {
+
+      // 30-day attendance window (same canonical bounds as the Class Hub:
+      // rows up to end of today; LEAVE never penalizes — excluded from the
+      // denominator, PRESENT+LATE count as attended).
+      const since30 = new Date(today.getTime() - 30 * 86_400_000)
+      const [attendanceSnapshots, att30Rows, ctFollowUpRows] = await Promise.all([
+        Promise.all(
+          classTeacherOf.map(async (c) => {
+            const rows = await db.attendance.findMany({
+              where: {
+                classId: c.id,
+                date: { gte: new Date(`${todayDayKey}T00:00:00.000Z`), lt: new Date(`${todayDayKey}T23:59:59.999Z`) },
+              },
+              select: { status: true },
+            })
+            return {
               classId: c.id,
-              date: { gte: new Date(`${todayDayKey}T00:00:00.000Z`), lt: new Date(`${todayDayKey}T23:59:59.999Z`) },
-            },
-            select: { status: true },
-          })
-          return {
-            classId: c.id,
-            classLabel: classLabelOf(c),
-            studentCount: c.students.length,
-            marked: rows.length > 0,
-            counts: {
-              present: rows.filter((r) => r.status === 'PRESENT').length,
-              absent: rows.filter((r) => r.status === 'ABSENT').length,
-              late: rows.filter((r) => r.status === 'LATE').length,
-              leave: rows.filter((r) => r.status === 'LEAVE').length,
-            },
-          }
-        })
-      )
+              classLabel: classLabelOf(c),
+              studentCount: c.students.length,
+              marked: rows.length > 0,
+              markedCount: rows.length,
+              counts: {
+                present: rows.filter((r) => r.status === 'PRESENT').length,
+                absent: rows.filter((r) => r.status === 'ABSENT').length,
+                late: rows.filter((r) => r.status === 'LATE').length,
+                leave: rows.filter((r) => r.status === 'LEAVE').length,
+              },
+            }
+          }),
+        ),
+        classTeacherOf.length > 0
+          ? db.attendance.findMany({
+              where: {
+                schoolId,
+                date: { gte: since30, lte: today },
+                student: { classId: { in: classTeacherOf.map((c) => c.id) } },
+              },
+              select: { studentId: true, status: true },
+            })
+          : Promise.resolve([] as { studentId: string; status: string }[]),
+        // Open follow-ups for MY students, grouped by the student's class —
+        // the Class Teacher Hub "pending follow-ups" figure. teacherId is
+        // the USER id (the documented TeacherFollowUp contract).
+        classTeacherOf.length > 0
+          ? db.teacherFollowUp.findMany({
+              where: {
+                schoolId,
+                teacherId: user.id,
+                status: 'open',
+                student: { classId: { in: classTeacherOf.map((c) => c.id) } },
+              },
+              select: { student: { select: { classId: true } } },
+            })
+          : Promise.resolve([] as { student: { classId: string | null } }[]),
+      ])
+
+      // Per-class 30-day rate + open follow-ups for the hub card.
+      const ctStudentClass = new Map<string, string>()
+      for (const c of classTeacherOf) for (const s of c.students) ctStudentClass.set(s.id, c.id)
+      const rateAgg = new Map<string, { attended: number; eligible: number }>()
+      for (const r of att30Rows) {
+        const cid = ctStudentClass.get(r.studentId)
+        if (!cid) continue
+        if (r.status === 'LEAVE') continue
+        const agg = rateAgg.get(cid) ?? { attended: 0, eligible: 0 }
+        agg.eligible++
+        if (r.status === 'PRESENT' || r.status === 'LATE') agg.attended++
+        rateAgg.set(cid, agg)
+      }
+      const followUpAgg = new Map<string, number>()
+      for (const f of ctFollowUpRows) {
+        if (!f.student?.classId) continue
+        followUpAgg.set(f.student.classId, (followUpAgg.get(f.student.classId) ?? 0) + 1)
+      }
 
       // ── Curriculum progress + today's topic per teaching assignment ──
       const curriculum = await Promise.all(
@@ -104,22 +196,31 @@ export async function GET() {
           } catch {
             return null
           }
-        })
+        }),
       )
 
-      // ── Teacher Hub pending counts ─────────────────────────────────
-      // NOTE: ParentConversation.teacherId is the TEACHER'S USER id (the
-      // seeded hub contract), while follow-ups use Teacher row ids. The
+      // ── Teacher Hub pending counts + the actionable rows themselves ──
+      // NOTE: ParentConversation.teacherId and TeacherFollowUp.teacherId
+      // both hold the TEACHER'S USER id (the seeded hub contract). The
       // growth count uses the SAME scoped derivation as the Student
       // Growth module (canonical numbers everywhere).
       const hub = await (async () => {
-        const [unreadRows, followUps, needsAttention] = await Promise.all([
+        const [unreadRows, followUpRows, needsAttention, draftMarks] = await Promise.all([
           db.parentMessage.count({
             where: { conversation: { teacherId: user.id }, readAt: null, senderId: { not: user.id } },
           }),
-          teacher
-            ? db.teacherFollowUp.count({ where: { schoolId, teacherId: teacher.id, status: 'open' } })
-            : Promise.resolve(0),
+          // ALL open follow-ups (any kind) — a behavior follow-up is
+          // pending work too. Rows power the Pending Actions queue.
+          db.teacherFollowUp.findMany({
+            where: { schoolId, teacherId: user.id, status: 'open' },
+            include: {
+              student: {
+                select: { id: true, rollNo: true, user: { select: { name: true } }, class: { select: { name: true, section: true } } },
+              },
+            },
+            orderBy: { dueDate: 'asc' },
+            take: 8,
+          }),
           (async () => {
             try {
               const ctx = await requireTeacher(user)
@@ -134,15 +235,52 @@ export async function GET() {
               return 0
             }
           })(),
+          // Marks entries sitting in DRAFT for this teacher's
+          // (class, subject) pairs — only in exams whose results are not
+          // declared yet (a declared exam can no longer be submitted).
+          (async () => {
+            try {
+              if (assignments.length === 0) return 0
+              return await db.examMark.count({
+                where: {
+                  exam: { schoolId, resultStatus: { not: 'Declared' } },
+                  workflowStatus: 'DRAFT',
+                  OR: assignments.map((a) => ({
+                    AND: [{ classId: a.classId }, { subjectId: a.subjectId }],
+                  })),
+                },
+              })
+            } catch {
+              return 0
+            }
+          })(),
         ])
-        return { unreadMessages: unreadRows, openFollowUps: followUps, needsAttention }
+        return {
+          unreadMessages: unreadRows,
+          openFollowUps: followUpRows.length,
+          needsAttention,
+          marksPending: draftMarks,
+          followUps: followUpRows.slice(0, 4).map((f) => ({
+            id: f.id,
+            kind: f.kind,
+            reason: f.reason,
+            dueDate: f.dueDate.toISOString(),
+            priority: f.priority,
+            status: f.status,
+            studentName: f.student?.user?.name ?? null,
+            classLabel: f.student?.class ? classLabelOf(f.student.class) : null,
+          })),
+        }
       })()
 
-      // ── Latest notices for staff ─────────────────────────────────────
+      // ── Latest notices for staff (audience-scoped, read-state aware) ──
       const noticeRows = (
         await db.notification.findMany({
           where: { schoolId, ...notificationVisibilityWhere() },
-          include: { sender: { select: { name: true } } },
+          include: {
+            sender: { select: { name: true } },
+            reads: { where: { userId: user.id }, select: { readAt: true } },
+          },
           orderBy: { createdAt: 'desc' },
           take: 40,
         })
@@ -154,6 +292,8 @@ export async function GET() {
         priority: n.priority,
         sender: n.sender?.name ?? 'School',
         createdAt: n.createdAt.toISOString(),
+        audienceLabel: audienceLabel(n.audience),
+        readAt: n.reads[0]?.readAt ? n.reads[0].readAt.toISOString() : null,
       }))
 
       return {
@@ -164,15 +304,9 @@ export async function GET() {
         today: {
           weekday,
           date: todayDayKey,
-          periods: myCells.map((r) => ({
-            period: r.period,
-            startTime: r.startTime,
-            endTime: r.endTime,
-            subjectName: r.subject?.name ?? 'Subject',
-            classLabel: classLabelOf(r.class),
-            room: r.room,
-          })),
+          periods: todayCells.map(toPeriod),
         },
+        nextDay,
         assignments: assignments.map((a) => ({
           classId: a.classId,
           classLabel: a.classLabel,
@@ -180,11 +314,16 @@ export async function GET() {
           subjectName: a.subjectName,
           periodsPerWeek: a.periodsPerWeek,
         })),
-        classTeacherOf: attendanceSnapshots.map((s) => ({
-          classId: s.classId,
-          classLabel: s.classLabel,
-          studentCount: s.studentCount,
-        })),
+        classTeacherOf: classTeacherOf.map((c) => {
+          const agg = rateAgg.get(c.id)
+          return {
+            classId: c.id,
+            classLabel: classLabelOf(c),
+            studentCount: c.students.length,
+            attendancePct: agg && agg.eligible > 0 ? Math.round((agg.attended / agg.eligible) * 100) : null,
+            openFollowUps: followUpAgg.get(c.id) ?? 0,
+          }
+        }),
         attendance: attendanceSnapshots,
         curriculum: curriculum.filter((c): c is NonNullable<typeof c> => c !== null),
         hub,

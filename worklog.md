@@ -2947,3 +2947,41 @@ Stage Summary:
 - Permission matrix holds at UI + route + server layers across all four personas (live-probed FORBIDDENs). All teacher modules render real canonical data with honest empty states; no duplicate systems remain (Performance Analytics consolidated into Student Growth; payroll revision/proctoring/exam-duty/mock attendance all gone; analytics API intentionally retained as Student Growth's data layer).
 - Responsive: clean at all 7 widths including the Safari-sensitive announcement modal (scrollable at 320, no field overlap).
 - Test data left in a realistic state: Sept 26 Grade 9-A attendance marked all-present (real daily record), Rohan's salary ₹26,000 from Oct 2026 (accepted change in history), one declined request with reason, Priya Nair's seeded request still pending for the principal, Kabir's UT2 draft (88) intact.
+
+---
+Task ID: 5
+Agent: Z.ai Code (main orchestrator)
+Task: TEACHER DASHBOARD — Premium UX/UI evolution + functional refinement (Teacher Command Center v2). Evolve the existing real-data dashboard into a polished, production-grade command center WITHOUT rebuilding the app, replacing the design system, or adding fake metrics.
+
+Work Log:
+- AUDITED the current dashboard (src/components/teacher/modules/dashboard/*): 8 files on the ONE aggregate (GET /api/teacher/dashboard); captured .qa/dash-before-1440.png + VLM critique ("static/generic, KPI placeholders, no status distinction").
+- FOUND + FIXED a real DATA-INTEGRITY BUG in the aggregate: TeacherFollowUp.teacherId holds the TEACHER'S USER id (schema-documented; parent-connect writes/reads it that way) but the dashboard counted with the Teacher ROW id → openFollowUps always 0 for every teacher while real follow-ups existed (Rohan: 3 rows). Now counts/loads by user.id; KPI + pending queue agree.
+- SERVER (src/app/api/teacher/dashboard/route.ts):
+  * ONE timetable query across ALL weekdays (was today-only) → today's periods + nextDay (next teaching day + first period) for the "no more periods today" state.
+  * Periods now carry classId/subjectId (deep-link a period into Lesson Planner).
+  * attendance snapshots + markedCount (partial "X of Y marked" state).
+  * hub + follow-up ROWS (top 4: student name, reason, due, priority, kind) + marksPending (ExamMark DRAFT count for the teacher's class-subjects, excluding resultStatus='Declared') → the dashboard needs NO second fetch (was: dashboard + /growth + /parent-connect on every mount).
+  * notices + audienceLabel (server-side lib/notices) + per-user readAt (NotificationRead).
+  * classTeacherOf + attendancePct (canonical 30-day rate, LEAVE never penalizes — same derivation as Class Hub) + openFollowUps per class.
+- TYPES (dashboard/types.ts): TeacherPeriod.classId/subjectId, TeacherNextDay, ClassTeacherClass stats, AttendanceSnapshot.markedCount, HubFollowUp, TeacherHubCounts{marksPending, followUps}, TeacherNotice{audienceLabel, readAt}.
+- NEW next-up.tsx: the "what's next" focus rail inside the hero — NOW (live period + ends-at + Open lesson) / NEXT UP (time + in-Xmin + Open timetable) / DONE (next teaching day) / no-timetable states; soft 2s pulse dot; all from real timetable + device clock.
+- welcome-banner.tsx v2: avatar with emerald ring, greeting + IST date, honest role line (CT classes OR "Subject Teacher · subjects"), honorific-stripped first name ("Ms. Priya Iyer" → "Priya"), assignment chips with hover/tap feedback + titles; removed the two Fact tiles (duplicated the KPI row) → replaced by the NextUp rail (md+ right side, mobile below greeting).
+- kpi-cards.tsx: contexts deduplicated ("first at" lives in NextUp only), lessons pace hairline bar, pending = needs-attention + follow-ups + marks drafts + unmarked attendance; grid 2×2 until xl (tablet truncation fix).
+- attendance-card.tsx: three honest states — not marked / PARTIAL (X of Y marked) / complete ("ATTENDANCE COMPLETE" label); Mark now deep-links the exact class (focus-store); View attendance link.
+- today-classes.tsx: every period row is a clickable button (→ Lesson Planner when the class-subject has a curriculum, else My Timetable) with full aria-labels; Done/Now status chips; lessons cards + real pace bars (spring-animated) + contextual CTAs ("Continue lesson" for today/in-progress/needs-rescheduling).
+- quick-actions.tsx: role + day aware — My Class only for CTs; Mark Attendance lifted to front + amber emphasis + badge when a baseline is open; Message Parents unread badge; Enter Marks DRAFT badge; Today's Lesson/Enter Marks hidden for CT-only teachers with zero teaching assignments (hasAssignments gate); gradient icon tiles replaced with the SCHOLARIO tone language (500/10 chips); odd counts close with a full-width last tile.
+- NEW notice-board.tsx: priority chips (Urgent/Important), audience tags (server-derived), unread emerald dot + "N new" header badge, relative dates, honest empty state, View all → Communication Hub.
+- pending-actions.tsx: NO client fetching (renders from the aggregate); rows for unmarked attendance (deep-link), unread messages, needs-attention, marks drafts (Draft chip), follow-ups (avatar + reason + Due/Overdue chip); "You're all caught up" empty state; destination per kind (communication/growth).
+- ClassTeacherHubCard: real stats per CT class — students / 30-day attendance % (color-coded) / open follow-ups + Open My Class; CT-only rendering.
+- index.tsx: recomposed — mobile stacks in the brief's priority order (greeting+next-up → KPIs → attendance → schedule → lessons → pending → quick → notices → hub); desktop 3-col rhythm (schedule 2+1, pending 2+quick 1, notices 2+hub 1; notices full-width for non-CTs); ONE shared 30s useNow() clock; layout-matched skeletons.
+- Accessibility: focus-visible rings everywhere, aria-labels on every actionable row/tile, progressbar roles with aria-valuenow, prefers-reduced-motion honored (useReducedMotion guards + motion-reduce: classes + 2s-softened ping).
+- QA (agent-browser, 3 personas): Rohan (CT+subject) — NOW panel live (Period 1 · Mathematics · 10-A · Room 205 · ends 9:15 AM), all 9 sections verified present by VLM, schedule row → Lesson Planner ✓, View attendance → Class Attendance pre-focused on Grade 9-A ✓; Priya (subject-only) — no CT sections/tiles, "Subject Teacher · English · Biology" role line, balanced full-width notices ✓; Arjun (CT-only) — unmarked prompt + Mark now → Grade 10-B focused ✓, lesson/marks tiles hidden ✓, Mark Attendance lifted first with badge ✓.
+- Responsive: 0px horizontal overflow at 320/360/390/414/768/1024/1280/1440/1920; KPI tablet truncation fixed (2×2 until xl); mobile DOM order verified = brief's priority order; 0 fresh console errors after clean reload; tsc 0 errors, eslint clean. VLM before/after: v1 "static/generic" → v2 "8.5/10 production-grade command center"; final 9/9 elements present, no critical defects.
+- Artifacts: .qa/dash-before-1440.png, .qa/dash-after-1440.png, .qa/dash-final-1440.png, .qa/dash-final-390.png, .qa/dash-priya-1440.png, .qa/vlm-*.json.
+
+Stage Summary:
+- Teacher Dashboard is now a real "command center": hero + NextUp rail (NOW/NEXT/DONE from the real timetable), honest 3-state attendance, clickable schedule, progress-barred lessons, contextual quick actions with live badges, aggregate-driven pending queue (single fetch — was 3), audience/read-aware notice board, stats-backed Class Teacher Hub card.
+- DATA-INTEGRITY BUG FIXED: openFollowUps counted with the wrong id namespace (Teacher row id vs User id) — was always 0 on the KPI while real follow-ups existed; count + rows now agree with the hub.
+- All values canonical (timetable, attendance, lesson planner, communication, marks, growth, class hub); no mock data introduced; permissions preserved (CT-only sections, subject-teacher gating); SCHOLARIO green identity retained; animations 150-350ms with reduced-motion guards.
+- Build: tsc 0 errors, eslint clean, dev server healthy, 0 console errors, 0 horizontal overflow 320-1920px.
+- Unresolved/next-phase notes: the "Examination Incharge" position banner (shell, pre-existing) has minor mobile button-wrap aesthetics — outside dashboard scope; schedule "Cancelled" status intentionally omitted (no canonical cancelled concept in Timetable); notices acknowledge from the Communication Hub (dashboard dot disappears on next aggregate load — by design, single source of truth).

@@ -1,35 +1,38 @@
 'use client'
 
 /**
- * TeacherDashboard (TWC-FE-4) — rebuilt on the ONE server aggregate
- * (GET /api/teacher/dashboard). The former fully-static mock (fake Class 2-A
- * identity, fake charts, fake insights, fake calendar/gauge/activity
- * widgets) is deleted; every section below renders REAL data and simply
- * disappears when it has none.
+ * TeacherDashboard v2 — the Teacher Command Center, built on the ONE
+ * server aggregate (GET /api/teacher/dashboard; the pending queue now
+ * renders from the same payload — no second/third fetch on mount).
  *
- * Information hierarchy:
- *   1. Who am I + my day at a glance   → WelcomeBanner (live facts)
- *   2. Headline numbers                 → TeacherKpiCards (honest fallbacks)
- *   3. What needs marking now           → AttendanceCard (class-teacher only)
- *   4. Today + what I should teach      → TodayClasses (schedule · lessons)
- *   5. Shortcuts + school communication → QuickActions · NoticeBoard
- *   6. What awaits my attention         → PendingActions (real hub APIs)
+ * Information hierarchy (the seven questions, top to bottom):
+ *   1. Who am I + what's next       → WelcomeBanner with the NextUp rail
+ *   2. Today at a glance            → TeacherKpiCards (honest numbers)
+ *   3. Is attendance complete?      → AttendanceCard (class-teacher only)
+ *   4. What do I teach today?       → TodayClasses (schedule · lessons)
+ *   5. What needs my attention?     → PendingActions (real queue)
+ *   6. What can I do?               → QuickActions (role + day aware)
+ *   7. What's new at school?        → NoticeBoard
+ *   8. My class, end to end         → ClassTeacherHubCard (CT only)
  *
- * Loading  → layout-matched skeletons (no blank page, no jump).
- * Error    → full retry card (mirrors the student dashboard v2 pattern).
- * Reload   → stale data is KEPT on failure; only a quiet inline strip shows.
+ * Mobile stacks in exactly that priority order (DOM order); desktop lays
+ * the same sections into a calm 3-column rhythm. Loading → layout-matched
+ * skeletons. Error → full retry card. Reload → stale data KEPT with a
+ * quiet inline strip.
  */
 
 import { AlertTriangle, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useTeacherDashboard } from './hooks/use-teacher-dashboard'
+import { cn } from '@/lib/utils'
+import { useTeacherDashboard, useNow } from './hooks/use-teacher-dashboard'
 import { WelcomeBanner } from './welcome-banner'
 import { TeacherKpiCards } from './kpi-cards'
 import { AttendanceCard } from './attendance-card'
 import { TodayClasses } from './today-classes'
-import { QuickActions, NoticeBoard } from './quick-actions'
-import { PendingActions } from './pending-actions'
+import { QuickActions } from './quick-actions'
+import { NoticeBoard } from './notice-board'
+import { PendingActions, ClassTeacherHubCard } from './pending-actions'
 
 interface DashboardProps {
   onNavigate: (key: string) => void
@@ -37,6 +40,9 @@ interface DashboardProps {
 
 export function TeacherDashboard({ onNavigate }: DashboardProps) {
   const { data, loading, error, staleError, reload } = useTeacherDashboard()
+  // ONE shared 30s clock drives the live "Now / ends in" states in the
+  // hero rail and the schedule — a single quiet interval, no refetching.
+  const now = useNow()
 
   if (loading) return <DashboardSkeleton />
 
@@ -59,13 +65,16 @@ export function TeacherDashboard({ onNavigate }: DashboardProps) {
     )
   }
 
+  const isClassTeacher = data.classTeacherOf.length > 0
+  const unmarkedAttendance = data.attendance.filter((s) => !s.marked).length
+
   return (
-    <div className="space-y-4 sm:space-y-5">
+    <div className="flex flex-col gap-4 sm:gap-5 lg:grid lg:grid-cols-3">
       {/* A failed refresh never wipes a readable dashboard — quiet strip only */}
       {staleError && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3.5 py-2.5 text-xs text-amber-700 dark:text-amber-400"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3.5 py-2.5 text-xs text-amber-700 dark:text-amber-400 lg:col-span-3"
         >
           <span className="flex min-w-0 items-center gap-2">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -83,30 +92,52 @@ export function TeacherDashboard({ onNavigate }: DashboardProps) {
         </div>
       )}
 
-      {/* 1 · Personal context + live facts */}
-      <WelcomeBanner data={data} />
+      {/* 1 · Personal context + the "what's next" focus rail */}
+      <div className="lg:col-span-3">
+        <WelcomeBanner data={data} now={now} onNavigate={onNavigate} />
+      </div>
 
-      {/* 2 · Headline numbers */}
-      <TeacherKpiCards data={data} />
+      {/* 2 · Today at a glance */}
+      <div className="lg:col-span-3">
+        <TeacherKpiCards data={data} />
+      </div>
 
-      {/* 3 · Attendance prompt (class-teacher classes only; null otherwise) */}
-      <AttendanceCard attendance={data.attendance} onNavigate={onNavigate} />
+      {/* 3 · Attendance status (class-teacher classes only; renders
+          nothing for a pure subject teacher) */}
+      <div className="lg:col-span-3">
+        <AttendanceCard attendance={data.attendance} onNavigate={onNavigate} />
+      </div>
 
-      {/* 4 · Today's schedule + today's lessons */}
-      <TodayClasses data={data} onNavigate={onNavigate} />
+      {/* 4 · Today's schedule + today's lessons (internal 2 + 1 split) */}
+      <div className="lg:col-span-3">
+        <TodayClasses data={data} now={now} onNavigate={onNavigate} />
+      </div>
 
-      {/* 5 · Shortcuts + real school notices */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <QuickActions onNavigate={onNavigate} isClassTeacher={(data.classTeacherOf?.length ?? 0) > 0} />
+      {/* 5 · The real pending queue */}
+      <div className="lg:col-span-2">
+        <PendingActions data={data} onNavigate={onNavigate} />
+      </div>
+
+      {/* 6 · Role-aware shortcuts (attendance-lifted when a baseline is open;
+          lesson/marks shortcuts only for teachers with teaching subjects) */}
+      <QuickActions
+        onNavigate={onNavigate}
+        isClassTeacher={isClassTeacher}
+        unmarkedAttendance={unmarkedAttendance}
+        unreadMessages={data.hub.unreadMessages}
+        marksPending={data.hub.marksPending}
+        hasAssignments={data.assignments.length > 0}
+      />
+
+      {/* 7 · Real school notices (full width when there is no hub card) */}
+      <div className={cn(isClassTeacher ? 'lg:col-span-2' : 'lg:col-span-3')}>
         <NoticeBoard notices={data.notices} onNavigate={onNavigate} />
       </div>
 
-      {/* 6 · Real pending queue (hub aggregates + unmarked attendance) */}
-      <PendingActions
-        onNavigate={onNavigate}
-        isClassTeacher={(data.classTeacherOf?.length ?? 0) > 0}
-        attendance={data.attendance}
-      />
+      {/* 8 · Class Teacher Hub — appointed class teachers only */}
+      {isClassTeacher && (
+        <ClassTeacherHubCard classes={data.classTeacherOf} onNavigate={onNavigate} />
+      )}
     </div>
   )
 }
@@ -115,7 +146,7 @@ export function TeacherDashboard({ onNavigate }: DashboardProps) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-4 sm:space-y-5" aria-busy="true" aria-label="Loading dashboard">
-      <Skeleton className="h-[132px] rounded-2xl" />
+      <Skeleton className="h-[168px] rounded-2xl" />
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Skeleton className="h-[104px] rounded-xl" />
         <Skeleton className="h-[104px] rounded-xl" />
@@ -124,14 +155,17 @@ function DashboardSkeleton() {
       </div>
       <Skeleton className="h-[76px] rounded-xl" />
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
-        <Skeleton className="h-[400px] rounded-xl lg:col-span-2" />
-        <Skeleton className="h-[400px] rounded-xl" />
+        <Skeleton className="h-[420px] rounded-xl lg:col-span-2" />
+        <Skeleton className="h-[420px] rounded-xl" />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
-        <Skeleton className="h-[260px] rounded-xl" />
-        <Skeleton className="h-[260px] rounded-xl lg:col-span-2" />
+        <Skeleton className="h-[320px] rounded-xl lg:col-span-2" />
+        <Skeleton className="h-[320px] rounded-xl" />
       </div>
-      <Skeleton className="h-[260px] rounded-xl" />
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
+        <Skeleton className="h-[280px] rounded-xl lg:col-span-2" />
+        <Skeleton className="h-[280px] rounded-xl" />
+      </div>
     </div>
   )
 }

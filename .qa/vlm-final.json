@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Based on the provided image of the Teacher Dashboard, here is the verification of the 9 elements and a visual quality assessment:\n\n**Element Verification:**\n\n1.  **Hero with avatar + greeting + NOW period panel:** **Present.** The top section displays the user's initials (RM), the name \"Rohan\", a greeting with date, and a \"NOW - PERIOD 1\" card on the right.\n2.  **Four KPI stat cards:** **Present.** The row immediately below the hero contains four cards: Classes Today (2), Lessons Today (3), Unread Messages (0), and Pending Actions (4).\n3.  **Green attendance-complete row:** **Present.** A light green banner below the KPIs shows \"Grade 9 - A · 11 present · 0 absent\" and \"ATTENDANCE COMPLETE\".\n4.  **Schedule with LIVE indicator + period rows:** **Present.** The \"Today's Schedule\" card on the left features a \"LIVE\" badge and lists periods (P1, P2) with times and subjects.\n5.  **Today's Lessons cards with progress bars:** **Present.** The \"Today's Lessons\" column lists lesson cards (Constructions, Statistics, etc.) each containing a horizontal progress bar indicating completion percentage.\n6.  **Pending Actions list rows:** **Present.** A dedicated section lists action items (e.g., \"1 marks entry in draft\", student names) with status tags like \"Draft\" or \"Overdue\".\n7.  **Quick Actions tile grid:** **Present.** A grid of icon-based buttons for quick navigation (My Class, Mark Attendance, Enter Marks, etc.) is visible.\n8.  **Notice Board with audience tags:** **Present.** The Notice Board section lists announcements with metadata including author names and audience tags (e.g., \"Grade 9 - A\", \"Students\").\n9.  **My Class stats card:** **Present.** Located at the bottom right, this card summarizes class statistics: Students (11), Attendance (96%), and Follow-ups (3).\n\n**Visual Defects:**\n\n*   **No Critical Defects:** The layout is clean and well-structured.\n*   **Minor Observation:** There is significant whitespace in the \"Today's Schedule\" card below the second period row (P2). While this is likely just empty space reserved for future periods rather than a bug, it creates a slight vertical imbalance compared to the denser \"Today's Lessons\" card next to it. No text overlap, clipping, or misalignment of UI elements was detected.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1790413570,
+  "id": "2026092617055756efe7692c9440b4",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "2026092617055756efe7692c9440b4",
+  "usage": {
+    "completion_tokens": 536,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 5874,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_tokens": 6410
+  }
+}

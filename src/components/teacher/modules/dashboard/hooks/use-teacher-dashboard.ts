@@ -125,6 +125,20 @@ export function useTeacherDashboard(): TeacherDashboardState {
 
 // ─── Client-side time helpers ────────────────────────────────────────
 
+/**
+ * A quiet 30-second clock tick for live period states ("Now" / "ends in…").
+ * The timetable came in the single dashboard aggregate — only "now" moves,
+ * so components re-derive states from the device clock without refetching.
+ */
+export function useNow(intervalMs = 30_000): Date {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), intervalMs)
+    return () => window.clearInterval(t)
+  }, [intervalMs])
+  return now
+}
+
 export type PeriodState = 'completed' | 'current' | 'upcoming'
 
 export interface PeriodWithState extends TeacherPeriod {
@@ -132,7 +146,7 @@ export interface PeriodWithState extends TeacherPeriod {
 }
 
 /** "08:30" → minutes since midnight (null when unparseable). */
-function toMinutes(hhmm: string | null): number | null {
+export function toMinutes(hhmm: string | null): number | null {
   if (!hhmm) return null
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim())
   if (!m) return null
