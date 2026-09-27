@@ -61,7 +61,7 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
 
   // SERVER TRUTH — attendance + upcoming exams from GET /api/dashboard
   // (real Attendance rows + real Exam rows; never the mock universe).
-  const { data: schoolStats, loading: statsLoading } = useSchoolStats()
+  const { data: schoolStats, loading: statsLoading, error: statsError, reload: statsReload } = useSchoolStats()
   const realAttendance = schoolStats?.stats.attendanceRate
   const realPresent = schoolStats?.attendance.present
   const upcoming = schoolStats?.upcomingExams ?? []
@@ -103,13 +103,17 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
     <SummaryCardGrid columns={4}>
       <SummaryCard
         label="Attendance"
-        value={statsLoading ? '…' : realAttendance ?? 0}
-        suffix={statsLoading ? '' : '%'}
-        sub={statsLoading ? 'loading…' : `${(realPresent ?? 0).toLocaleString('en-IN')} present · last 7 days`}
-        tone="emerald"
+        value={statsLoading ? '…' : statsError ? '—' : realAttendance ?? 0}
+        suffix={statsLoading || statsError ? '' : '%'}
+        sub={
+          statsLoading ? 'loading…'
+          : statsError ? 'stats unavailable — click to retry'
+          : `${(realPresent ?? 0).toLocaleString('en-IN')} present · last 7 days`
+        }
+        tone={statsError ? 'slate' : 'emerald'}
         icon={<CalendarCheck className="h-4 w-4" />}
         delay={0}
-        onClick={onNavigate ? () => onNavigate('attendance') : undefined}
+        onClick={onNavigate ? (statsError ? statsReload : () => onNavigate('attendance')) : undefined}
       />
       <SummaryCard
         label="Pending Fees"
@@ -132,13 +136,16 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
       />
       <SummaryCard
         label="Upcoming Exams"
-        value={statsLoading ? '…' : upcoming.length}
-        sub={nearestExam && nearestInDays != null ? `${nearestExam.name} in ${nearestInDays} day${nearestInDays === 1 ? '' : 's'}` : 'none scheduled'}
-        tone="amber"
+        value={statsLoading ? '…' : statsError ? '—' : upcoming.length}
+        sub={
+          statsError ? 'stats unavailable — click to retry'
+          : nearestExam && nearestInDays != null ? `${nearestExam.name} in ${nearestInDays} day${nearestInDays === 1 ? '' : 's'}` : 'none scheduled'
+        }
+        tone={statsError ? 'slate' : 'amber'}
         icon={<FileText className="h-4 w-4" />}
         delay={0.12}
         trend="neutral"
-        onClick={onNavigate ? () => onNavigate('exams') : undefined}
+        onClick={onNavigate ? (statsError ? statsReload : () => onNavigate('exams')) : undefined}
       />
     </SummaryCardGrid>
   )

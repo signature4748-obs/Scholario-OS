@@ -39,7 +39,7 @@ export function ChartsRow1({ onNavigate }: ChartsRowProps) {
   // SERVER TRUTH — real fee-collection trend (verified Payment rows by
   // month) + real collected-vs-outstanding composition from the Fee
   // ledger (GET /api/dashboard; spec §8/§18 — no mock finance series).
-  const { data: schoolStats, loading } = useSchoolStats()
+  const { data: schoolStats, loading, error, reload } = useSchoolStats()
   const trend = schoolStats?.trend ?? []
   const feesTotal = schoolStats?.stats.feesTotal ?? 0
   const feesPaid = schoolStats?.stats.feesPaid ?? 0
@@ -58,19 +58,34 @@ export function ChartsRow1({ onNavigate }: ChartsRowProps) {
       <OpenChartSection
         className="lg:col-span-2"
         title="Fee Collections"
-        subtitle={loading ? 'Loading…' : 'Last 6 months · verified payments'}
+        subtitle={loading ? 'Loading…' : error ? 'Stats unavailable' : 'Last 6 months · verified payments'}
         action={
-          <button
-            onClick={() => onNavigate?.('finance')}
-            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
-            title="Open Finance Dashboard"
-          >
-            View Finance
-            <ArrowRight className="h-3 w-3" />
-          </button>
+          error ? (
+            <button
+              onClick={reload}
+              className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors"
+              title="Retry loading stats"
+            >
+              Retry
+            </button>
+          ) : (
+            <button
+              onClick={() => onNavigate?.('finance')}
+              className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              title="Open Finance Dashboard"
+            >
+              View Finance
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          )
         }
       >
-        {trend.length === 0 && !loading ? (
+        {error ? (
+          <div className="h-[200px] flex flex-col items-center justify-center gap-2 text-center">
+            <p className="text-xs text-muted-foreground">Could not load the collections trend.</p>
+            <p className="text-[11px] text-muted-foreground/70">Check your connection, then retry — the fee ledger itself is unaffected.</p>
+          </div>
+        ) : trend.length === 0 && !loading ? (
           <p className="h-[200px] flex items-center justify-center text-xs text-muted-foreground">
             No verified payments recorded yet.
           </p>
@@ -109,9 +124,9 @@ export function ChartsRow1({ onNavigate }: ChartsRowProps) {
               { name: 'Collected', value: feesPaid, color: 'oklch(0.55 0.14 162)' },
               { name: 'Outstanding', value: outstanding, color: 'oklch(0.7 0.15 25)' },
             ]}
-            centerValue={loading ? '…' : `${collectionRate}%`}
-            centerLabel="Collected"
-            centerSub={overdueCount > 0 ? `${overdueCount} overdue` : 'current'}
+            centerValue={loading ? '…' : error ? '—' : `${collectionRate}%`}
+            centerLabel={error ? 'Unavailable' : 'Collected'}
+            centerSub={error ? 'retry above' : overdueCount > 0 ? `${overdueCount} overdue` : 'current'}
             formatValue={formatINRCr}
             size={160}
             thickness={18}
