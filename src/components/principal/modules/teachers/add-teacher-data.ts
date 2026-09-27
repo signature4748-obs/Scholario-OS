@@ -6,7 +6,9 @@ import { classList } from '@/lib/mock/school'
 import type {
   TeacherRecord,
   PositionAssignment,
+  TeacherMediaRecord,
 } from '@/lib/store/teachers-store'
+import { createAppointmentLetterSnapshot } from '@/lib/store/teachers-store/letter-factory'
 
 export const availableClassesList: string[] = (classList && classList.length > 0)
   ? classList.map((c) => (typeof c === 'string' ? c : c.name))
@@ -79,7 +81,10 @@ export interface AddTeacherForm {
   salary: number; bankName: string; accountNo: string; ifscCode: string; branchName: string
   inchargePosition: string; classTeacherRole: string; assistantClassTeacherRole: string
   selectedClasses: string[]; selectedSubjects: string[]; remarks: string
-  photoDataUrl: string; signatureDataUrl: string
+  /** Server-stored photo media record (uploaded + validated via API). */
+  photo: TeacherMediaRecord | null
+  /** Server-stored signature media record. */
+  signature: TeacherMediaRecord | null
 }
 
 export const initialFormState: AddTeacherForm = {
@@ -127,8 +132,8 @@ export const initialFormState: AddTeacherForm = {
   selectedClasses: [],
   selectedSubjects: [],
   remarks: '',
-  photoDataUrl: '',
-  signatureDataUrl: '',
+  photo: null,
+  signature: null,
 }
 
 /**
@@ -240,33 +245,21 @@ export function buildNewTeacherRecord(form: AddTeacherForm): TeacherRecord {
     classes: form.selectedClasses,
     examResponsibilities: ['Invigilator'],
     positions: initPositions,
+    photo: form.photo ?? undefined,
+    signature: form.signature ?? undefined,
     documents: [
       { id: `doc-${seq}-1`, title: 'Educational Qualification Certificate', category: 'Qualification', fileName: 'Degree_Certificate.pdf', uploadDate: new Date().toISOString().split('T')[0], status: 'Verified' },
     ],
-    appointmentLetter: {
-      id: `APT-GWS-2025-${seq}`,
-      officialLetterNo: `GWS/APT/2025/${seq}`,
-      generatedDate: new Date().toISOString().split('T')[0],
-      teacherName: form.name,
+    appointmentLetter: createAppointmentLetterSnapshot({
       employeeId: empId,
+      teacherName: form.name,
       designation: finalDesignation,
       department: finalDepartment,
       joiningDate: form.joiningDate,
       monthlySalary: Number(form.salary),
-      annualSalary: Number(form.salary) * 12,
-      workingHours: '08:00 AM – 03:30 PM',
-      probationMonths: 6,
-      noticePeriodDays: 60,
-      termsAndConditions: [
-        'Adherence to CBSE Code of Professional Conduct.',
-        'Full dedication to classroom instructions and student progress evaluation.',
-        '60 days notice period required prior to resignation.',
-      ],
-      principalName: 'Dr. Ananya Iyer',
-      schoolSealAttached: true,
-      qrVerificationId: `QR-APT-${empId}-${Date.now().toString(36).toUpperCase()}`,
-      reportingAuthority: 'Dr. Ananya Iyer, Principal',
-    },
+      teacherAddress: form.currentAddress,
+      issueSeq: 1,
+    }),
     loginCredentials: {
       username: form.email,
       tempPassword: `GWS#Teacher${seq}`,

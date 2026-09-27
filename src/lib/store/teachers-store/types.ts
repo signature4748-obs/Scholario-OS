@@ -56,8 +56,20 @@ export interface AppointmentLetterData {
   termsAndConditions: string[]
   principalName: string
   schoolSealAttached: boolean
-  qrVerificationId: string
   reportingAuthority: string
+  /** Teacher's postal address, snapshotted when the letter was issued —
+   *  an issued document never re-renders from mutable profile data. */
+  teacherAddress: string
+}
+
+/** A stored media record (photo / signature) for a teacher — the file
+ *  lives server-side (db/uploads/teachers, magic-byte validated); the
+ *  dataUrl is the wizard's local preview copy. */
+export interface TeacherMediaRecord {
+  fileId: string
+  fileName: string
+  uploadedAt: string
+  dataUrl: string
 }
 
 export interface AuditLogItem {
@@ -149,7 +161,16 @@ export interface TeacherRecord {
 
   // Documents & Appointment
   documents: TeacherDocument[]
+  /** Current (latest) issued appointment letter — immutable snapshot. */
   appointmentLetter?: AppointmentLetterData
+  /** Earlier issued appointment letters, oldest first. Issued documents
+   *  are historical records: issuing a new letter archives, never
+   *  overwrites, the previous one. */
+  letterArchive?: AppointmentLetterData[]
+
+  // Photo & signature — stored media records (server-validated uploads)
+  photo?: TeacherMediaRecord
+  signature?: TeacherMediaRecord
 
   // Login & Credentials
   isLocked?: boolean
@@ -193,6 +214,10 @@ export interface TeachersStoreState {
   removePositionFromTeacher: (teacherId: string, assignmentId: string, reason?: string, emergency?: boolean, authCode?: string) => void
   assignSubjectsAndClasses: (teacherId: string, subjects: string[], classes: string[], examResp?: string[]) => void
   regenerateAppointmentLetter: (teacherId: string, customTerms?: string[], newSalary?: number) => void
+  /** Issue a NEW appointment letter (archives the previous one). */
+  issueAppointmentLetter: (teacherId: string, customTerms?: string[], newSalary?: number) => AppointmentLetterData | null
+  /** Replace the stored photo/signature media record for a teacher. */
+  setTeacherMedia: (teacherId: string, kind: 'photo' | 'signature', media: TeacherMediaRecord | null) => void
   resetTeacherPassword: (teacherId: string) => { username: string; tempPassword: string }
   toggleLockTeacherAccount: (teacherId: string, locked: boolean, reason?: string) => void
   requestPayrollRevision: (teacherId: string, newSalary: number) => { code: string }

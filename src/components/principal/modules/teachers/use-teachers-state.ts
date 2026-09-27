@@ -32,6 +32,8 @@ export function useTeachersState() {
     removePositionFromTeacher,
     assignSubjectsAndClasses,
     regenerateAppointmentLetter,
+    issueAppointmentLetter,
+    setTeacherMedia,
     resetTeacherPassword,
     toggleLockTeacherAccount,
     requestPayrollRevision,
@@ -46,6 +48,7 @@ export function useTeachersState() {
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherRecord | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [joiningModalOpen, setJoiningModalOpen] = useState(false)
   const [credentialsModalOpen, setCredentialsModalOpen] = useState(false)
   const [currentCredentials, setCurrentCredentials] = useState<TeacherCredentials | null>(null)
 
@@ -110,7 +113,8 @@ export function useTeachersState() {
     addTeacher, addCustomPosition,
     assignPositionToTeacher, emergencyOverridePosition,
     removePositionFromTeacher, assignSubjectsAndClasses,
-    regenerateAppointmentLetter, resetTeacherPassword,
+    regenerateAppointmentLetter, issueAppointmentLetter, setTeacherMedia,
+    resetTeacherPassword,
     toggleLockTeacherAccount, requestPayrollRevision, terminateTeacher,
     // navigation
     activeTab, setActiveTab,
@@ -125,6 +129,8 @@ export function useTeachersState() {
     sheetOpen, setSheetOpen,
     // appointment letter
     appointmentModalOpen, setAppointmentModalOpen,
+    // joining letter
+    joiningModalOpen, setJoiningModalOpen,
     // credentials
     credentialsModalOpen, setCredentialsModalOpen,
     currentCredentials, setCurrentCredentials,

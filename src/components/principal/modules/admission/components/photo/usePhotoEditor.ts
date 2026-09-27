@@ -24,8 +24,11 @@ import { useCropInteraction } from './useCropInteraction'
  */
 export function usePhotoEditor(
   photoDataUrl: string | null,
-  onChange: (dataUrl: string | null) => void
+  onChange: (dataUrl: string | null) => void,
+  options?: { recordLabel?: string; suppressToasts?: boolean; startInPreview?: boolean }
 ) {
+  const recordLabel = options?.recordLabel ?? 'admission record'
+  const suppressToasts = options?.suppressToasts === true
   const [mode, setMode] = useState<Mode>('empty')
   const [capturedImage, setCapturedImage] = useState<HTMLImageElement | null>(null)
   const [crop, setCrop] = useState<CropRect>({ x: 0, y: 0, w: 0, h: 0 })
@@ -99,7 +102,12 @@ export function usePhotoEditor(
   useEffect(() => {
     if (initRef.current) return
     initRef.current = true
-    if (photoDataUrl) loadImageFromDataUrl(photoDataUrl, true)
+    // startInPreview: view-first contexts keep the calm empty/preview
+    // state (the current photo row + Upload/Camera cards); the crop
+    // editor loads on demand via Edit Current / upload / capture.
+    if (photoDataUrl && options?.startInPreview !== true) {
+      loadImageFromDataUrl(photoDataUrl, true)
+    }
     // intentional: run once on mount only
   }, [photoDataUrl, loadImageFromDataUrl])
 
@@ -146,7 +154,7 @@ export function usePhotoEditor(
   const handleRemove = () => {
     onChange(null)
     handleRetake()
-    toast.info('Photo removed')
+    if (!suppressToasts) toast.info('Photo removed')
   }
 
   const handleApply = useCallback(() => {
@@ -161,10 +169,12 @@ export function usePhotoEditor(
     }
     onChange(dataUrl)
     setApplied(true)
-    toast.success('Photo saved', {
-      description: 'Passport-size image added to the admission record.',
-    })
-  }, [capturedImage, crop, onChange])
+    if (!suppressToasts) {
+      toast.success('Photo saved', {
+        description: `Passport-size image added to the ${recordLabel}.`,
+      })
+    }
+  }, [capturedImage, crop, onChange, recordLabel, suppressToasts])
 
   const cameraSupported = hasGetUserMedia()
 

@@ -1,161 +1,215 @@
 'use client'
 
-import { Printer, ShieldCheck } from 'lucide-react'
+import { Printer, Download, X, Archive } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { formatINR, formatDate } from '@/lib/format'
-import { school } from '@/lib/mock/school'
-import type { TeacherRecord, AppointmentLetterData } from '@/lib/store/teachers-store'
+import { useSchoolProfile } from '@/lib/school-profile'
+import { downloadHTMLFile, openPrintWindow, safeFileName } from '@/lib/download-file'
+import type { TeacherRecord } from '@/lib/store/teachers-store'
+import {
+  getAppointmentLetterContent,
+  buildAppointmentLetterHTML,
+} from './appointment-letter-content'
 
 interface Props {
-  letter: AppointmentLetterData
+  letter: TeacherRecord['appointmentLetter']
   teacher: TeacherRecord
   onClose: () => void
 }
 
 /**
- * Official printable appointment letter document — letterhead, body,
- * terms, QR verification block, signature & seal, print/download action.
+ * Official Appointment Letter — a genuine A4 institutional document
+ * (Wave 2.3 §8).
+ *
+ *   · renders ONLY the letter's immutable issue-time snapshot + school
+ *     profile — no live profile data, no QR, no portal credentials, no
+ *     decorative verification graphics
+ *   · Print and Download both use the SAME canonical standalone HTML
+ *     (buildAppointmentLetterHTML) — the downloaded file and the printed
+ *     sheet are literally the same document
+ *   · the on-screen preview renders the same content model on an A4 sheet
  */
 export function AppointmentLetterDocument({ letter, teacher, onClose }: Props) {
+  const profile = useSchoolProfile()
+
+  if (!letter) return null
+  const c = getAppointmentLetterContent(letter, profile)
+  const html = buildAppointmentLetterHTML(letter, profile)
+
+  const handlePrint = () => {
+    const w = openPrintWindow(html, `Appointment Letter — ${c.teacherName}`)
+    if (!w) {
+      toast.error('Print window was blocked', {
+        description: 'Allow pop-ups for this site to print the letter.',
+      })
+    }
+  }
+
+  const handleDownload = () => {
+    try {
+      const filename = safeFileName(`appointment-letter-${c.teacherName}`, 'html')
+      downloadHTMLFile(html, filename)
+      toast.success('Appointment Letter downloaded', { description: filename })
+    } catch {
+      toast.error('Unable to generate letter', { description: 'Please try again.' })
+    }
+  }
+
+  const archiveCount = teacher.letterArchive?.length ?? 0
+
   return (
-    <div className="p-6 sm:p-8 space-y-6 bg-white text-slate-900 rounded-2xl">
-      {/* Letterhead */}
-      <div className="border-b-2 border-emerald-700 pb-4 flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-700 text-white font-display text-3xl font-extrabold shadow-md">
-            {school.logo}
-          </div>
-          <div>
-            <h1 className="font-display text-2xl font-black text-emerald-900 tracking-tight">{school.name}</h1>
-            <p className="text-xs text-slate-600 font-medium">{school.affiliation} · Code: {school.code}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{school.address} · Phone: {school.phone}</p>
-          </div>
-        </div>
-
-        <div className="text-right text-xs">
-          <p className="font-bold text-emerald-800 font-mono">Ref: {letter.officialLetterNo || letter.id}</p>
-          <p className="text-slate-500">Date: {formatDate(letter.generatedDate)}</p>
-        </div>
-      </div>
-
-      {/* Letter Title */}
-      <div className="text-center py-2">
-        <h2 className="font-display text-xl font-bold uppercase tracking-wider text-slate-900 border-b-2 border-slate-300 inline-block px-4 pb-1">
-          LETTER OF APPOINTMENT
-        </h2>
-      </div>
-
-      {/* Salutation & Body */}
-      <div className="space-y-4 text-xs sm:text-sm text-slate-800 leading-relaxed">
-        <p>To,<br /><strong className="text-base text-slate-950">{letter.teacherName}</strong><br />{teacher.currentAddress}</p>
-
-        <p>Dear <strong>{letter.teacherName}</strong>,</p>
-
-        <p>
-          With reference to your application and subsequent interview, the Management of <strong>{school.name}</strong> is pleased to offer you the position of <strong>{letter.designation}</strong> in the Department of <strong>{letter.department}</strong> on the following terms and conditions:
-        </p>
-
-        {/* Details Grid */}
-        <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 font-mono text-xs">
-          <div><span className="text-slate-500">Employee ID:</span> <strong>{letter.employeeId || teacher.employeeId}</strong></div>
-          <div><span className="text-slate-500">Designation:</span> <strong>{letter.designation}</strong></div>
-          <div><span className="text-slate-500">Department:</span> <strong>{letter.department}</strong></div>
-          <div><span className="text-slate-500">Date of Joining:</span> <strong>{formatDate(letter.joiningDate)}</strong></div>
-          <div><span className="text-slate-500">Gross Salary:</span> <strong>{formatINR(letter.monthlySalary)} / month</strong></div>
-          <div><span className="text-slate-500">Annual CTC:</span> <strong>{formatINR(letter.annualSalary)} / annum</strong></div>
-          <div><span className="text-slate-500">Working Hours:</span> <strong>{letter.workingHours}</strong></div>
-          <div><span className="text-slate-500">Reporting To:</span> <strong>{letter.reportingAuthority || 'Principal'}</strong></div>
-        </div>
-
-        {/* Initial Portal Credentials Block */}
-        <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-300 space-y-2">
-          <p className="font-bold text-xs uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4 text-emerald-700" /> OFFICIAL INITIAL PORTAL ACCESS CREDENTIALS
+    <div className="p-4 sm:p-5 bg-muted/40 space-y-4">
+      {/* Action bar — never printed */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-xs font-semibold text-foreground truncate">
+            Appointment Letter · {c.teacherName}
           </p>
-          <div className="grid grid-cols-3 gap-2 font-mono text-xs bg-white p-3 rounded-lg border border-emerald-200">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-sans font-semibold">Employee ID</p>
-              <p className="font-bold text-slate-900">{teacher.employeeId}</p>
+          <Badge variant="outline" className="text-[9px] font-mono shrink-0">
+            {c.refNo}
+          </Badge>
+          {archiveCount > 0 && (
+            <Badge variant="outline" className="text-[9px] text-muted-foreground shrink-0 gap-1">
+              <Archive className="h-2.5 w-2.5" /> {archiveCount} earlier issued
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handlePrint} className="text-xs h-8 gap-1.5 bg-card">
+            <Printer className="h-3.5 w-3.5" /> Print
+          </Button>
+          <Button size="sm" onClick={handleDownload} className="text-xs h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Download className="h-3.5 w-3.5" /> Download
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose} className="text-xs h-8 w-8 p-0" aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* ================= A4 SHEET ================= */}
+      <div
+        className="mx-auto w-full max-w-[210mm] min-h-[1120px] bg-white text-slate-900 rounded-lg shadow-lg border border-slate-200 px-[13mm] sm:px-[16mm] py-[14mm] font-serif"
+      >
+        {/* ---- Letterhead ---- */}
+        <header className="flex items-start justify-between gap-4 pb-3.5 border-b-[2.5px] border-slate-900">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-[10px] bg-slate-900 text-white text-2xl font-black font-sans">
+              {c.schoolShort.charAt(0)}
             </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-sans font-semibold">Username</p>
-              <p className="font-bold text-slate-900">{teacher.loginCredentials.username}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-sans font-semibold">Initial Temp Passcode</p>
-              <p className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded inline-block">{teacher.loginCredentials.tempPassword}</p>
+            <div className="min-w-0">
+              <h1 className="text-[19px] leading-tight font-extrabold uppercase tracking-[0.03em] text-slate-900 font-sans truncate">
+                {c.schoolName}
+              </h1>
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-lime-800 font-sans mt-0.5">
+                {c.affiliation}
+              </p>
+              <p className="text-[10px] text-slate-600 mt-1 leading-snug font-sans max-w-[400px]">
+                {c.contactLine}
+              </p>
             </div>
           </div>
+          <div className="text-right shrink-0">
+            <p className="font-mono text-[11px] font-bold text-slate-800">Ref. No: {c.refNo}</p>
+            <p className="font-mono text-[10px] text-slate-500 mt-0.5">Date: {c.issueDate}</p>
+          </div>
+        </header>
+
+        {/* ---- Title ---- */}
+        <div className="pt-6 pb-4 text-center">
+          <h2 className="text-[15px] font-bold uppercase tracking-[0.28em] text-slate-900">
+            Appointment Letter
+          </h2>
+          <hr className="w-[42%] mx-auto mt-2 border-t-[1.5px] border-slate-400" />
         </div>
 
-        {/* Terms */}
-        <div>
-          <p className="font-bold text-xs uppercase text-slate-900 mb-2">Terms & Conditions:</p>
-          <ul className="list-disc pl-5 space-y-1 text-xs text-slate-700">
-            {letter.termsAndConditions.map((term, idx) => (
-              <li key={idx}>{term}</li>
+        {/* ---- Addressee ---- */}
+        <div className="text-[12px] leading-relaxed mb-3.5">
+          To,<br />
+          <strong className="text-[13.5px]">{c.teacherName}</strong>
+          {c.teacherAddress && (
+            <>
+              <br />
+              <span className="text-slate-600">{c.teacherAddress}</span>
+            </>
+          )}
+        </div>
+
+        {/* ---- Body ---- */}
+        <p className="text-[12px] leading-[1.85] text-justify mb-3">Dear {c.teacherName},</p>
+        <p className="text-[12px] leading-[1.85] text-justify mb-1">{c.offerParagraph}</p>
+
+        {/* ---- Employee details table ---- */}
+        <table className="w-full my-3.5 border-collapse">
+          <tbody>
+            {c.details.map((d) => (
+              <tr key={d.label}>
+                <th className="text-left align-top w-[34%] py-[6.5px] pr-2 border-b border-slate-200 text-[9px] font-bold uppercase tracking-[0.07em] text-slate-500 font-sans">
+                  {d.label}
+                </th>
+                <td className="py-[6.5px] px-2 border-b border-slate-200 text-[11px] font-bold text-slate-900">
+                  {d.value}
+                </td>
+              </tr>
             ))}
-          </ul>
-        </div>
+          </tbody>
+        </table>
 
-        <p className="pt-2">We welcome you to our academic family and look forward to your valuable contribution.</p>
-      </div>
+        {/* ---- Terms ---- */}
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-slate-900 mt-4 mb-2 font-sans">
+          Terms &amp; Conditions of Appointment
+        </p>
+        <ol className="list-decimal pl-5 space-y-[5px] text-[11px] leading-[1.75] text-slate-800">
+          {c.terms.map((t, i) => (
+            <li key={i}>{t}</li>
+          ))}
+        </ol>
 
-      {/* QR Verification & Digital ID */}
-      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
-        <div className="text-xs">
-          <p className="font-bold text-slate-700 uppercase tracking-wider">Digital Verification</p>
-          <p className="font-mono text-[10px] text-slate-500 mt-1">{letter.qrVerificationId || `QR-APT-${teacher.employeeId}`}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Scan to verify authenticity at verify.scholario.app</p>
-        </div>
-        <div className="h-14 w-14 rounded-lg bg-white border-2 border-slate-300 flex items-center justify-center">
-          <svg viewBox="0 0 100 100" className="h-10 w-10 text-slate-900">
-            <rect x="10" y="10" width="30" height="30" fill="currentColor" />
-            <rect x="60" y="10" width="30" height="30" fill="currentColor" />
-            <rect x="10" y="60" width="30" height="30" fill="currentColor" />
-            <rect x="50" y="50" width="10" height="10" fill="currentColor" />
-            <rect x="65" y="55" width="8" height="8" fill="currentColor" />
-            <rect x="55" y="70" width="15" height="15" fill="currentColor" />
-            <rect x="75" y="65" width="10" height="10" fill="currentColor" />
-            <rect x="70" y="80" width="12" height="12" fill="currentColor" />
-          </svg>
-        </div>
-      </div>
+        <p className="text-[12px] leading-[1.85] text-justify mt-4">{c.closingParagraph}</p>
 
-      {/* Signatures & Seal */}
-      <div className="pt-8 border-t border-slate-200 flex items-center justify-between flex-wrap gap-6">
-        <div>
-          <div className="h-10 border-b border-dashed border-slate-400 w-48 mb-1" />
-          <p className="font-bold text-xs text-slate-900">{letter.teacherName}</p>
-          <p className="text-[10px] text-slate-500">Teacher Signature & Acceptance</p>
-        </div>
-
-        <div className="flex items-center gap-6">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-emerald-600 bg-emerald-50 text-[10px] font-bold text-emerald-800 text-center uppercase p-1">
-            Official School Stamp
-          </div>
-          <div>
-            <div className="h-10 border-b border-dashed border-slate-400 w-48 mb-1 flex items-end justify-center pb-1 text-xs font-serif italic font-bold text-emerald-900">
-              {letter.principalName}
+        {/* ---- Signatures ---- */}
+        <div className="mt-6 pt-6 border-t border-slate-300 flex items-end justify-between gap-6">
+          <div className="text-center">
+            <div className="w-[84px] h-[84px] rounded-full border-[1.5px] border-dashed border-slate-500 flex items-center justify-center text-center text-[8.5px] font-bold uppercase tracking-[0.1em] text-slate-500 leading-[1.5] p-1.5 mx-auto mb-2">
+              School<br />Seal
             </div>
-            <p className="font-bold text-xs text-slate-900">{letter.principalName}</p>
-            <p className="text-[10px] text-slate-500">Principal, {school.name}</p>
+            <div className="h-[26px] border-b border-slate-500 w-[200px] mx-auto" />
+            <p className="text-[12px] font-bold mt-1.5">{c.principalName}</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.07em] text-slate-600">
+              Authorized Signatory · Principal
+            </p>
+          </div>
+          <div className="text-center">
+            <div className="h-[26px] border-b border-slate-500 w-[200px] mx-auto" />
+            <p className="text-[12px] font-bold mt-1.5">{c.teacherName}</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.07em] text-slate-600">
+              Employee Signature
+            </p>
           </div>
         </div>
-      </div>
 
-      {/* Footer Buttons */}
-      <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200">
-        <Button variant="outline" onClick={onClose} className="text-slate-700 border-slate-300">Close</Button>
-        <Button
-          onClick={() => {
-            toast.success('Appointment letter sent to print stream / PDF download triggered')
-          }}
-          className="bg-emerald-700 hover:bg-emerald-800 text-white"
-        >
-          <Printer className="h-3.5 w-3.5" /> Download / Print Official Letter PDF
-        </Button>
+        {/* ---- Acceptance block ---- */}
+        <div className="mt-5">
+          <div className="border border-slate-300 rounded-lg px-4 py-3.5 flex flex-wrap justify-between items-end gap-x-5 gap-y-3">
+            <p className="text-[11px] leading-relaxed max-w-[300px]">
+              <span className="font-bold">Employee Acceptance</span> — I have read and accepted
+              the terms of appointment stated above.
+            </p>
+            <div className="text-[11px] text-right space-y-3">
+              <p>
+                Signature <span className="inline-block border-b border-slate-500 w-[150px]" />
+              </p>
+              <p>
+                Date <span className="inline-block border-b border-slate-500 w-[90px]" />
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-center text-[8.5px] text-slate-400 mt-6 font-sans">
+          Issued by {c.schoolName} · {c.refNo} · This is a computer-printed document.
+        </p>
       </div>
     </div>
   )

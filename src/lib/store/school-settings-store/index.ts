@@ -13,6 +13,8 @@ export type {
   HouseConfig,
   AdmissionFormFieldRule,
   AdmissionFeatureFlags,
+  AdmissionDocRequirement,
+  AdmissionDocumentPolicy,
   ClassSeatConfig,
   DuplicateDetectionConfig,
   WaiverAuditEntry,

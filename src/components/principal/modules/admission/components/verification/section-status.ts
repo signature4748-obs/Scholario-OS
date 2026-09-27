@@ -12,10 +12,11 @@ import type {
   SectionKey,
   SectionReviewState,
 } from '@/lib/store/admission-store'
+import type { AdmissionDocumentPolicy } from '@/lib/store/school-settings-store'
 import {
   getDocumentCompletion,
-  REQUIRED_DOCUMENTS,
-  ADMISSION_DOCUMENTS,
+  getRequiredDocuments,
+  getCollectedDocuments,
 } from '../../lib/documents'
 
 export type DerivedSectionStatus = 'Verified' | 'Needs Review' | 'Incomplete'
@@ -39,16 +40,20 @@ export function maskAadhaar(aadhaar?: string | null): string {
 /** Compute the DATA-derived status for one section (no officer input). */
 export function deriveSectionStatus(
   key: SectionKey,
-  app: AdmissionApplication
+  app: AdmissionApplication,
+  policy?: AdmissionDocumentPolicy
 ): SectionStatus {
   const formData = app.formData
 
   if (key === 'documents') {
-    const completion = getDocumentCompletion(formData.docStatuses)
+    const collected = getCollectedDocuments(policy)
+    // A school that collects no documents trivially passes this section.
+    if (collected.length === 0) return { status: 'Verified', flaggedByOfficer: false }
+    const completion = getDocumentCompletion(formData.docStatuses, policy)
     if (completion.complete) return { status: 'Verified', flaggedByOfficer: false }
-    const missing = REQUIRED_DOCUMENTS.filter(
-      (d) => formData.docStatuses[d.key]?.status !== 'uploaded'
-    ).map((d) => d.name)
+    const missing = getRequiredDocuments(policy)
+      .filter((d) => formData.docStatuses[d.key]?.status !== 'uploaded')
+      .map((d) => d.name)
     return {
       status: 'Incomplete',
       issue: `Missing ${missing.join(', ')}`,
@@ -79,9 +84,10 @@ export function deriveSectionStatus(
  */
 export function resolveSectionStatus(
   key: SectionKey,
-  app: AdmissionApplication
+  app: AdmissionApplication,
+  policy?: AdmissionDocumentPolicy
 ): SectionStatus {
-  const derived = deriveSectionStatus(key, app)
+  const derived = deriveSectionStatus(key, app, policy)
   const review: SectionReviewState | undefined = app.sectionReviews?.[key]
 
   if (review && (review.status === 'Needs Review' || review.status === 'Incomplete')) {
@@ -97,13 +103,14 @@ export function resolveSectionStatus(
 /** Count of sections with no issues or flags. */
 export function countVerified(
   sections: { key: SectionKey }[],
-  app: AdmissionApplication
+  app: AdmissionApplication,
+  policy?: AdmissionDocumentPolicy
 ): { verified: number; total: number; incomplete: number; flagged: number } {
   let verified = 0
   let incomplete = 0
   let flagged = 0
   for (const s of sections) {
-    const st = resolveSectionStatus(s.key, app)
+    const st = resolveSectionStatus(s.key, app, policy)
     if (st.status === 'Verified') verified++
     else if (st.status === 'Incomplete') incomplete++
     else flagged++
@@ -117,7 +124,11 @@ export function countVerified(
 
 const emDash = (v: string | undefined | null): string => (v && v.trim() ? v.trim() : '—')
 
-export function getSectionSummary(key: SectionKey, app: AdmissionApplication): string {
+export function getSectionSummary(
+  key: SectionKey,
+  app: AdmissionApplication,
+  policy?: AdmissionDocumentPolicy
+): string {
   const f = app.formData
   switch (key) {
     case 'personal': {
@@ -164,7 +175,9 @@ export function getSectionSummary(key: SectionKey, app: AdmissionApplication): s
       return `${concession}${fee?.transportSelected ? ' · Transport' : ''}${fee?.hostelSelected ? ' · Hostel' : ''}`
     }
     case 'documents': {
-      const c = getDocumentCompletion(f.docStatuses)
+      const collected = getCollectedDocuments(policy)
+      if (collected.length === 0) return 'No documents collected'
+      const c = getDocumentCompletion(f.docStatuses, policy)
       return `Required ${c.requiredCompleted}/${c.requiredTotal} · Optional ${c.optionalUploaded}/${c.optionalTotal}`
     }
     case 'photo':
@@ -187,9 +200,12 @@ export interface VerificationDocRow {
   verified: boolean
 }
 
-export function getDocumentRows(app: AdmissionApplication): VerificationDocRow[] {
+export function getDocumentRows(
+  app: AdmissionApplication,
+  policy?: AdmissionDocumentPolicy
+): VerificationDocRow[] {
   const statuses = app.formData.docStatuses || {}
-  return ADMISSION_DOCUMENTS.map((d) => {
+  return getCollectedDocuments(policy).map((d) => {
     const st = statuses[d.key]
     return {
       key: d.key,

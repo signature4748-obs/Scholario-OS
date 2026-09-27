@@ -9,7 +9,7 @@ import { EditingMode } from './photo/EditingMode'
 import { PreviewPanel } from './photo/PreviewPanel'
 import type { PhotoStepProps } from './photo/types'
 
-export function PhotoStep({ photoDataUrl, onChange }: PhotoStepProps) {
+export function PhotoStep({ photoDataUrl, onChange, recordLabel, title, suppressToasts, startInPreview }: PhotoStepProps) {
   const {
     mode,
     setMode,
@@ -36,7 +36,7 @@ export function PhotoStep({ photoDataUrl, onChange }: PhotoStepProps) {
     handleRemove,
     handleApply,
     loadImageFromDataUrl,
-  } = usePhotoEditor(photoDataUrl, onChange)
+  } = usePhotoEditor(photoDataUrl, onChange, { recordLabel, suppressToasts, startInPreview })
 
   return (
     <div className="space-y-4">
@@ -49,7 +49,7 @@ export function PhotoStep({ photoDataUrl, onChange }: PhotoStepProps) {
       />
 
       {/* Step Header — compact */}
-      <PhotoStepHeader />
+      <PhotoStepHeader title={title} />
 
       <div className="grid lg:grid-cols-5 gap-4">
         {/* ============================================== */}

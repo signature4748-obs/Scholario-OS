@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { AdmissionApplication, SectionKey } from '@/lib/store/admission-store'
+import type { AdmissionDocumentPolicy } from '@/lib/store/school-settings-store'
 import { SectionDataContent } from './SectionDataContent'
 import { getSectionSummary, resolveSectionStatus } from './section-status'
 
@@ -15,6 +16,7 @@ interface VerificationSectionCardProps {
   sectionKey: SectionKey
   title: string
   icon: React.ElementType
+  documentPolicy?: AdmissionDocumentPolicy
   onFlag: (key: SectionKey, status: 'Needs Review' | 'Incomplete', issue: string) => void
   onClearFlag: (key: SectionKey) => void
 }
@@ -51,14 +53,15 @@ export function VerificationSectionCard({
   sectionKey,
   title,
   icon: Icon,
+  documentPolicy,
   onFlag,
   onClearFlag,
 }: VerificationSectionCardProps) {
   const [open, setOpen] = useState(false)
   const [issueDraft, setIssueDraft] = useState('')
 
-  const status = resolveSectionStatus(sectionKey, app)
-  const summary = getSectionSummary(sectionKey, app)
+  const status = resolveSectionStatus(sectionKey, app, documentPolicy)
+  const summary = getSectionSummary(sectionKey, app, documentPolicy)
 
   return (
     <div
@@ -110,7 +113,7 @@ export function VerificationSectionCard({
 
         <CollapsibleContent>
           <div className="border-t border-border/60 px-4 py-3.5 bg-muted/15 space-y-3">
-            <SectionDataContent sectionKey={sectionKey} app={app} />
+            <SectionDataContent sectionKey={sectionKey} app={app} documentPolicy={documentPolicy} />
 
             {/* Officer flag control — only inside the expanded view */}
             <div className="pt-3 border-t border-border/60 flex flex-col sm:flex-row sm:items-center gap-2">

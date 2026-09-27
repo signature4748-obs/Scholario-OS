@@ -1,9 +1,34 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { Camera, Upload, Trash2, FileSignature, ImageIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+/**
+ * Wizard Step 5 — Photo & Sign (Wave 2.3 §5 + §6).
+ *
+ * CONTENT AREA ONLY — the top stepper already communicates progress, so
+ * this step carries exactly two content sections and nothing else:
+ *
+ *   Photograph  → the SAME capture/crop pipeline as Admissions (upload,
+ *                 camera, crop, rotate, replace, remove), then the final
+ *                 crop is uploaded to the staff media store.
+ *   Signature   → upload + preview + replace + remove (no crop — the
+ *                 original file is kept for legibility/transparency).
+ *
+ * Both slots are REAL media records: client pre-validation, then a
+ * server upload (magic bytes + size + dimensions) under
+ * /api/teachers/upload, with the returned fileId kept on the record.
+ */
+
+import { useState } from 'react'
+import { toast } from 'sonner'
 import type { AddTeacherForm } from './add-teacher-data'
+import { PhotoStep } from '../admission/components/PhotoStep'
+import { SignatureUpload } from './signature-upload'
+import {
+  validateTeacherMedia,
+  uploadTeacherMedia,
+  deleteTeacherMediaFile,
+  toMediaRecord,
+  dataUrlToBlob,
+} from './teacher-media'
 
 type SetF = (key: string, val: any) => void
 
@@ -12,107 +37,75 @@ interface Props {
   setF: SetF
 }
 
-/**
- * Photo + Signature upload step.
- * Minimal design — small upload areas, preview, replace/remove actions.
- * Matches the Admission module's clean aesthetic.
- */
 export function Step5PhotoSignature({ form, setF }: Props) {
-  const photoInputRef = useRef<HTMLInputElement>(null)
-  const signInputRef = useRef<HTMLInputElement>(null)
+  const [photoUploading, setPhotoUploading] = useState(false)
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setF('photoDataUrl', reader.result as string)
-    reader.readAsDataURL(file)
-  }
+  /** Apply / replace / remove the teacher photo (from the shared pipeline). */
+  const handlePhotoChange = async (dataUrl: string | null) => {
+    // Removed — clear the record and the stored file.
+    if (!dataUrl) {
+      if (form.photo) deleteTeacherMediaFile(form.photo.fileId)
+      setF('photo', null)
+      toast.info('Photo removed')
+      return
+    }
 
-  const handleSignatureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setF('signatureDataUrl', reader.result as string)
-    reader.readAsDataURL(file)
-  }
-
-  const removePhoto = () => {
-    setF('photoDataUrl', '')
-    if (photoInputRef.current) photoInputRef.current.value = ''
-  }
-
-  const removeSignature = () => {
-    setF('signatureDataUrl', '')
-    if (signInputRef.current) signInputRef.current.value = ''
+    // Applied / re-cropped — upload the optimized crop output.
+    setPhotoUploading(true)
+    try {
+      const blob = await dataUrlToBlob(dataUrl)
+      const file = new File([blob], 'teacher-photo.jpg', {
+        type: blob.type || 'image/jpeg',
+      })
+      const validationError = await validateTeacherMedia(file, 'photo')
+      if (validationError) {
+        toast.error(validationError)
+        return
+      }
+      const uploaded = await uploadTeacherMedia(file, 'photo', { dataUrl })
+      if (form.photo) deleteTeacherMediaFile(form.photo.fileId)
+      setF('photo', toMediaRecord(uploaded))
+      toast.success('Photo saved', {
+        description: 'Passport-size image added to the staff record.',
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Photo upload failed. Please try again.')
+    } finally {
+      setPhotoUploading(false)
+    }
   }
 
   return (
-    <div className="space-y-5">
-      <input ref={photoInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handlePhotoChange} />
-      <input ref={signInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleSignatureChange} />
+    <div className="space-y-6">
+      {/* PHOTOGRAPH — shared admission capture/crop pipeline */}
+      <section aria-label="Photograph">
+        <PhotoStep
+          photoDataUrl={form.photo?.dataUrl ?? null}
+          onChange={handlePhotoChange}
+          title="Photograph"
+          recordLabel="staff record"
+          suppressToasts
+        />
+        {photoUploading && (
+          <p className="text-[11px] text-muted-foreground -mt-1">Storing photo on the staff record…</p>
+        )}
+      </section>
 
-      {/* Photo Upload */}
-      <div>
-        <p className="text-xs font-bold text-primary mb-3 uppercase tracking-wider">Photograph</p>
-        <div className="flex items-center gap-4">
-          {/* Preview area */}
-          <div className="shrink-0">
-            {form.photoDataUrl ? (
-              <div className="relative">
-                <img src={form.photoDataUrl} alt="Teacher photo" className="h-24 w-24 rounded-lg object-cover border border-border" />
-              </div>
-            ) : (
-              <div className="h-24 w-24 rounded-lg border-2 border-dashed border-border flex items-center justify-center bg-muted/20">
-                <Camera className="h-6 w-6 text-muted-foreground/50" />
-              </div>
-            )}
+      {/* SIGNATURE — upload / preview / replace / remove */}
+      <section aria-label="Signature" className="pt-5 border-t border-border">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M3 17c2 0 3-1 4-4s2-6 4-6 2 3 2 4-1 3-2 3-1-1 0-2 4-2 6 0 3 1 6 1 2 0 2-1" />
+            </svg>
           </div>
-          {/* Actions */}
-          <div className="flex flex-col gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()} className="text-xs h-8 gap-1.5 w-fit">
-              <Upload className="h-3.5 w-3.5" />
-              {form.photoDataUrl ? 'Replace Photo' : 'Upload Photo'}
-            </Button>
-            {form.photoDataUrl && (
-              <Button type="button" variant="ghost" size="sm" onClick={removePhoto} className="text-xs h-8 gap-1.5 w-fit text-rose-600 hover:text-rose-700">
-                <Trash2 className="h-3.5 w-3.5" /> Remove
-              </Button>
-            )}
-          </div>
+          <h2 className="font-display text-sm font-bold tracking-tight">Signature</h2>
         </div>
-      </div>
-
-      {/* Signature Upload */}
-      <div className="pt-4 border-t border-border">
-        <p className="text-xs font-bold text-primary mb-3 uppercase tracking-wider">Signature</p>
-        <div className="flex items-center gap-4">
-          {/* Preview area */}
-          <div className="shrink-0">
-            {form.signatureDataUrl ? (
-              <div className="relative">
-                <img src={form.signatureDataUrl} alt="Signature" className="h-20 w-32 rounded-lg object-contain border border-border bg-white" />
-              </div>
-            ) : (
-              <div className="h-20 w-32 rounded-lg border-2 border-dashed border-border flex items-center justify-center bg-muted/20">
-                <FileSignature className="h-6 w-6 text-muted-foreground/50" />
-              </div>
-            )}
-          </div>
-          {/* Actions */}
-          <div className="flex flex-col gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => signInputRef.current?.click()} className="text-xs h-8 gap-1.5 w-fit">
-              <Upload className="h-3.5 w-3.5" />
-              {form.signatureDataUrl ? 'Replace Signature' : 'Upload Signature'}
-            </Button>
-            {form.signatureDataUrl && (
-              <Button type="button" variant="ghost" size="sm" onClick={removeSignature} className="text-xs h-8 gap-1.5 w-fit text-rose-600 hover:text-rose-700">
-                <Trash2 className="h-3.5 w-3.5" /> Remove
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+        <SignatureUpload
+          value={form.signature}
+          onChange={(media) => setF('signature', media)}
+        />
+      </section>
     </div>
   )
 }

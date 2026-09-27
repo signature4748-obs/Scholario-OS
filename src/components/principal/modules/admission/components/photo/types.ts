@@ -1,6 +1,19 @@
 export interface PhotoStepProps {
   photoDataUrl: string | null
   onChange: (dataUrl: string | null) => void
+  /** What the applied photo is attached to — used in toast copy only.
+   *  Defaults to 'admission record' (Admissions wizard). */
+  recordLabel?: string
+  /** Section title shown in the step header (defaults to 'Photo'). */
+  title?: string
+  /** When true, the internal toasts are suppressed — the caller shows
+   *  its own after the server confirms the upload (teacher flow). */
+  suppressToasts?: boolean
+  /** When true and a photo already exists, the step starts in the calm
+   *  empty/preview mode instead of the crop editor (view-first contexts
+   *  like the teacher Profile tab). Default: start in the editor
+   *  (admission draft-resume behavior). */
+  startInPreview?: boolean
 }
 
 export type Mode = 'empty' | 'camera' | 'editing'

@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand'
-import type { SchoolSettingsState } from '../types'
+import type { AdmissionDocumentPolicy, SchoolSettingsState } from '../types'
 
 export const createAdmissionSlice: StateCreator<
   SchoolSettingsState,
@@ -9,6 +9,7 @@ export const createAdmissionSlice: StateCreator<
     SchoolSettingsState,
     | 'updateAdmissionSettings'
     | 'updateAdmissionFeatureFlags'
+    | 'updateAdmissionDocumentPolicy'
     | 'updateSeatCapacity'
     | 'updateDuplicateDetection'
     | 'addWaiverAudit'
@@ -24,6 +25,14 @@ export const createAdmissionSlice: StateCreator<
       admissionSettings: {
         ...state.admissionSettings,
         featureFlags: { ...state.admissionSettings.featureFlags, ...data },
+      },
+    })),
+
+  updateAdmissionDocumentPolicy: (policy) =>
+    set((state) => ({
+      admissionSettings: {
+        ...state.admissionSettings,
+        documentPolicy: { ...policy },
       },
     })),
 

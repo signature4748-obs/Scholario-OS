@@ -1,11 +1,21 @@
 import type { StateCreator } from 'zustand'
-import type { AppointmentLetterData, TeachersStoreState } from '../types'
+import type {
+  TeacherMediaRecord,
+  TeachersStoreState,
+} from '../types'
+import { createAppointmentLetterSnapshot } from '../letter-factory'
 
 export const createWorkloadSlice: StateCreator<
   TeachersStoreState,
   [],
   [],
-  Pick<TeachersStoreState, 'assignSubjectsAndClasses' | 'regenerateAppointmentLetter'>
+  Pick<
+    TeachersStoreState,
+    | 'assignSubjectsAndClasses'
+    | 'regenerateAppointmentLetter'
+    | 'issueAppointmentLetter'
+    | 'setTeacherMedia'
+  >
 > = (set, get) => ({
   assignSubjectsAndClasses: (teacherId, subjects, classes, examResp = []) => {
     const teacher = get().teachers.find((t) => t.id === teacherId)
@@ -27,40 +37,49 @@ export const createWorkloadSlice: StateCreator<
     })
   },
 
-  regenerateAppointmentLetter: (teacherId, customTerms, newSalary) => {
+  /**
+   * Issue a NEW appointment letter for a teacher.
+   *
+   * DATA INTEGRITY (Wave 2.3 §9): the letter is a full immutable SNAPSHOT
+   * of the employment facts at issue time (name, designation, department,
+   * salary, joining date, address…). The previously issued letter is
+   * archived unchanged — profile changes never rewrite history. The
+   * reference number is deterministic (employee + issue sequence), never
+   * a random value.
+   */
+  issueAppointmentLetter: (teacherId, customTerms, newSalary) => {
     const teacher = get().teachers.find((t) => t.id === teacherId)
-    if (!teacher) return
+    if (!teacher) return null
 
     const currentSal = newSalary || teacher.salary
-    const letter: AppointmentLetterData = {
-      id: `APT-GWS-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 899)}`,
-      officialLetterNo: `GWS/APT/${new Date().getFullYear()}/${String(Math.floor(1000 + Math.random() * 8999))}`,
-      generatedDate: new Date().toISOString().split('T')[0],
-      teacherName: teacher.name,
+    const archive = teacher.letterArchive ?? []
+    const issueSeq = archive.length + 1
+
+    const letter = createAppointmentLetterSnapshot({
       employeeId: teacher.employeeId,
+      teacherName: teacher.name,
       designation: teacher.designation,
       department: teacher.department,
       joiningDate: teacher.joiningDate,
       monthlySalary: currentSal,
-      annualSalary: currentSal * 12,
-      workingHours: '08:00 AM – 03:30 PM',
-      probationMonths: 6,
-      noticePeriodDays: 60,
-      termsAndConditions: customTerms || [
-        'Adherence to CBSE Curriculum guidelines and professional ethics.',
-        'Maintain complete confidentiality regarding student academic & psychological records.',
-        'Participate actively in co-curricular activities, exam proctoring, and parent-teacher meets.',
-        'Notice period of 60 days required prior to resignation during academic session.',
-      ],
-      principalName: 'Dr. Ananya Iyer',
-      qrVerificationId: `QR-APT-${teacher.employeeId}-${Date.now().toString(36).toUpperCase()}`,
-      reportingAuthority: 'Dr. Ananya Iyer, Principal',
-      schoolSealAttached: true,
-    }
+      teacherAddress: teacher.currentAddress,
+      issueSeq,
+      customTerms,
+    })
 
     set((s) => ({
       teachers: s.teachers.map((t) =>
-        t.id === teacherId ? { ...t, salary: currentSal, appointmentLetter: letter } : t
+        t.id === teacherId
+          ? {
+              ...t,
+              salary: currentSal,
+              // The previous letter (if any) is archived unchanged.
+              letterArchive: t.appointmentLetter
+                ? [...(t.letterArchive ?? []), t.appointmentLetter]
+                : t.letterArchive,
+              appointmentLetter: letter,
+            }
+          : t
       ),
     }))
 
@@ -70,7 +89,27 @@ export const createWorkloadSlice: StateCreator<
       actorRole: 'Principal',
       targetTeacherId: teacher.id,
       targetTeacherName: teacher.name,
-      details: `Regenerated official Appointment Letter (${letter.id})`,
+      details: `Issued official Appointment Letter ${letter.officialLetterNo}${
+        teacher.appointmentLetter ? ` (previous ${teacher.appointmentLetter.officialLetterNo} archived)` : ''
+      }`,
     })
+
+    return letter
+  },
+
+  /**
+   * Legacy entry point kept for existing callers — now issues a new letter
+   * through the immutable issue pipeline.
+   */
+  regenerateAppointmentLetter: (teacherId, customTerms, newSalary) => {
+    get().issueAppointmentLetter(teacherId, customTerms, newSalary)
+  },
+
+  setTeacherMedia: (teacherId, kind, media) => {
+    set((s) => ({
+      teachers: s.teachers.map((t) =>
+        t.id === teacherId ? { ...t, [kind]: media ?? undefined } : t
+      ),
+    }))
   },
 })

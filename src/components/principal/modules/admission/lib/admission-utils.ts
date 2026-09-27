@@ -9,7 +9,12 @@
  */
 'use client'
 
-export { useAdmissionFeatureFlags, useSeatCapacity, useDuplicateDetectionConfig } from './hooks'
+export {
+  useAdmissionFeatureFlags,
+  useSeatCapacity,
+  useDuplicateDetectionConfig,
+  useAdmissionDocumentPolicy,
+} from './hooks'
 export { getSeatInfo, type SeatStatus, type SeatInfo } from './seats'
 export { checkDuplicates, type DuplicateMatch } from './duplicate-detection'
 export {

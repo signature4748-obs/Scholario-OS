@@ -9,11 +9,13 @@
 import { ExternalLink, Download } from 'lucide-react'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import type { SectionKey } from '@/lib/store/admission-store'
+import type { AdmissionDocumentPolicy } from '@/lib/store/school-settings-store'
 import { maskAadhaar, getDocumentRows } from './section-status'
 
 interface SectionDataContentProps {
   sectionKey: SectionKey
   app: AdmissionApplication
+  documentPolicy?: AdmissionDocumentPolicy
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -29,7 +31,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 
 const orDash = (v?: string | null) => (v && v.trim() ? v : '—')
 
-export function SectionDataContent({ sectionKey, app }: SectionDataContentProps) {
+export function SectionDataContent({ sectionKey, app, documentPolicy }: SectionDataContentProps) {
   const formData = app.formData
 
   if (sectionKey === 'personal') {
@@ -157,7 +159,7 @@ export function SectionDataContent({ sectionKey, app }: SectionDataContentProps)
   }
 
   if (sectionKey === 'documents') {
-    const rows = getDocumentRows(app)
+    const rows = getDocumentRows(app, documentPolicy)
     return (
       <div className="space-y-1.5">
         {rows.map((d) => (

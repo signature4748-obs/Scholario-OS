@@ -37,7 +37,10 @@ export const useTeachersStore = create<TeachersStoreState>()(
       // persisted state once and re-seeds the full faculty.
       // v3 — pending Examination Incharge assignment re-dated to the
       // 2026–27 session (was a stale 2025 date on a 2026 screen).
-      version: 3,
+      // v4 — appointment letters drop the fake QR verification id and
+      // snapshot the teacher's address at issue time (Wave 2.3 §9);
+      // teacher photo/signature become stored media records.
+      version: 4,
     }
   )
 )

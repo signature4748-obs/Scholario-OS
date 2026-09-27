@@ -7,15 +7,18 @@ import {
 import { useDirtyState } from '@/components/principal/modules/shared/use-settings-dirty'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import {
   ClipboardList, Fingerprint, Users, Building2, Stethoscope, Bus,
   Award, FileStack, FileCheck2, type LucideIcon,
 } from 'lucide-react'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
-import type { DuplicateDetectionConfig } from '@/lib/store/school-settings-store'
-import { REQUIRED_DOCUMENTS, OPTIONAL_DOCUMENTS } from '../../lib/documents'
+import type {
+  AdmissionDocRequirement,
+  AdmissionDocumentPolicy,
+  DuplicateDetectionConfig,
+} from '@/lib/store/school-settings-store'
+import { ADMISSION_DOCUMENT_REGISTRY, resolveDocumentPolicy } from '../../lib/documents'
 
 /**
  * GeneralTab — ALL admission configuration in one place, as expandable
@@ -64,22 +67,62 @@ function FieldRow({
   )
 }
 
-/** Read-only policy row for the canonical document list. */
-function DocumentPolicyRow({ name, required }: { name: string; required: boolean }) {
+/* ------------------------------------------------------------------ */
+/*  Document requirement row — the school-configurable 3-state        */
+/*  policy control (Wave 2.3 §1): Required / Optional / Not Collected. */
+/* ------------------------------------------------------------------ */
+
+const DOC_POLICY_OPTIONS: {
+  value: AdmissionDocRequirement
+  label: string
+}[] = [
+  { value: 'required', label: 'Required' },
+  { value: 'optional', label: 'Optional' },
+  { value: 'not-collected', label: 'Not Collected' },
+]
+
+function DocumentRequirementRow({
+  name,
+  value,
+  onChange,
+}: {
+  name: string
+  value: AdmissionDocRequirement
+  onChange: (v: AdmissionDocRequirement) => void
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2.5 border-t border-border/40 first:border-t-0">
-      <p className="text-sm text-foreground flex-1 min-w-0 truncate">{name}</p>
-      <Badge
-        variant="outline"
-        className={cn(
-          'text-[10px] font-semibold shrink-0',
-          required
-            ? 'border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10'
-            : 'text-muted-foreground'
-        )}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2.5 border-t border-border/40 first:border-t-0">
+      <p className="text-sm text-foreground min-w-0 truncate">{name}</p>
+      <div
+        role="radiogroup"
+        aria-label={`${name} requirement`}
+        className="flex items-center gap-0.5 rounded-lg bg-muted/70 p-0.5 w-fit shrink-0"
       >
-        {required ? 'Required' : 'Optional'}
-      </Badge>
+        {DOC_POLICY_OPTIONS.map((opt) => {
+          const active = value === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(opt.value)}
+              className={cn(
+                'px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap',
+                active
+                  ? opt.value === 'required'
+                    ? 'bg-background text-emerald-700 dark:text-emerald-300 shadow-sm'
+                    : opt.value === 'optional'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'bg-background text-muted-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -254,6 +297,38 @@ export function GeneralTab() {
   const discardD = useCallback(() => setDraftD(initialD), [initialD])
   useDirtyState('admission-letter-privacy', dirtyD, saveD, discardD)
 
+  /* ---------- Draft E: document requirement policy (Wave 2.3 §1) ---------- */
+
+  const initialE = useMemo(
+    () => resolveDocumentPolicy(settings.documentPolicy),
+    [settings.documentPolicy]
+  )
+  const [draftE, setDraftE] = useState<AdmissionDocumentPolicy>(initialE)
+  useEffect(() => { setDraftE(initialE) }, [initialE])
+
+  const dirtyE = useMemo(
+    () => JSON.stringify(draftE) !== JSON.stringify(initialE),
+    [draftE, initialE]
+  )
+
+  const saveE = useCallback(() => {
+    store.updateAdmissionDocumentPolicy(draftE)
+  }, [draftE, store])
+  const discardE = useCallback(() => setDraftE(initialE), [initialE])
+  useDirtyState('admission-document-policy', dirtyE, saveE, discardE)
+
+  const setDocPolicy = (key: string, value: AdmissionDocRequirement) =>
+    setDraftE((prev) => ({ ...prev, [key]: value }))
+
+  const docPolicyCounts = useMemo(() => {
+    const values = Object.values(resolveDocumentPolicy(draftE))
+    return {
+      required: values.filter((v) => v === 'required').length,
+      optional: values.filter((v) => v === 'optional').length,
+      notCollected: values.filter((v) => v === 'not-collected').length,
+    }
+  }, [draftE])
+
   /* ---------- Render ---------- */
 
   return (
@@ -326,14 +401,24 @@ export function GeneralTab() {
           onCheckedChange={toggleA('enableFeeWaiver')} />
       </SettingsCardSection>
 
-      {/* 9. DOCUMENTS — applicant uploads + the canonical policy (read-only) */}
+      {/* 9. DOCUMENTS — school-configurable requirement policy.
+          Required → applicant must provide before submission.
+          Optional → submission allowed without it.
+          Not Collected → hidden from the digital admission workflow. */}
       <SettingsCardSection title="Documents" icon={FileStack} tag="Form">
-        {REQUIRED_DOCUMENTS.map((d) => (
-          <DocumentPolicyRow key={d.key} name={d.name} required />
+        {ADMISSION_DOCUMENT_REGISTRY.map((d) => (
+          <DocumentRequirementRow
+            key={d.key}
+            name={d.name}
+            value={draftE[d.key] ?? d.defaultPolicy}
+            onChange={(v) => setDocPolicy(d.key, v)}
+          />
         ))}
-        {OPTIONAL_DOCUMENTS.map((d) => (
-          <DocumentPolicyRow key={d.key} name={d.name} required={false} />
-        ))}
+        <p className="text-[11px] text-muted-foreground pt-2 border-t border-border/40">
+          {docPolicyCounts.required} required · {docPolicyCounts.optional} optional ·{' '}
+          {docPolicyCounts.notCollected} not collected — the digital form, review, verification
+          and submission gate all follow this policy.
+        </p>
       </SettingsCardSection>
 
       {/* 10. OFFICIAL DOCUMENTS — what may PRINT on generated documents.

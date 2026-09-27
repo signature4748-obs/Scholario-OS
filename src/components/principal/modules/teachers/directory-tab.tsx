@@ -100,8 +100,18 @@ export function DirectoryTab({
               className="cursor-pointer rounded-lg border border-border/60 bg-card p-4 hover:border-emerald-500/40 hover:shadow-sm transition-all"
             >
               <div className="flex items-start gap-3">
-                <div className={cn('relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white font-semibold text-sm', gradientFor(t.id))}>
-                  {t.avatar}
+                <div className="relative shrink-0">
+                  {t.photo?.dataUrl ? (
+                    <img
+                      src={t.photo.dataUrl}
+                      alt={t.name}
+                      className="h-11 w-11 rounded-xl object-cover border border-border"
+                    />
+                  ) : (
+                    <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white font-semibold text-sm', gradientFor(t.id))}>
+                      {t.avatar}
+                    </div>
+                  )}
                   <span className={cn('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card',
                     t.status === 'Active' ? 'bg-emerald-500' : 'bg-amber-500')} />
                 </div>

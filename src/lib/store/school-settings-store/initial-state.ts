@@ -56,6 +56,7 @@ interface SchoolSettingsActions {
   removeClass: SchoolSettingsState['removeClass']
   updateAdmissionSettings: SchoolSettingsState['updateAdmissionSettings']
   updateAdmissionFeatureFlags: SchoolSettingsState['updateAdmissionFeatureFlags']
+  updateAdmissionDocumentPolicy: SchoolSettingsState['updateAdmissionDocumentPolicy']
   updateSeatCapacity: SchoolSettingsState['updateSeatCapacity']
   updateDuplicateDetection: SchoolSettingsState['updateDuplicateDetection']
   addWaiverAudit: SchoolSettingsState['addWaiverAudit']
@@ -290,6 +291,17 @@ export const initialState: StateShape = {
   admissionSettings: {
     showPersonalDataOnLetter: false,
     rejectionRetentionDays: 60,
+    // Document policy — seeded to the school's CURRENT configuration so
+    // nothing changes for this school until the Principal edits it:
+    // Aadhaar required, the other five canonical documents optional.
+    documentPolicy: {
+      aadhaar: 'required',
+      tc: 'optional',
+      character: 'optional',
+      birthCert: 'optional',
+      marksheet: 'optional',
+      migration: 'optional',
+    },
     fieldRules: [
       { fieldKey: 'aadhaarNo', label: 'Student Aadhaar Number', section: 'Personal', visible: true, required: false },
       { fieldKey: 'bloodGroup', label: 'Blood Group', section: 'Personal', visible: true, required: false },

@@ -10,7 +10,7 @@
  * Edit jump. The actual captured photo and the canonical document
  * completion summary are shown here (not just "Photo ✓").
  */
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   User, Users, MapPin, GraduationCap, School as SchoolIcon, Bus,
@@ -20,8 +20,8 @@ import {
 import { school } from '@/lib/mock/school'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useAdmissionFeatureFlags } from '../lib/admission-utils'
-import { getDocumentCompletion } from '../lib/documents'
+import { useAdmissionFeatureFlags, useAdmissionDocumentPolicy } from '../lib/admission-utils'
+import { getDocumentCompletion, getCollectedDocuments } from '../lib/documents'
 import { useFeeCalculations } from '../../FeeStructureStep/useFeeCalculations'
 import { defaultFeeDataState } from '../../FeeStructureStep/types'
 import type { FormData } from '../constants'
@@ -69,6 +69,7 @@ export function ReviewStep({
 }) {
   const [viewMode, setViewMode] = useState<'summary' | 'official'>('summary')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const documentPolicy = useAdmissionDocumentPolicy()
   const toggleSection = (id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -78,7 +79,8 @@ export function ReviewStep({
     })
   }
 
-  const docCompletion = getDocumentCompletion(data.docStatuses)
+  const docCompletion = getDocumentCompletion(data.docStatuses, documentPolicy)
+  const collectedDocs = useMemo(() => getCollectedDocuments(documentPolicy), [documentPolicy])
   const fee = useFeeCalculations(
     data.className || '',
     data.feeState || defaultFeeDataState,
@@ -166,12 +168,15 @@ export function ReviewStep({
     ...((flags.enableStudentPhoto && !hasPhoto)
       ? [{ id: 'Photo', step: 8, icon: Camera, status: 'optional' as SectionStatus, rows: [{ label: 'Photo', value: 'No photo selected' }] }]
       : []),
-    {
-      id: 'Documents', step: 9, icon: FileText,
-      status: docCompletion.complete ? 'complete' : 'incomplete',
-      rows: [],
-      custom: 'documents',
-    },
+    // Documents section appears only when the school collects documents.
+    ...(collectedDocs.length > 0
+      ? [{
+          id: 'Documents', step: 9, icon: FileText,
+          status: (docCompletion.complete ? 'complete' : 'incomplete') as SectionStatus,
+          rows: [] as { label: string; value: string }[],
+          custom: 'documents' as const,
+        }]
+      : []),
   ]
 
   const incomplete = sections.filter((s) => s.status === 'incomplete')
@@ -288,15 +293,9 @@ export function ReviewStep({
                                 <span className="text-muted-foreground">· {docCompletion.summaryLine}</span>
                               </div>
                               {Object.entries(data.docStatuses)
-                                .filter(([, st]) => st.status === 'uploaded')
+                                .filter(([key, st]) => st.status === 'uploaded' && collectedDocs.some((d) => d.key === key))
                                 .map(([key, st]) => {
-                                  const name =
-                                    key === 'aadhaar' ? 'Student Aadhaar Card' :
-                                    key === 'tc' ? 'Transfer Certificate (TC)' :
-                                    key === 'character' ? 'Character Certificate' :
-                                    key === 'birthCert' ? 'Birth Certificate' :
-                                    key === 'marksheet' ? 'Previous Mark Sheet' :
-                                    key === 'migration' ? 'Migration Certificate' : key
+                                  const name = collectedDocs.find((d) => d.key === key)?.name || key
                                   return (
                                     <div key={key} className="flex justify-between items-start text-xs gap-2">
                                       <span className="text-muted-foreground shrink-0">{name}:</span>

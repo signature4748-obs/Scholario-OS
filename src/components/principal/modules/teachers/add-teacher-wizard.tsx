@@ -252,9 +252,9 @@ function TeacherReviewStep({ form, onJumpTo }: { form: AddTeacherForm; onJumpTo:
       { label: 'Subjects', value: form.selectedSubjects.length ? form.selectedSubjects.join(', ') : '—' },
       { label: 'Classes', value: form.selectedClasses.length ? form.selectedClasses.join(', ') : '—' },
     ]},
-    ...(form.photoDataUrl || form.signatureDataUrl ? [{ id: 'Documents', step: 5, icon: Camera, rows: [
-      { label: 'Photo', value: form.photoDataUrl ? 'Uploaded' : '—' },
-      { label: 'Signature', value: form.signatureDataUrl ? 'Uploaded' : '—' },
+    ...(form.photo || form.signature ? [{ id: 'Photo & Signature', step: 5, icon: Camera, rows: [
+      { label: 'Photo', value: form.photo ? 'Captured & stored' : '—' },
+      { label: 'Signature', value: form.signature ? 'Uploaded & stored' : '—' },
     ]}] : []),
   ]
 
@@ -262,8 +262,8 @@ function TeacherReviewStep({ form, onJumpTo }: { form: AddTeacherForm; onJumpTo:
     <div className="space-y-4">
       {/* Profile card — same as Admissions */}
       <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-4">
-        {form.photoDataUrl ? (
-          <img src={form.photoDataUrl} alt={form.name} className="h-14 w-14 rounded-xl object-cover" />
+        {form.photo?.dataUrl ? (
+          <img src={form.photo.dataUrl} alt={form.name} className="h-14 w-14 rounded-xl object-cover" />
         ) : (
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary font-display text-lg font-bold">
             {initials}

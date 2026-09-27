@@ -15,6 +15,7 @@ import { useAdmissionStore } from '@/lib/store/admission-store'
 import {
   useAdmissionFeatureFlags,
   useDuplicateDetectionConfig,
+  useAdmissionDocumentPolicy,
   checkDuplicates,
   type DuplicateMatch,
 } from './admission-utils'
@@ -24,13 +25,14 @@ import {
   initialData,
   type FormData,
 } from '../constants'
-import { getDocumentCompletion } from './documents'
+import { getDocumentCompletion, getCollectedDocuments } from './documents'
 import type { FeeDataState } from '../../FeeStructureStep'
 
 export function useAdmissionWizard() {
   const admissionStore = useAdmissionStore()
   const flags = useAdmissionFeatureFlags()
   const dupConfig = useDuplicateDetectionConfig()
+  const documentPolicy = useAdmissionDocumentPolicy()
 
   const [viewMode, setViewMode] = useState<'list' | 'form'>('list')
   const [step, setStep] = useState(1)
@@ -69,11 +71,12 @@ export function useAdmissionWizard() {
       if (s.id === 7 || s.id === 10) return true
       // Photo (8) — conditional on enableStudentPhoto
       if (s.id === 8) return flags.enableStudentPhoto
-      // Documents (9) — always
-      if (s.id === 9) return true
+      // Documents (9) — only when the school collects at least one
+      // document (policy has required OR optional entries)
+      if (s.id === 9) return getCollectedDocuments(documentPolicy).length > 0
       return true
     })
-  }, [data.className, flags])
+  }, [data.className, flags, documentPolicy])
 
   // Map visible steps to a sequential index for the stepper UI
   const stepIndex = visibleSteps.findIndex((s) => s.id === step)
@@ -168,16 +171,20 @@ export function useAdmissionWizard() {
   }
 
   const handleSubmit = () => {
-    // Document completion gate: the required document (Student Aadhaar
-    // Card) MUST be uploaded before submission. Optional documents never
-    // block (canonical policy — see lib/documents.ts).
-    const docCompletion = getDocumentCompletion(data.docStatuses)
+    // Document completion gate: every document the school has marked
+    // REQUIRED must be uploaded before submission. Optional documents
+    // never block; a school with no required documents is never blocked
+    // (canonical policy — see lib/documents.ts).
+    const docCompletion = getDocumentCompletion(data.docStatuses, documentPolicy)
     if (!docCompletion.complete) {
       toast.error('Required document missing', {
         description:
-          'Upload the Student Aadhaar Card before submitting — optional documents are not required.',
+          docCompletion.missingRequired.length > 0
+            ? `Upload ${docCompletion.missingRequired.join(', ')} before submitting — optional documents are not required.`
+            : 'Upload all required documents before submitting.',
       })
-      setStep(9)
+      const docsStep = visibleSteps.find((s) => s.id === 9)
+      if (docsStep) setStep(9)
       return
     }
 

@@ -45,6 +45,7 @@ export function VerificationWorkspace({
   const store = useAdmissionStore()
   const admissionSettings = useSchoolSettingsStore((s) => s.admissionSettings)
   const featureFlags = admissionSettings.featureFlags
+  const documentPolicy = admissionSettings.documentPolicy
   const app = store.applications.find((a) => a.id === appId)
 
   const [overallRemarks, setOverallRemarks] = useState(app?.generalRemarks || '')
@@ -66,9 +67,9 @@ export function VerificationWorkspace({
     enableMedical: featureFlags.enableMedical,
     enablePreviousSchool: featureFlags.enablePreviousSchool,
     enableStudentPhoto: featureFlags.enableStudentPhoto,
-  })
+  }, documentPolicy)
 
-  const { verified, total, incomplete, flagged } = countVerified(visibleSections, app)
+  const { verified, total, incomplete, flagged } = countVerified(visibleSections, app, documentPolicy)
 
   const handleFlag = (
     key: SectionKey,
@@ -151,6 +152,7 @@ export function VerificationWorkspace({
             sectionKey={key}
             title={title}
             icon={icon}
+            documentPolicy={documentPolicy}
             onFlag={handleFlag}
             onClearFlag={handleClearFlag}
           />

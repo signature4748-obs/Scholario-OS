@@ -178,6 +178,16 @@ export interface AdmissionFormFieldRule {
   required: boolean
 }
 
+/* ------------------------------------------------------------------ */
+/*  Admission document policy — SCHOOL-CONFIGURABLE (Wave 2.3 §1).     */
+/*  'required'       → applicant must provide it before submission     */
+/*  'optional'       → submission allowed without it                   */
+/*  'not-collected'  → hidden from the digital admission workflow      */
+/*  Keyed by the canonical document key in admission/lib/documents.    */
+/* ------------------------------------------------------------------ */
+export type AdmissionDocRequirement = 'required' | 'optional' | 'not-collected'
+export type AdmissionDocumentPolicy = Record<string, AdmissionDocRequirement>
+
 // Admission feature flags — single source of truth for wizard conditional rendering
 export interface AdmissionFeatureFlags {
   enableMedical: boolean
@@ -368,6 +378,9 @@ export interface SchoolSettingsState {
     seatCapacity: ClassSeatConfig[]
     duplicateDetection: DuplicateDetectionConfig
     waiverAudit: WaiverAuditEntry[]
+    // Document requirement policy — one entry per canonical document key.
+    // Missing keys fall back to the registry default (see lib/documents).
+    documentPolicy: AdmissionDocumentPolicy
     // Admission defaults — inherited by new applications automatically
     defaultNationality: string
     defaultReligion: string
@@ -400,6 +413,7 @@ export interface SchoolSettingsState {
   removeClass: (id: string) => void
   updateAdmissionSettings: (data: Partial<SchoolSettingsState['admissionSettings']>) => void
   updateAdmissionFeatureFlags: (data: Partial<AdmissionFeatureFlags>) => void
+  updateAdmissionDocumentPolicy: (policy: AdmissionDocumentPolicy) => void
   updateSeatCapacity: (className: string, data: Partial<ClassSeatConfig>) => void
   updateDuplicateDetection: (data: Partial<DuplicateDetectionConfig>) => void
   addWaiverAudit: (entry: Omit<WaiverAuditEntry, 'id' | 'timestamp'>) => void

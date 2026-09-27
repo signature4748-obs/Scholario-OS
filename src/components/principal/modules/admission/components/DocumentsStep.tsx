@@ -3,10 +3,11 @@
 /**
  * Wizard Step 9 — Documents.
  *
- * Canonical policy (lib/documents.ts): EXACTLY ONE required document
- * (Student Aadhaar Card); everything else is optional and informational.
+ * Document policy (lib/documents.ts) is SCHOOL-CONFIGURABLE (Admission
+ * Settings → Documents): each canonical document is Required, Optional,
+ * or Not Collected. Not-collected documents do not appear here at all.
  * Group headers carry the live counts ("Required 1/1 complete", "Optional
- * 0/5 uploaded") — no explanatory paragraphs, no OCR talk in the header.
+ * 0/5 uploaded") — no explanatory paragraphs.
  *
  * Uploads are REAL: the file is client-validated (type + ≤5 MB), sent to
  * /api/admissions/upload where the server re-validates by magic bytes and
@@ -18,10 +19,10 @@ import { FileText, ShieldCheck, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { DocStatus } from '../types'
-import { useAdmissionFeatureFlags } from '../lib/admission-utils'
+import { useAdmissionFeatureFlags, useAdmissionDocumentPolicy } from '../lib/admission-utils'
 import {
-  REQUIRED_DOCUMENTS,
-  OPTIONAL_DOCUMENTS,
+  getRequiredDocuments,
+  getOptionalDocuments,
   getDocumentCompletion,
   validateDocumentFile,
   uploadAdmissionDocument,
@@ -51,13 +52,16 @@ export function DocumentsStep({
   flags: ReturnType<typeof useAdmissionFeatureFlags>
 }) {
   const verificationEnabled = !!flags.enableDocumentVerification
+  const policy = useAdmissionDocumentPolicy()
+  const requiredDocs = useMemo(() => getRequiredDocuments(policy), [policy])
+  const optionalDocs = useMemo(() => getOptionalDocuments(policy), [policy])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [activeUploadKey, setActiveUploadKey] = useState<string | null>(null)
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
 
   const completion = useMemo(
-    () => getDocumentCompletion(data.docStatuses),
-    [data.docStatuses]
+    () => getDocumentCompletion(data.docStatuses, policy),
+    [data.docStatuses, policy]
   )
 
   const handleUpdateDoc = (key: string, patch: Partial<DocStatus>) => {
@@ -82,7 +86,7 @@ export function DocumentsStep({
       if (e.target) e.target.value = ''
       return
     }
-    const doc = [...REQUIRED_DOCUMENTS, ...OPTIONAL_DOCUMENTS].find((d) => d.key === key)
+    const doc = [...requiredDocs, ...optionalDocs].find((d) => d.key === key)
 
     // Client-side policy check (the server re-checks on arrival).
     const validationError = validateDocumentFile(file)
@@ -158,7 +162,7 @@ export function DocumentsStep({
       verificationTime: undefined,
       rejectionReason: undefined,
     })
-    const doc = [...REQUIRED_DOCUMENTS, ...OPTIONAL_DOCUMENTS].find(
+    const doc = [...requiredDocs, ...optionalDocs].find(
       (d) => d.key === key
     )
     if (doc?.required) {
@@ -221,42 +225,46 @@ export function DocumentsStep({
       />
 
       {/* REQUIRED group — emphasised, live count in the header */}
-      <section aria-label="Required documents">
-        <div className="flex items-baseline gap-2 mb-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
-            Required
-          </h3>
-          <span
-            className={
-              'text-[11px] font-semibold tabular-nums ' +
-              (completion.complete
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-amber-600 dark:text-amber-400')
-            }
-          >
-            {completion.requiredCompleted} / {completion.requiredTotal} complete
-            {completion.complete ? ' ✓' : ''}
-          </span>
-        </div>
-        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.04] p-3 space-y-2.5">
-          {REQUIRED_DOCUMENTS.map(renderDoc)}
-        </div>
-      </section>
+      {requiredDocs.length > 0 && (
+        <section aria-label="Required documents">
+          <div className="flex items-baseline gap-2 mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+              Required
+            </h3>
+            <span
+              className={
+                'text-[11px] font-semibold tabular-nums ' +
+                (completion.complete
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-amber-600 dark:text-amber-400')
+              }
+            >
+              {completion.requiredCompleted} / {completion.requiredTotal} complete
+              {completion.complete ? ' ✓' : ''}
+            </span>
+          </div>
+          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.04] p-3 space-y-2.5">
+            {requiredDocs.map(renderDoc)}
+          </div>
+        </section>
+      )}
 
       {/* OPTIONAL group — neutral, live count in the header */}
-      <section aria-label="Optional documents">
-        <div className="flex items-baseline gap-2 mb-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
-            Optional
-          </h3>
-          <span className="text-[11px] text-muted-foreground font-semibold tabular-nums">
-            {completion.optionalUploaded} / {completion.optionalTotal} uploaded
-          </span>
-        </div>
-        <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2.5">
-          {OPTIONAL_DOCUMENTS.map(renderDoc)}
-        </div>
-      </section>
+      {optionalDocs.length > 0 && (
+        <section aria-label="Optional documents">
+          <div className="flex items-baseline gap-2 mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+              Optional
+            </h3>
+            <span className="text-[11px] text-muted-foreground font-semibold tabular-nums">
+              {completion.optionalUploaded} / {completion.optionalTotal} uploaded
+            </span>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2.5">
+            {optionalDocs.map(renderDoc)}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

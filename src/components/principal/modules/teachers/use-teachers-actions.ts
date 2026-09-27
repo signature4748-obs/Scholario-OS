@@ -30,9 +30,14 @@ export function useTeachersActions(s: TeachersState) {
   const handleOpenAppointmentLetter = (t: TeacherRecord) => {
     s.setSelectedTeacher(t)
     if (!t.appointmentLetter) {
-      s.regenerateAppointmentLetter(t.id)
+      s.issueAppointmentLetter(t.id)
     }
     s.setAppointmentModalOpen(true)
+  }
+
+  const handleOpenJoiningLetter = (t: TeacherRecord) => {
+    s.setSelectedTeacher(t)
+    s.setJoiningModalOpen(true)
   }
 
   const handleResetPassword = (t: TeacherRecord) => {
@@ -151,6 +156,7 @@ export function useTeachersActions(s: TeachersState) {
     openTeacherProfile,
     handleLoginAsTeacher,
     handleOpenAppointmentLetter,
+    handleOpenJoiningLetter,
     handleResetPassword,
     handleOpenPayrollModal,
     handleSubmitPayrollRevision,

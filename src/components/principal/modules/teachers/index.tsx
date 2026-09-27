@@ -22,6 +22,7 @@ import { DirectoryTab } from './directory-tab'
 import { AuditLogsTab } from './audit-logs-tab'
 import { AppointmentLettersTab } from './appointment-letters-tab'
 import { AppointmentLetterDocument } from './appointment-letter-document'
+import { JoiningLetterDocument } from './joining-letter-document'
 import { AddTeacherWizard } from './add-teacher-wizard'
 import { TeacherProfilePage } from './teacher-profile-page'
 import { TeacherSettingsPage } from './teacher-settings-page'
@@ -44,6 +45,13 @@ export function TeachersModule() {
   const s = useTeachersState()
   const actions = useTeachersActions(s)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+  // Live record: the selected teacher is re-resolved from the store on
+  // every render so profile edits (positions, workload, media, letters)
+  // made anywhere in the ERP reflect here immediately (Wave 2.3 §13).
+  const liveSelectedTeacher = s.selectedTeacher
+    ? s.teachers.find((t) => t.id === s.selectedTeacher!.id) ?? s.selectedTeacher
+    : null
 
   // Deep-link: command palette teacher results open the faculty profile
   // directly. The DB id doesn't exist in the demo roster, so match by
@@ -83,25 +91,25 @@ export function TeachersModule() {
 
   // Teacher Profile full-page sub-route — replaces the right-side drawer
   // with a proper Admissions-style workspace when a teacher is selected.
-  if (s.sheetOpen && s.selectedTeacher) {
-    return (
-      <PageTransition>
-        <TeacherProfilePage
-          teacher={s.selectedTeacher}
-          positionsList={s.positionsList}
-          onBack={() => { s.setSheetOpen(false); s.setSelectedTeacher(null) }}
-          onResetPassword={() => actions.handleResetPassword(s.selectedTeacher!)}
-          onViewAppointment={() => actions.handleOpenAppointmentLetter(s.selectedTeacher!)}
-          onToggleLock={() => actions.handleOpenLockModal(s.selectedTeacher!)}
-          onOpenTermination={() => actions.handleOpenTerminationModal(s.selectedTeacher!)}
-        />
-      </PageTransition>
-    )
-  }
+  // The modals below ALWAYS mount so documents open from the profile too.
+  const showProfilePage = !!(s.sheetOpen && liveSelectedTeacher)
 
   return (
     <PageTransition className="space-y-4">
-      <ModuleHeader
+      {showProfilePage ? (
+        <TeacherProfilePage
+          teacher={liveSelectedTeacher!}
+          positionsList={s.positionsList}
+          onBack={() => { s.setSheetOpen(false); s.setSelectedTeacher(null) }}
+          onOpenAppointment={() => actions.handleOpenAppointmentLetter(liveSelectedTeacher!)}
+          onOpenJoiningLetter={() => actions.handleOpenJoiningLetter(liveSelectedTeacher!)}
+          onResetPassword={() => actions.handleResetPassword(liveSelectedTeacher!)}
+          onToggleLock={() => actions.handleOpenLockModal(liveSelectedTeacher!)}
+          onOpenTermination={() => actions.handleOpenTerminationModal(liveSelectedTeacher!)}
+        />
+      ) : (
+        <>
+          <ModuleHeader
         meta={[`${s.totalTeachers} faculty`, `${departments.length} depts`, `AY ${school.academicYear}`]}
         actions={
           <>
@@ -173,30 +181,51 @@ export function TeachersModule() {
         <AppointmentLettersTab
           teachers={s.teachers}
           onViewLetter={actions.handleOpenAppointmentLetter}
-          onRegenerate={(id) => {
-            s.regenerateAppointmentLetter(id)
-            toast.success('Appointment letter regenerated with current school terms')
+          onIssueNew={(id) => {
+            s.issueAppointmentLetter(id)
+            toast.success('New appointment letter issued', {
+              description: 'The previously issued letter was archived unchanged — issued documents are immutable historical records.',
+            })
           }}
         />
       )}
 
       {/* TAB 3: ACTIVITY AUDIT LOGS */}
       {s.activeTab === 'logs' && <AuditLogsTab auditLogs={s.auditLogs} />}
+        </>
+      )}
 
-      {/* (Teacher Profile is now a full-page sub-route — see early return above) */}
+      {/* ============ MODALS — always mounted so they open from the
+          profile page sub-route too ============ */}
 
       {/* APPOINTMENT LETTER PREVIEW & PRINT MODAL */}
       <Dialog open={s.appointmentModalOpen} onOpenChange={s.setAppointmentModalOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto p-0">
           <DialogHeader className="sr-only">
             <DialogTitle>Appointment Letter Preview</DialogTitle>
-            <DialogDescription>Preview and print appointment letter for teacher</DialogDescription>
+            <DialogDescription>Preview, print and download the appointment letter</DialogDescription>
           </DialogHeader>
-          {s.selectedTeacher && s.selectedTeacher.appointmentLetter && (
+          {liveSelectedTeacher?.appointmentLetter && (
             <AppointmentLetterDocument
-              letter={s.selectedTeacher.appointmentLetter}
-              teacher={s.selectedTeacher}
+              letter={liveSelectedTeacher.appointmentLetter}
+              teacher={liveSelectedTeacher}
               onClose={() => s.setAppointmentModalOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* JOINING LETTER MODAL */}
+      <Dialog open={s.joiningModalOpen} onOpenChange={s.setJoiningModalOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Joining Letter Preview</DialogTitle>
+            <DialogDescription>Preview, print and download the joining letter</DialogDescription>
+          </DialogHeader>
+          {liveSelectedTeacher && (
+            <JoiningLetterDocument
+              teacher={liveSelectedTeacher}
+              onClose={() => s.setJoiningModalOpen(false)}
             />
           )}
         </DialogContent>
