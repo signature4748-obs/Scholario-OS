@@ -104,7 +104,7 @@ export function ApplicationRow({
 
         {app.status === 'Completed' && (
           <Button size="sm" variant="outline" onClick={() => { store.selectApplication(app.id); onOpenIssuanceWorkspace(app.id) }} className="text-xs h-8 border-teal-300 text-teal-800 dark:text-teal-300">
-            View Dossier
+            View Admission
           </Button>
         )}
       </div>

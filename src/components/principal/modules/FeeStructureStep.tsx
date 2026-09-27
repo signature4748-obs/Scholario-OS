@@ -15,19 +15,16 @@ export function FeeStructureStep({ className, feeState, onChangeFeeState, flags 
 
   return (
     <div className="space-y-5">
-      {/* Header — READ-ONLY indicator */}
-      <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 text-slate-900 dark:text-emerald-50 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-between flex-wrap gap-3">
+      {/* Header — title + single subtle read-only marker */}
+      <div className="flex items-center justify-between gap-3 pb-3 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center justify-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Wallet className="h-5 w-5" />
           </div>
-          <div>
-            <h3 className="text-sm font-bold font-display">Fee Structure — {calc.feeStructure?.category}</h3>
-            <p className="text-xs text-slate-600 dark:text-emerald-200/70">Class: {className || '—'} · Managed in Fee Management</p>
-          </div>
+          <h3 className="font-display text-base font-bold text-foreground">Fee Structure</h3>
         </div>
-        <Badge variant="outline" className="border-emerald-600/40 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-emerald-900/30 text-xs font-mono font-bold gap-1">
-          <Lock className="h-3 w-3" /> Read-Only
+        <Badge variant="outline" className="text-[11px] font-medium gap-1 text-muted-foreground">
+          <Lock className="h-3 w-3" /> Read-only
         </Badge>
       </div>
 

@@ -54,11 +54,14 @@ export function buildAdmissionLetterHTML(data: AdmissionLetterData, profile: Sch
     ...((fees.examFee || 0) > 0
       ? [feeRow('Examination &amp; Assessment Group Charges', fees.examFee || 0)]
       : []),
+    ...((fees.otherHeadsTotal || 0) > 0
+      ? [feeRow('Development &amp; Other Charges', fees.otherHeadsTotal || 0)]
+      : []),
     feeRow('Fee Subtotal', subtotal, 'sub'),
     ...(discountAmount > 0
       ? [feeRow(`Discount / Concession (${fees.discountName || 'Approved Concession'})`, -discountAmount, 'discount')]
       : []),
-    feeRow('Final Payable Amount Paid', fees.finalPayable, 'total'),
+    feeRow('Final Payable Amount', fees.finalPayable, 'total'),
   ].join('')
 
   return `<!doctype html>

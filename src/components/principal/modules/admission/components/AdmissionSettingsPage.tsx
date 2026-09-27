@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import {
-  PageHeader, SegmentedTabs,
+  PageHeader, SegmentedTabs, ActionBar,
 } from '@/components/principal/modules/shared/settings-primitives'
-import { ActionBar } from '@/components/principal/modules/shared/settings-primitives'
 import {
   SettingsDirtyProvider, useSettingsDirty,
 } from '@/components/principal/modules/shared/use-settings-dirty'
@@ -12,16 +11,19 @@ import { toast } from 'sonner'
 import type { AdmissionSettingsPageProps } from './field-config/types'
 import { GeneralTab } from './field-config/GeneralTab'
 import { SeatCapacityTab } from './field-config/SeatCapacityTab'
-import { FieldRulesTab } from './field-config/FieldRulesTab'
 
-type TabId = 'general' | 'seats' | 'fields'
+type TabId = 'general' | 'seats'
 
 /**
- * AdmissionSettingsPage — full-page settings sub-route.
+ * AdmissionSettingsPage — two areas only: General and Seats.
  *
- * Global dirty-state: any change on ANY tab (General, Seats, Fields)
- * triggers the sticky ActionBar at the bottom. Save commits all tabs;
- * Discard reverts all tabs.
+ * General holds every admission setting (workflow, duplicate detection,
+ * field groups, medical, transport & hostel, financial, documents,
+ * official documents, advanced) as expandable sections. Field
+ * configuration is no longer a separate destination.
+ *
+ * Global dirty-state: any change on any section triggers the sticky
+ * ActionBar; Save commits everything, Discard reverts everything.
  */
 export function AdmissionSettingsPage({ onBack }: AdmissionSettingsPageProps) {
   return (
@@ -53,7 +55,6 @@ function AdmissionSettingsInner({ onBack }: AdmissionSettingsPageProps) {
     <div className="mx-auto max-w-4xl pb-24">
       <PageHeader
         title="Admission Settings"
-        subtitle="Workflow, seats, and field visibility."
         onBack={onBack}
         actions={
           <SegmentedTabs
@@ -62,16 +63,14 @@ function AdmissionSettingsInner({ onBack }: AdmissionSettingsPageProps) {
             tabs={[
               { value: 'general', label: 'General' },
               { value: 'seats', label: 'Seats' },
-              { value: 'fields', label: 'Fields' },
             ]}
           />
         }
       />
 
-      {/* All tabs stay mounted so their dirty state persists across switches */}
+      {/* Both tabs stay mounted so their dirty state persists across switches */}
       <div className={tab === 'general' ? '' : 'hidden'}><GeneralTab /></div>
       <div className={tab === 'seats' ? '' : 'hidden'}><SeatCapacityTab /></div>
-      <div className={tab === 'fields' ? '' : 'hidden'}><FieldRulesTab /></div>
 
       <ActionBar
         dirty={dirty}

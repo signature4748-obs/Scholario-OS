@@ -28,7 +28,7 @@ export function PreviousSchoolStep({ data, set, onSkip }: { data: FormData; set:
 
   return (
     <div>
-      <StepHeader title="Previous School Information" subtitle="Past academic record of the applicant" icon={<SchoolIcon className="h-5 w-5" />} />
+      <StepHeader title="Previous School" icon={<SchoolIcon className="h-5 w-5" />} />
       <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <Field label="Previous School Name" full>

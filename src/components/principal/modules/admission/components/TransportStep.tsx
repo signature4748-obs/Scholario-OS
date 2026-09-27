@@ -21,8 +21,7 @@ export function TransportStep({ data, set, flags }: { data: FormData; set: <K ex
   return (
     <div>
       <StepHeader
-        title={allowHostel ? 'Transport & Hostel Facilities' : 'Transport Facilities'}
-        subtitle={allowHostel ? 'Bus routes and residential lodging options' : 'Bus routes and daily commute options'}
+        title={allowHostel ? 'Transport & Hostel' : 'Transport'}
         icon={<Bus className="h-5 w-5" />}
       />
       <div className="space-y-4">

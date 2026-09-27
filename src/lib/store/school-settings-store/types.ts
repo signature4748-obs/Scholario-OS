@@ -365,11 +365,6 @@ export interface SchoolSettingsState {
 
   // Admission Settings
   admissionSettings: {
-    requiredDocs: string[]
-    studentIdFormat: string
-    rollNumberFormat: string
-    autoEnrollBooks: boolean
-    workflowSteps: string[]
     showPersonalDataOnLetter: boolean
     showDiscountBreakdown?: boolean
     rejectionRetentionDays: number

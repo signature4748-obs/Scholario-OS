@@ -19,17 +19,6 @@ export function CredentialsTab({ artifacts, onCopy }: CredentialsTabProps) {
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 flex items-start gap-2.5 print:hidden">
-        <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-        <p className="text-xs text-foreground leading-relaxed">
-          <span className="font-semibold">This sheet is separate from the admission letter.</span>{' '}
-          <span className="text-muted-foreground">
-            Portal credentials are never printed on official admission documents. Hand this sheet
-            to the parent directly or send it through a private channel.
-          </span>
-        </p>
-      </div>
-
       <div className="bg-white text-slate-900 rounded-2xl border border-slate-200 shadow-sm p-8 space-y-5">
         {/* Letterhead */}
         <div className="border-b-2 border-slate-200 pb-3">

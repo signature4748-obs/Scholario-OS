@@ -12,12 +12,14 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-/** Standard step header — icon + title + subtitle with a bottom divider. */
+/** Standard step header — icon + title (+ optional useful meta) with a bottom divider. */
 export function StepHeader({
   title, subtitle, icon, right,
 }: {
   title: string
-  subtitle: string
+  /** Optional. Only for genuinely useful actionable info (e.g. the active
+   *  academic session) — NEVER a description of what the step means. */
+  subtitle?: string
   icon: ReactNode
   right?: ReactNode
 }) {
@@ -28,7 +30,7 @@ export function StepHeader({
       </div>
       <div className="flex-1 min-w-0">
         <h2 className="font-display text-base font-bold text-foreground">{title}</h2>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
       {right && <div className="shrink-0">{right}</div>}
     </div>

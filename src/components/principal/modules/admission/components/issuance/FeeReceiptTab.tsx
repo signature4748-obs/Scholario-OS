@@ -4,6 +4,9 @@ import { Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { GlassCard } from '@/components/shared/ui'
 import { formatDate, formatINR } from '@/lib/format'
+import { school } from '@/lib/mock/school'
+import { computeFeeSnapshot } from '../../../FeeStructureStep/fee-snapshot'
+import { defaultFeeDataState } from '../../../FeeStructureStep/types'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import type { IssuanceArtifacts } from './letter-data'
 
@@ -12,20 +15,50 @@ interface FeeReceiptTabProps {
   artifacts: IssuanceArtifacts
 }
 
+/**
+ * FINANCIAL RECORD — the admission fee settlement receipt. Every amount
+ * comes from the applicant's own fee snapshot (same pipeline as the Fee
+ * step and the admission letter). No hardcoded figures, no invented
+ * receipt numbers: the receipt number derives from the admission number.
+ */
 export function FeeReceiptTab({ app, artifacts }: FeeReceiptTabProps) {
   const { admissionNo } = artifacts
   const formData = app.formData
+
+  const feeState = { ...defaultFeeDataState, ...(app.feeData || {}) }
+  const snap = computeFeeSnapshot(formData.className || '', feeState, {
+    enableTransport: true,
+    enableHostel: true,
+  })
+
+  // Deterministic receipt number derived from the admission number.
+  const tail = admissionNo.replace(/[^0-9A-Z]/g, '').slice(-6)
+  const receiptNo = `REC-${new Date().getFullYear()}-${tail}`
+  const today = new Date().toISOString().split('T')[0]
+
+  const rows: { label: string; amount: number }[] = [
+    { label: 'Registration Fee', amount: snap.registrationFee },
+    { label: 'Admission Fee (One-Time)', amount: snap.admissionFee },
+    { label: 'Annual Tuition Fee', amount: snap.tuitionFee },
+  ]
+  if (snap.examTotal > 0) rows.push({ label: 'Examination & Assessment', amount: snap.examTotal })
+  if (snap.booksTotal > 0) rows.push({ label: 'Textbooks & Course Material', amount: snap.booksTotal })
+  if (snap.uniformTotal > 0) rows.push({ label: 'Uniform', amount: snap.uniformTotal })
+  if (snap.activityKitTotal > 0) rows.push({ label: 'Activity Kit', amount: snap.activityKitTotal })
+  if (snap.transportTotal > 0) rows.push({ label: 'Transport Fee', amount: snap.transportTotal })
+  if (snap.hostelTotal > 0) rows.push({ label: 'Hostel Fee', amount: snap.hostelTotal })
+  if (snap.otherHeadsTotal > 0) rows.push({ label: 'Other Fee Heads', amount: snap.otherHeadsTotal })
 
   return (
     <GlassCard className="p-6 max-w-2xl mx-auto space-y-6 border">
       <div className="flex justify-between items-start border-b pb-4">
         <div>
-          <h3 className="font-extrabold text-lg">Official Fee Receipt</h3>
-          <p className="text-xs text-muted-foreground">Demo School of Scholario · Accounts Office</p>
+          <h3 className="font-extrabold text-lg">Fee Receipt</h3>
+          <p className="text-xs text-muted-foreground">{school.name}</p>
         </div>
         <div className="text-right">
-          <span className="text-xs font-mono font-bold block">Receipt No: REC-2026-9921</span>
-          <span className="text-xs text-muted-foreground">Date: {formatDate(new Date().toISOString().split('T')[0])}</span>
+          <span className="text-xs font-mono font-bold block">Receipt No: {receiptNo}</span>
+          <span className="text-xs text-muted-foreground">Date: {formatDate(today)}</span>
         </div>
       </div>
 
@@ -39,12 +72,12 @@ export function FeeReceiptTab({ app, artifacts }: FeeReceiptTabProps) {
           <span className="font-bold text-foreground">{formData.className} - {formData.section}</span>
         </div>
         <div>
-          <span className="text-muted-foreground block text-[10px] uppercase font-bold">Admission Number</span>
+          <span className="text-muted-foreground block text-[10px] uppercase font-bold">Admission No.</span>
           <span className="font-mono font-bold">{admissionNo}</span>
         </div>
         <div>
-          <span className="text-muted-foreground block text-[10px] uppercase font-bold">Payment Mode</span>
-          <span className="font-semibold">{app.feeData?.paymentMethod || 'Online UPI / Bank Transfer'}</span>
+          <span className="text-muted-foreground block text-[10px] uppercase font-bold">Session</span>
+          <span className="font-semibold">{app.academicSession}</span>
         </div>
       </div>
 
@@ -53,17 +86,26 @@ export function FeeReceiptTab({ app, artifacts }: FeeReceiptTabProps) {
           <div className="col-span-8">Fee Particulars</div>
           <div className="col-span-4 text-right">Amount (INR)</div>
         </div>
-        <div className="divide-y p-2.5 space-y-1.5">
-          <div className="flex justify-between"><span>Admission Fee (One-time)</span><span>₹15,000</span></div>
-          <div className="flex justify-between"><span>Tuition Fee (Quarterly)</span><span>₹45,000</span></div>
-          <div className="flex justify-between"><span>Annual Activity & Development</span><span>₹8,000</span></div>
-          {formData.transportRequired && (
-            <div className="flex justify-between"><span>Transport Fee (Quarterly)</span><span>₹18,000</span></div>
+        <div className="divide-y">
+          {rows.map((r) => (
+            <div key={r.label} className="flex justify-between p-2.5">
+              <span>{r.label}</span>
+              <span className="font-mono">{formatINR(r.amount)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between p-2.5 bg-muted/40 font-bold">
+            <span>Fee Subtotal</span>
+            <span className="font-mono">{formatINR(snap.grossFee)}</span>
+          </div>
+          {snap.discountAmount > 0 && (
+            <div className="flex justify-between p-2.5 text-emerald-600 font-semibold">
+              <span>Concession{snap.discountName ? ` — ${snap.discountName}` : ''}</span>
+              <span className="font-mono">- {formatINR(snap.discountAmount)}</span>
+            </div>
           )}
-          <div className="flex justify-between text-emerald-600 font-semibold"><span>Early Bird Discount Concession</span><span>-₹10,000</span></div>
-          <div className="flex justify-between font-extrabold text-sm pt-2 border-t">
-            <span>Total Amount Paid</span>
-            <span className="text-emerald-700 dark:text-emerald-300">{formatINR(76000)}</span>
+          <div className="flex justify-between font-extrabold text-sm p-2.5">
+            <span>Net Payable</span>
+            <span className="font-mono text-emerald-700 dark:text-emerald-300">{formatINR(snap.netTotal)}</span>
           </div>
         </div>
       </div>
@@ -71,7 +113,7 @@ export function FeeReceiptTab({ app, artifacts }: FeeReceiptTabProps) {
       <div className="pt-2 flex justify-end gap-2">
         <Button size="sm" variant="outline" onClick={() => window.print()} className="text-xs">
           <Printer className="h-3.5 w-3.5 mr-1" />
-          Print Fee Receipt
+          Print Receipt
         </Button>
       </div>
     </GlassCard>

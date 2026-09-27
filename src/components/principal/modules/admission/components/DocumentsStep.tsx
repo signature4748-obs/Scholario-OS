@@ -5,13 +5,11 @@
  *
  * Canonical policy (lib/documents.ts): EXACTLY ONE required document
  * (Student Aadhaar Card); everything else is optional and informational.
- * The step shows two visually distinct groups — REQUIRED (emphasised,
- * green emphasis when complete) and OPTIONAL (neutral) — with minimal
- * document cards: name, Required/Optional tag, status, filename, and
- * one clear action ([Upload] or [Preview] / [Verify]).
+ * Group headers carry the live counts ("Required 1/1 complete", "Optional
+ * 0/5 uploaded") — no explanatory paragraphs, no OCR talk in the header.
  */
 import { useMemo, useRef, useState } from 'react'
-import { FileText, ShieldCheck, CheckCircle2, UploadCloud } from 'lucide-react'
+import { FileText, ShieldCheck, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { DocStatus } from '../types'
@@ -156,34 +154,44 @@ export function DocumentsStep({
 
       <StepHeader
         title="Documents"
-        subtitle="Upload the required document. Optional documents can be added now or later."
         icon={<FileText className="h-5 w-5" />}
+        right={
+          <span
+            className={
+              completion.complete
+                ? 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold'
+                : 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[11px] font-semibold'
+            }
+          >
+            {completion.complete ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="h-3.5 w-3.5" /> Required pending
+              </>
+            )}
+          </span>
+        }
       />
 
-      {/* Completion summary — full-width row (no collision with the header on narrow screens) */}
-      <div
-        className={
-          completion.complete
-            ? 'flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold'
-            : 'flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-semibold'
-        }
-      >
-        {completion.complete ? (
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-        ) : (
-          <ShieldCheck className="h-4 w-4 shrink-0" />
-        )}
-        <span className="min-w-0">{completion.summaryLine}</span>
-      </div>
-
-      {/* REQUIRED group — emphasised */}
+      {/* REQUIRED group — emphasised, live count in the header */}
       <section aria-label="Required documents">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-baseline gap-2 mb-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
             Required
           </h3>
-          <span className="text-[11px] text-muted-foreground">
-            needed to submit this application
+          <span
+            className={
+              'text-[11px] font-semibold tabular-nums ' +
+              (completion.complete
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-amber-600 dark:text-amber-400')
+            }
+          >
+            {completion.requiredCompleted} / {completion.requiredTotal} complete
+            {completion.complete ? ' ✓' : ''}
           </span>
         </div>
         <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.04] p-3 space-y-2.5">
@@ -191,14 +199,14 @@ export function DocumentsStep({
         </div>
       </section>
 
-      {/* OPTIONAL group — neutral */}
+      {/* OPTIONAL group — neutral, live count in the header */}
       <section aria-label="Optional documents">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-baseline gap-2 mb-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
             Optional
           </h3>
-          <span className="text-[11px] text-muted-foreground">
-            accepted if available — never block submission
+          <span className="text-[11px] text-muted-foreground font-semibold tabular-nums">
+            {completion.optionalUploaded} / {completion.optionalTotal} uploaded
           </span>
         </div>
         <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2.5">

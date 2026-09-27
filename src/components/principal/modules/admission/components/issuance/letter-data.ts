@@ -105,13 +105,13 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
       booksTotal: snapshot.booksTotal,
       examFee: snapshot.examTotal,
       transportFee: snapshot.transportTotal,
+      otherHeadsTotal: snapshot.otherHeadsTotal,
       subtotal: snapshot.grossFee,
       totalAnnualFee: snapshot.grossFee,
       discountName: snapshot.discountName,
       discountAmount: snapshot.discountAmount,
       finalPayable: snapshot.netTotal,
     },
-    credentials: { loginId, tempPassword },
   }
 
   return {

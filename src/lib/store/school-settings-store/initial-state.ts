@@ -288,18 +288,6 @@ export const initialState: StateShape = {
   },
 
   admissionSettings: {
-    requiredDocs: [
-      'Birth Certificate',
-      'Transfer Certificate (TC)',
-      'Previous Class Marksheet',
-      'Aadhaar Card (Student & Parent)',
-      'Passport Size Photographs (4)',
-      'Category Certificate (if applicable)',
-    ],
-    studentIdFormat: 'ADM-2026-XXXX',
-    rollNumberFormat: 'CLASS-SEC-ROLL',
-    autoEnrollBooks: true,
-    workflowSteps: ['Application Submission', 'Document Verification', 'Principal Interview', 'Fee Payment & Enrollment'],
     showPersonalDataOnLetter: false,
     rejectionRetentionDays: 60,
     fieldRules: [

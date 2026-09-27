@@ -39,7 +39,7 @@ export function SchoolHeader({ data }: { data: AdmissionLetterData }) {
           <span className="inline-block px-3 py-1 bg-slate-900 text-white font-mono text-[11px] font-bold tracking-wider rounded uppercase">
             OFFICIAL ADMISSION LETTER
           </span>
-          <p className="text-xs font-mono font-bold text-slate-700 mt-1">Ref: {data.refNo}</p>
+          <p className="text-xs font-mono font-bold text-slate-700 mt-1">Ref: {data.refNo || data.admissionNo}</p>
           <p className="text-[11px] text-slate-500 font-medium">Date: {formatDate(data.admissionDate)}</p>
           <p className="text-[11px] text-slate-500 font-medium">Session: {data.academicSession}</p>
         </div>

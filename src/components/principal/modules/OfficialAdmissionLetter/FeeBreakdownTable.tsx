@@ -50,6 +50,12 @@ export function FeeBreakdownTable({ data }: { data: AdmissionLetterData }) {
                   <td className="p-2 text-right font-mono">{formatINR(data.fees.examFee || 0)}</td>
                 </tr>
               )}
+              {(data.fees.otherHeadsTotal || 0) > 0 && (
+                <tr>
+                  <td className="p-2">Development & Other Charges</td>
+                  <td className="p-2 text-right font-mono">{formatINR(data.fees.otherHeadsTotal || 0)}</td>
+                </tr>
+              )}
               {(data.fees.transportFee || 0) > 0 && (
                 <tr>
                   <td className="p-2">Transport Fee</td>

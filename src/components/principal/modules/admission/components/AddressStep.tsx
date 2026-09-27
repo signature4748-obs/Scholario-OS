@@ -44,7 +44,7 @@ export function AddressStep({
 
   return (
     <div>
-      <StepHeader title="Address Information" subtitle="Residential and permanent communication details" icon={<MapPin className="h-5 w-5" />} />
+      <StepHeader title="Address" icon={<MapPin className="h-5 w-5" />} />
       <div className="space-y-6">
         {/* CURRENT ADDRESS */}
         <div>

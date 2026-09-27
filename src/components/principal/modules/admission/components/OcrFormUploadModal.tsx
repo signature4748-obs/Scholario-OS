@@ -222,7 +222,7 @@ export function OcrFormUploadModal({
             <div>
               <h3 className="font-semibold text-base text-foreground">Scan / Import Application</h3>
               <p className="text-xs text-muted-foreground">
-                Photo or upload a filled form — text is read on your device and matched to the draft
+                Photo or upload a filled paper form
               </p>
             </div>
           </div>

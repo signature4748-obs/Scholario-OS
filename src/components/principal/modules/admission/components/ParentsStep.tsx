@@ -17,7 +17,7 @@ import { StepHeader, Field } from './StepShared'
 export function ParentsStep({ data, set, flags }: { data: FormData; set: <K extends keyof FormData>(k: K, v: FormData[K]) => void; flags: ReturnType<typeof useAdmissionFeatureFlags> }) {
   return (
     <div>
-      <StepHeader title="Parents & Emergency Contacts" subtitle="Father, mother, and emergency contact details" icon={<Users className="h-5 w-5" />} />
+      <StepHeader title="Parents & Emergency Contacts" icon={<Users className="h-5 w-5" />} />
       <div className="space-y-5">
         {/* FATHER DETAILS */}
         <div>

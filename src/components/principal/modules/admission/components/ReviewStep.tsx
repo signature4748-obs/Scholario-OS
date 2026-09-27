@@ -94,7 +94,7 @@ export function ReviewStep({
 
   const sections: SectionDef[] = [
     {
-      id: 'Student', step: 1, icon: User,
+      id: 'Personal', step: 1, icon: User,
       status: data.firstName && data.dob && data.gender ? 'complete' : 'incomplete',
       rows: [
         { label: 'Name', value: fullName || '—' },
@@ -123,7 +123,7 @@ export function ReviewStep({
       ],
     },
     {
-      id: 'Applying For', step: 4, icon: GraduationCap,
+      id: 'Academic', step: 4, icon: GraduationCap,
       status: data.className ? 'complete' : 'incomplete',
       rows: [
         { label: 'Session', value: data.previousYear || '—' },
@@ -152,7 +152,7 @@ export function ReviewStep({
         }]
       : []),
     {
-      id: 'Fee Structure', step: 7, icon: Wallet,
+      id: 'Fee', step: 7, icon: Wallet,
       status: 'complete',
       rows: [
         { label: 'Gross', value: inr(fee.grossFee) },
@@ -206,9 +206,6 @@ export function ReviewStep({
               <h3 className="font-bold text-lg text-foreground truncate">{fullName || 'Unnamed applicant'}</h3>
               <p className="text-xs text-muted-foreground truncate">
                 {data.className} {data.section ? `— ${data.section}` : ''} · {data.previousYear || school.academicYear}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {docCompletion.summaryLine}
               </p>
             </div>
             {flags.enableStudentPhoto && (

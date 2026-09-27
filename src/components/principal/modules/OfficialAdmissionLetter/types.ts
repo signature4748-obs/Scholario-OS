@@ -41,6 +41,7 @@ export interface AdmissionLetterData {
     tuitionFee: number
     annualCharges?: number
     activityFee?: number
+    otherHeadsTotal?: number
     transportFee?: number
     examFee?: number
     booksTotal?: number
@@ -53,12 +54,6 @@ export interface AdmissionLetterData {
     finalPayable: number
     paymentMethod?: string
   }
-  credentials?: {
-    loginId: string
-    tempPassword: string
-  }
-  qrCodeData?: string
-  digitalVerificationId?: string
 }
 
 export interface OfficialAdmissionLetterProps {

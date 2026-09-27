@@ -2190,3 +2190,40 @@ Stage Summary:
 - KEY FILES: admission/lib/documents.ts (NEW), lib/ocr-extract.ts (NEW), components/{DocumentsStep,DocumentCard,ReviewStep,StepperHeader,ScannedAttachmentBadge,OcrFormUploadModal}.tsx (rewritten), field-config/{GeneralTab,FieldRulesTab}.tsx (restructured), issuance/{letter-data.ts,CredentialsTab.tsx} (rewritten), OfficialAdmissionLetter/{DigitalVerification,FeeBreakdownTable,StudentProfileGrid}.tsx + OfficialAdmissionLetter.tsx + letter-html.ts (de-QR/de-password/honest fees), doc-card/useDocCard.ts + DocCardBody.tsx + PreviewDialog.tsx (honesty), FeeStructureStep/fee-snapshot.ts (NEW pure pipeline), use-admission-wizard.ts (submit gate), public/tesseract/** (19MB local OCR engine).
 - Known residuals (honest): (a) enrolled-student class matching falls back when the application's class name doesn't exactly match a roster class (Devansh landed in Pre-Nursery via the documented best-effort fallback) — the roster-class name universe vs application className needs unification; (b) tesseract is a general text engine — handwriting accuracy varies, which is exactly why every field is editable and low-confidence fields are flagged; (c) the Admissions data model remains the client-side tenant-scoped admission store (established architecture; persisted, no API rewrite in this wave); (d) PortalCredentialsCard.tsx is now orphaned code (kept for reference, no usages).
 - Next-phase candidates: unify roster classes with application classNames at issuance; principal-side verification workspace polish (SectionDataContent documents summary using lib/documents.ts); OCR multi-page UI affordance on entry; retire the orphaned PortalCredentialsCard; extend fee-snapshot to the Fee Receipt tab.
+
+---
+
+Task ID: W2.1
+Agent: Z.ai Code (main orchestrator)
+Task: ADMISSIONS WAVE 2.1 — Cleanup + Information Density + Document Architecture. Spec: remove over-texting (no descriptive subtitles), Photo/Documents/Fee/Review screens minimal, issued workspace de-duplicated with grouped tabs (Official Document / Financial Record / Account / Communication), Print Complete Dossier removed (admission letter is the ONLY official printable), letter keeps no QR/password/credentials, Fee Receipt uses REAL fee snapshot data, Settings reduced to General + Seats with Fields merged into General (11 expandable sections, Visible OFF → Required OFF, 6 real duplicate-detection signals), legacy School Settings Admission tab removed, dead files deleted.
+
+Work Log:
+- StepShared.StepHeader: subtitle now optional; removed descriptive subtitles from Personal/Parents/Address/PreviousSchool/Transport steps (kept ClassStep's session subtitle — real info).
+- Photo: header reduced to "Photo" (was "Passport Photograph" + explanation).
+- DocumentsStep: removed subtitle + summary banner + group explanations; live counts in group headers ("Required 1 / 1 complete ✓" / "Optional 0 / 5 uploaded") + status pill in header.
+- FeeStructureStep: replaced emerald hero block ("Fee Structure — Primary · Class: — · Managed in Fee Management") with plain title + subtle Read-only badge; removed "From Fee Mgmt" badge in SelectionPanel.
+- ReviewStep: renamed sections to spec (Personal/Parents/Address/Academic/Previous School/Transport/Fee/Documents); removed duplicated doc-summary line from identity card (kept photo + Replace).
+- IssuanceHeader: heading is now just the student name + status badge; removed description paragraph; removed "Print Complete Dossier" (letter tab has its own Print).
+- IdentifiersMatrix: removed invented sublabels (Official Record / Unique ERP UID / Class Roster Allocated / Board Portal Ready); labels shortened (Admission No. / Student ID / Class & Roll No. / CBSE Reference).
+- IssuanceTabs: tabs grouped by workflow with tiny group captions — OFFICIAL DOCUMENT (Admission Letter) · FINANCIAL RECORD (Fee Receipt) · ACCOUNT (Student Portal) · COMMUNICATION (Welcome Letter, Notifications).
+- LetterTab: removed privacy banner; TopActionBar slimmed to admission no + Print/Download/Close.
+- Letter data fixes: Ref falls back to admissionNo; otherHeadsTotal (Development & Other Charges) now itemized in React table + HTML letter (subtotal no longer exceeds itemized rows); "Final Payable Amount Paid" → "Final Payable Amount"; removed dead credentials/qrCodeData/digitalVerificationId type fields.
+- FeeReceiptTab: replaced ALL hardcoded figures (₹15,000/₹45,000/₹8,000/₹18,000/REC-2026-9921/Demo School) with computeFeeSnapshot real data + deterministic receipt no derived from admission no; removed fabricated Payment Mode row; "Total Amount Paid" → "Net Payable".
+- WelcomeLetterTab: real school name (was "Demo School of Scholario" heading), session-derived commencement year.
+- DispatchesTab: replaced fake "✓ Dispatched/✓ Delivered" badges with honest channel list ("On file") + pointer to Communication → Messaging.
+- CredentialsTab: removed duplicate top banner (in-sheet security notice retained).
+- OcrFormUploadModal: trimmed entry subtitle duplication (kept on-device + no-auto-submit notices).
+- Settings: AdmissionSettingsPage tabs reduced to General + Seats; FieldRulesTab DELETED — all 12 field rules now live inside GeneralTab as expandable sections (Admission Workflow / Duplicate Detection [master + 6 real checkKeys signals] / Personal / Parents / Previous School / Medical [+toggle] / Transport & Hostel [+toggles] / Financial / Documents [uploads + canonical policy read-only] / Official Documents / Advanced); field-config/types.ts reduced to AdmissionSettingsPageProps (all other exports were dead).
+- School Settings: removed legacy Admission tab (stale 6-doc list contradicting canonical policy + unwired ID-format inputs + write-only hostel facility toggle); deleted admission-tab.tsx.
+- Store cleanup: removed dead admissionSettings fields (requiredDocs/studentIdFormat/rollNumberFormat/autoEnrollBooks/workflowSteps) from types + initial-state.
+- Dead code deleted: admission/lib/audit.ts, lib/automation.ts, lib/search.ts (all zero callers), OfficialAdmissionLetter/PortalCredentialsCard.tsx, FieldRulesTab.tsx, admission-tab.tsx. "View Dossier" → "View Admission".
+- QA (agent-browser, Principal login): wizard steps verified clean; photo upload → Saved → visible in Review; Aadhaar upload → Required 1/1 complete + header Complete; Review all 8 sections; issuance workspace name-heading + grouped tabs + honest tabs all verified; letter Ref + Development row render; Settings General sections expand, Visible OFF → Required auto-OFF + disabled, duplicate signals render, Documents policy badges, discard works; Seats intact; School Settings has no Admission tab; draft Resume restores Aarush Goel correctly; responsive 320/390/768/1440 no horizontal overflow; 0 page errors, 0 console errors, all API 200.
+- Verification: bunx tsc --noEmit clean, bun run lint clean. (Production build intentionally not run in sandbox per environment protocol — dev-compile + browser verification used instead.)
+
+Stage Summary:
+- Admissions module now follows LESS TEXT / MORE CLARITY: one title → one purpose → immediate content across every screen.
+- Single official printable document = Admission Letter; financial/account/communication artifacts are separate workflows via grouped tabs.
+- Fee Receipt + Admission Letter + Fee step all derive from the same computeFeeSnapshot pipeline — no hardcoded money anywhere.
+- Settings = General + Seats only; one configuration layer (legacy School Settings admission tab removed).
+- 6 files deleted, ~15 files simplified, 0 functional regressions (all §31 flows browser-verified).
+- Uncommitted: everything above ready for commit; db/custom.db modified by unrelated runtime writes.

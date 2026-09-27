@@ -34,7 +34,6 @@ export function PersonalStep({
     <div>
       <StepHeader
         title="Personal Details"
-        subtitle="Official identity, demographic, and category information"
         icon={<User className="h-5 w-5" />}
       />
 
