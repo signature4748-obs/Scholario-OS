@@ -41,7 +41,14 @@ export function buildAdmissionLetterHTML(data: AdmissionLetterData, profile: Sch
     profileRow('Assigned Roll Number', data.academic.rollNo || '01'),
     ...(data.studentId ? [profileRow('Student ID', data.studentId)] : []),
     ...(data.regNo ? [profileRow('Registration No', data.regNo)] : []),
-    profileRow('Father / Guardian', `${data.parents.fatherName} · ${data.parents.fatherPhone}`),
+    // Official Documents policy: parent contact numbers are sensitive and
+    // print only while showSensitiveDetails is ON.
+    profileRow(
+      'Father / Guardian',
+      data.showSensitiveDetails && data.parents.fatherPhone
+        ? `${data.parents.fatherName} · ${data.parents.fatherPhone}`
+        : data.parents.fatherName
+    ),
   ].join('')
 
   const feeRows = [
@@ -153,7 +160,7 @@ export function buildAdmissionLetterHTML(data: AdmissionLetterData, profile: Sch
 
   <div class="sign">
     <div>
-      <span class="name">${esc(data.parents.fatherName || 'Rajiv M.')}</span>
+      <span class="name">${esc(data.parents.fatherName)}</span>
       <div class="role">Parent / Guardian Signature</div>
     </div>
     <div>

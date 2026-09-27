@@ -183,8 +183,6 @@ export interface AdmissionFeatureFlags {
   enableMedical: boolean
   enableHostel: boolean
   enableTransport: boolean
-  enableEntranceExam: boolean
-  enableInterview: boolean
   enablePreviousSchool: boolean
   enableScholarship: boolean
   enableFeeWaiver: boolean
@@ -194,9 +192,6 @@ export interface AdmissionFeatureFlags {
   enableReligion: boolean
   enableCategory: boolean
   enableStudentPhoto: boolean
-  enableParentPhoto: boolean
-  enableSignature: boolean
-  enableCustomFields: boolean
   // Classes for which previous school is auto-skipped on Fresh Admission
   previousSchoolSkipClasses: string[]
   // Board options if school follows multiple boards

@@ -36,7 +36,8 @@ export function RejectionDialog({
             Reject Admission Application
           </DialogTitle>
           <DialogDescription className="text-xs">
-            The application will be moved to the Rejected queue and held for a 60-day retention period. You can restore it anytime prior to automatic archival.
+            The application will be moved to the Rejected queue and held for the configured retention
+            period. You can restore it anytime prior to automatic archival.
           </DialogDescription>
         </DialogHeader>
 

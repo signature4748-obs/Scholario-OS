@@ -83,7 +83,7 @@ export function PreviewPanel({
       {/* Tiny requirements hint */}
       <div className="pt-2 border-t border-border">
         <p className="text-[10px] text-muted-foreground text-center">
-          Passport ratio · JPG/PNG · Max 5 MB
+          Passport ratio · JPG/PNG · Max 2 MB
         </p>
       </div>
     </GlassCard>

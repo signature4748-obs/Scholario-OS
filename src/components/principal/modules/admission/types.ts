@@ -16,6 +16,10 @@ export interface DocStatus {
   status: 'uploaded' | 'pending' | 'later'
   verificationStatus?: DocVerificationStatus
   fileName?: string
+  /** Server-stored file reference from POST /api/admissions/upload. */
+  fileId?: string
+  /** Uploaded file size in bytes (server-validated). */
+  fileSize?: number
   ocrConfidence?: number
   verifiedBy?: string
   verificationTime?: string

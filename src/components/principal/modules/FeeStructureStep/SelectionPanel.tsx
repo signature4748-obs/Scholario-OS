@@ -54,6 +54,14 @@ export function SelectionPanel(props: SelectionPanelProps) {
     updateSelection, toggleSelection, handleApplyWaiver,
   } = props
 
+  // Financial feature flags (Admission Settings → Financial) actually gate
+  // what the concession UI offers: scholarship rules and custom waivers are
+  // only selectable while their toggle is ON.
+  const availableDiscountRules = schoolSettings.discountRules.filter(
+    (rule) => flags?.enableScholarship !== false || rule.category !== 'Scholarship'
+  )
+  const waiverEnabled = flags?.enableFeeWaiver !== false
+
   return (
     <div className="lg:col-span-2 space-y-5">
       {/* Section 1: Institutional Fee Heads (READ-ONLY) */}
@@ -182,7 +190,9 @@ export function SelectionPanel(props: SelectionPanelProps) {
         </div>
       )}
 
-      {/* Section 7: Concession & Waiver */}
+      {/* Section 7: Concession & Waiver — scholarship rules and custom
+          waivers are gated by the Financial admission settings. */}
+      {availableDiscountRules.length > 0 || waiverEnabled ? (
       <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
         <h4 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
           <Tag className="h-3.5 w-3.5" /> Concession & Waiver
@@ -194,10 +204,10 @@ export function SelectionPanel(props: SelectionPanelProps) {
               <SelectTrigger className="text-xs h-9"><SelectValue placeholder="No concession" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="NONE">No Concession</SelectItem>
-                {schoolSettings.discountRules.map((rule) => (
+                {availableDiscountRules.map((rule) => (
                   <SelectItem key={rule.code} value={rule.code}>{rule.name} ({rule.type === 'percentage' ? `${rule.value}%` : formatINR(rule.value)})</SelectItem>
                 ))}
-                <SelectItem value="CUSTOM">Custom Waiver</SelectItem>
+                {waiverEnabled && <SelectItem value="CUSTOM">Custom Waiver</SelectItem>}
               </SelectContent>
             </Select>
           </div>
@@ -220,6 +230,7 @@ export function SelectionPanel(props: SelectionPanelProps) {
           </div>
         )}
       </div>
+      ) : null}
     </div>
   )
 }

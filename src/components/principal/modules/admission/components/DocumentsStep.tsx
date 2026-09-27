@@ -7,9 +7,14 @@
  * (Student Aadhaar Card); everything else is optional and informational.
  * Group headers carry the live counts ("Required 1/1 complete", "Optional
  * 0/5 uploaded") — no explanatory paragraphs, no OCR talk in the header.
+ *
+ * Uploads are REAL: the file is client-validated (type + ≤5 MB), sent to
+ * /api/admissions/upload where the server re-validates by magic bytes and
+ * stores it, and the returned fileId is kept on the application record so
+ * the verification workspace can View / Download the actual document.
  */
 import { useMemo, useRef, useState } from 'react'
-import { FileText, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import { FileText, ShieldCheck, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { DocStatus } from '../types'
@@ -18,6 +23,10 @@ import {
   REQUIRED_DOCUMENTS,
   OPTIONAL_DOCUMENTS,
   getDocumentCompletion,
+  validateDocumentFile,
+  uploadAdmissionDocument,
+  deleteAdmissionDocumentFile,
+  DOC_ACCEPT,
   type AdmissionDocumentDef,
 } from '../lib/documents'
 import type { FormData } from '../constants'
@@ -44,6 +53,7 @@ export function DocumentsStep({
   const verificationEnabled = !!flags.enableDocumentVerification
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [activeUploadKey, setActiveUploadKey] = useState<string | null>(null)
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null)
 
   const completion = useMemo(
     () => getDocumentCompletion(data.docStatuses),
@@ -63,33 +73,61 @@ export function DocumentsStep({
     fileInputRef.current?.click()
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!activeUploadKey) return
-    const doc = [...REQUIRED_DOCUMENTS, ...OPTIONAL_DOCUMENTS].find(
-      (d) => d.key === activeUploadKey
-    )
-    const fileName = file ? file.name : `${activeUploadKey}_document.pdf`
-    handleUpdateDoc(activeUploadKey, {
-      status: 'uploaded',
-      fileName,
-      // Honest upload — no invented OCR score. OCR confidence is only
-      // ever set by the real OCR scan flow.
-      ocrConfidence: undefined,
-      verificationStatus: verificationEnabled ? 'pending' : undefined,
-      verifiedBy: undefined,
-      verificationTime: undefined,
-      rejectionReason: undefined,
-    })
-    toast.success(`${doc?.name} uploaded`, {
-      description: verificationEnabled
-        ? 'Awaiting verifier review'
-        : doc?.required
-          ? 'Required document received'
-          : undefined,
-    })
-    setActiveUploadKey(null)
-    if (e.target) e.target.value = ''
+    const key = activeUploadKey
+    // A closed dialog with no selection changes nothing — never invent a file.
+    if (!file || !key) {
+      setActiveUploadKey(null)
+      if (e.target) e.target.value = ''
+      return
+    }
+    const doc = [...REQUIRED_DOCUMENTS, ...OPTIONAL_DOCUMENTS].find((d) => d.key === key)
+
+    // Client-side policy check (the server re-checks on arrival).
+    const validationError = validateDocumentFile(file)
+    if (validationError) {
+      toast.error(validationError)
+      setActiveUploadKey(null)
+      e.target.value = ''
+      return
+    }
+
+    setUploadingKey(key)
+    try {
+      const uploaded = await uploadAdmissionDocument(file)
+      const oldFileId = data.docStatuses[key]?.fileId
+      handleUpdateDoc(key, {
+        status: 'uploaded',
+        fileName: uploaded.fileName,
+        fileId: uploaded.fileId,
+        fileSize: uploaded.size,
+        // Honest upload — no invented OCR score. OCR confidence is only
+        // ever set by the real OCR scan flow.
+        ocrConfidence: undefined,
+        verificationStatus: verificationEnabled ? 'pending' : undefined,
+        verifiedBy: undefined,
+        verificationTime: undefined,
+        rejectionReason: undefined,
+      })
+      // Replacing an existing upload — remove the previous stored file.
+      if (oldFileId && oldFileId !== uploaded.fileId) {
+        deleteAdmissionDocumentFile(oldFileId)
+      }
+      toast.success(`${doc?.name} uploaded`, {
+        description: verificationEnabled
+          ? 'Awaiting verifier review'
+          : doc?.required
+            ? 'Required document received'
+            : undefined,
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+    } finally {
+      setUploadingKey(null)
+      setActiveUploadKey(null)
+      e.target.value = ''
+    }
   }
 
   const handleVerify = (key: string) => {
@@ -106,11 +144,16 @@ export function DocumentsStep({
   }
 
   const handleRemove = (key: string) => {
+    const stored = data.docStatuses[key]
+    // Remove the stored file along with the record.
+    if (stored?.fileId) deleteAdmissionDocumentFile(stored.fileId)
     handleUpdateDoc(key, {
       status: 'pending',
       fileName: undefined,
+      fileId: undefined,
+      fileSize: undefined,
       ocrConfidence: undefined,
-      verificationStatus: verificationEnabled ? undefined : undefined,
+      verificationStatus: undefined,
       verifiedBy: undefined,
       verificationTime: undefined,
       rejectionReason: undefined,
@@ -135,6 +178,7 @@ export function DocumentsStep({
         doc={doc}
         st={st}
         verificationEnabled={verificationEnabled}
+        uploading={uploadingKey === doc.key}
         onUploadClick={handleUploadClick}
         onVerify={handleVerify}
         onRemove={handleRemove}
@@ -147,7 +191,7 @@ export function DocumentsStep({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,application/pdf"
+        accept={DOC_ACCEPT}
         className="hidden"
         onChange={handleFileChange}
       />

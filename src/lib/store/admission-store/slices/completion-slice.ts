@@ -106,14 +106,29 @@ export const createCompletionSlice: StateCreator<
     // ─── CONNECTED ROSTER ENROLMENT ────────────────────────────────────
     // The completed admission ALSO becomes a REAL student in the canonical
     // roster store (Students & Classes, Fees, Certificates, Downloads all
-    // reference the same student). Best-effort: a missing class match falls
-    // back to the first class so the enrolment is never silently dropped.
+    // reference the same student). If the admitted class is not yet in the
+    // academic roster, it is CREATED (with the admitted section) so the
+    // student is never enrolled under an unrelated class.
     try {
       const roster = useStudentsStore.getState()
-      const cls =
-        roster.classes.find((c) => c.name === app.formData.className) ??
-        roster.classes.find((c) => `${c.name}` === newStudent.className) ??
-        roster.classes.find((c) => c.sections.some((s) => s.name === newStudent.section))
+      const admittedClass = app.formData.className || newStudent.className
+      const sectionName = newStudent.section || 'A'
+      let cls =
+        roster.classes.find((c) => c.name === admittedClass) ??
+        roster.classes.find((c) => `${c.name}` === newStudent.className)
+      if (!cls && admittedClass) {
+        // The admission seats configuration offers classes the academic
+        // roster may not run yet — create the class, then enroll into it.
+        roster.createClass({
+          name: admittedClass,
+          capacity: 40,
+          room: '—',
+          sections: [{ name: sectionName, capacity: 40, room: '—' }],
+        })
+        cls = useStudentsStore
+          .getState()
+          .classes.find((c) => c.name === admittedClass)
+      }
       if (cls) {
         const enrolled = roster.addStudent({
           name: newStudent.name,

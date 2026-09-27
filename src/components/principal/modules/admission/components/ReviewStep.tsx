@@ -116,9 +116,11 @@ export function ReviewStep({
     },
     {
       id: 'Address', step: 3, icon: MapPin,
-      status: data.currentAddress && data.city && data.pincode ? 'complete' : 'incomplete',
+      // Matches the ACTUAL Address step fields (line / district / PIN) —
+      // the form collects no city field, so city must not gate completion.
+      status: data.currentAddress && data.district && data.pincode ? 'complete' : 'incomplete',
       rows: [
-        { label: 'Current', value: [data.currentAddress, data.city, data.district, data.state].filter(Boolean).join(', ') || '—' },
+        { label: 'Current', value: [data.currentAddress, data.district, data.state].filter(Boolean).join(', ') || '—' },
         { label: 'PIN', value: data.pincode || '—' },
       ],
     },

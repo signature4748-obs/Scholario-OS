@@ -99,12 +99,15 @@ export function SettingsCard({
   )
 }
 
-/* SettingsCardSection — collapsible row with icon + title + chevron */
+/* SettingsCardSection — collapsible row with icon + title + optional
+ * scope tag (FORM / OFFICIAL DOCUMENT) + chevron */
 export function SettingsCardSection({
-  title, icon: Icon, defaultOpen = false, children,
+  title, icon: Icon, tag, defaultOpen = false, children,
 }: {
   title: string
   icon?: ComponentType<{ className?: string }>
+  /** Short scope label, e.g. "FORM" or "OFFICIAL DOCUMENT" */
+  tag?: string
   defaultOpen?: boolean
   children: ReactNode
 }) {
@@ -115,6 +118,11 @@ export function SettingsCardSection({
         <button type="button" className="w-full flex items-center gap-3 py-4 text-left">
           {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
           <p className="text-base font-medium text-foreground flex-1">{title}</p>
+          {tag && (
+            <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 border border-border/60 rounded px-1.5 py-0.5 shrink-0">
+              {tag}
+            </span>
+          )}
           <ChevronRight
             className={cn(
               'h-4 w-4 text-muted-foreground transition-transform shrink-0',

@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import {
   ClipboardList, Fingerprint, Users, Building2, Stethoscope, Bus,
-  Award, FileStack, FileCheck2, SlidersHorizontal, type LucideIcon,
+  Award, FileStack, FileCheck2, type LucideIcon,
 } from 'lucide-react'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import type { DuplicateDetectionConfig } from '@/lib/store/school-settings-store'
@@ -19,13 +19,19 @@ import { REQUIRED_DOCUMENTS, OPTIONAL_DOCUMENTS } from '../../lib/documents'
 
 /**
  * GeneralTab — ALL admission configuration in one place, as expandable
- * sections (spec §16): Workflow, Duplicate Detection, the form field
- * groups (Personal / Parents / Previous School / Medical / Transport &
- * Hostel), Financial, Documents, Official Documents, Advanced.
+ * sections: Workflow, Duplicate Detection, the form field groups (Personal /
+ * Parents / Previous School / Medical / Transport & Hostel), Financial,
+ * Documents, and Official Documents.
  *
- * Only settings that are actually wired into the admission wizard are
- * exposed. Every change goes through the global dirty state — nothing
- * applies until Save.
+ * FORM vs OFFICIAL DOCUMENT are two different scopes (spec §1/§4/§5):
+ *  - FORM sections control what the DIGITAL admission form collects.
+ *  - The Official Documents section controls only what generated official
+ *    documents may print. Collecting a field in the form never implies
+ *    printing it on the letter — the two are configured independently.
+ *
+ * Only settings actually wired into the admission workflow are exposed.
+ * Every change goes through the global dirty state — nothing applies
+ * until Save.
  */
 
 /* ------------------------------------------------------------------ */
@@ -117,9 +123,6 @@ export function GeneralTab() {
     enableHostel: flags.enableHostel,
     enableScholarship: flags.enableScholarship,
     enableFeeWaiver: flags.enableFeeWaiver,
-    enableParentPhoto: flags.enableParentPhoto,
-    enableSignature: flags.enableSignature,
-    enableCustomFields: flags.enableCustomFields,
     retentionDays: settings.rejectionRetentionDays || 60,
   }), [flags, settings.rejectionRetentionDays])
 
@@ -142,9 +145,6 @@ export function GeneralTab() {
       enableHostel: draftA.enableHostel,
       enableScholarship: draftA.enableScholarship,
       enableFeeWaiver: draftA.enableFeeWaiver,
-      enableParentPhoto: draftA.enableParentPhoto,
-      enableSignature: draftA.enableSignature,
-      enableCustomFields: draftA.enableCustomFields,
     } as any)
   }, [draftA, store])
 
@@ -237,7 +237,7 @@ export function GeneralTab() {
       />
     ))
 
-  /* ---------- Draft D: official document display policy ---------- */
+  /* ---------- Draft D: official document print policy ---------- */
 
   const initialD = useMemo(() => ({
     showPersonalData: settings.showPersonalDataOnLetter,
@@ -259,17 +259,28 @@ export function GeneralTab() {
   return (
     <SettingsCard>
       {/* 1. ADMISSION WORKFLOW */}
-      <SettingsCardSection title="Admission Workflow" icon={ClipboardList} defaultOpen>
+      <SettingsCardSection title="Admission Workflow" icon={ClipboardList} tag="Form" defaultOpen>
         <ToggleRow label="Student Photo" checked={draftA.enableStudentPhoto}
           onCheckedChange={toggleA('enableStudentPhoto')} />
         <ToggleRow label="Previous School" checked={draftA.enablePreviousSchool}
           onCheckedChange={toggleA('enablePreviousSchool')} />
         <ToggleRow label="Document Verification" checked={draftA.enableDocumentVerification}
           onCheckedChange={toggleA('enableDocumentVerification')} />
+        <ValueRow label="Rejection Retention" helper="How long rejected applications stay restorable.">
+          <div className="flex items-center gap-2">
+            <Input type="number" min={30} max={90} value={draftA.retentionDays}
+              onChange={(e) => setDraftA({
+                ...draftA,
+                retentionDays: Math.max(30, Math.min(90, parseInt(e.target.value) || 60)),
+              })}
+              className="w-16 h-7 text-center text-xs" />
+            <span className="text-xs text-muted-foreground">days</span>
+          </div>
+        </ValueRow>
       </SettingsCardSection>
 
       {/* 2. DUPLICATE DETECTION */}
-      <SettingsCardSection title="Duplicate Detection" icon={Fingerprint}>
+      <SettingsCardSection title="Duplicate Detection" icon={Fingerprint} tag="Form">
         <ToggleRow label="Check for duplicates" checked={draftB.enabled}
           onCheckedChange={(v) => setDraftB((prev) => ({ ...prev, enabled: v }))} />
         {draftB.enabled && DUPLICATE_SIGNALS.map(({ key, label }) => (
@@ -286,20 +297,20 @@ export function GeneralTab() {
 
       {/* 3–5. FIELD GROUPS: Personal / Parents / Previous School */}
       {FIELD_SECTION_META.map((meta) => (
-        <SettingsCardSection key={meta.id} title={meta.title} icon={meta.icon}>
+        <SettingsCardSection key={meta.id} title={meta.title} icon={meta.icon} tag="Form">
           {renderFieldRows(meta.id)}
         </SettingsCardSection>
       ))}
 
       {/* 6. MEDICAL — feature toggle + medical fields */}
-      <SettingsCardSection title={MEDICAL_SECTION.title} icon={MEDICAL_SECTION.icon}>
+      <SettingsCardSection title={MEDICAL_SECTION.title} icon={MEDICAL_SECTION.icon} tag="Form">
         <ToggleRow label="Medical Section" checked={draftA.enableMedical}
           onCheckedChange={toggleA('enableMedical')} />
         {draftA.enableMedical && renderFieldRows(MEDICAL_SECTION.id)}
       </SettingsCardSection>
 
       {/* 7. TRANSPORT & HOSTEL — feature toggles + fields */}
-      <SettingsCardSection title={TRANSPORT_SECTION.title} icon={TRANSPORT_SECTION.icon}>
+      <SettingsCardSection title={TRANSPORT_SECTION.title} icon={TRANSPORT_SECTION.icon} tag="Form">
         <ToggleRow label="Transport" checked={draftA.enableTransport}
           onCheckedChange={toggleA('enableTransport')} />
         <ToggleRow label="Hostel" checked={draftA.enableHostel}
@@ -308,19 +319,15 @@ export function GeneralTab() {
       </SettingsCardSection>
 
       {/* 8. FINANCIAL */}
-      <SettingsCardSection title="Financial" icon={Award}>
+      <SettingsCardSection title="Financial" icon={Award} tag="Form">
         <ToggleRow label="Scholarship" checked={draftA.enableScholarship}
           onCheckedChange={toggleA('enableScholarship')} />
         <ToggleRow label="Fee Waiver" checked={draftA.enableFeeWaiver}
           onCheckedChange={toggleA('enableFeeWaiver')} />
       </SettingsCardSection>
 
-      {/* 9. DOCUMENTS — uploads + the canonical policy (read-only) */}
-      <SettingsCardSection title="Documents" icon={FileStack}>
-        <ToggleRow label="Parent Photo" checked={draftA.enableParentPhoto}
-          onCheckedChange={toggleA('enableParentPhoto')} />
-        <ToggleRow label="Signature Upload" checked={draftA.enableSignature}
-          onCheckedChange={toggleA('enableSignature')} />
+      {/* 9. DOCUMENTS — applicant uploads + the canonical policy (read-only) */}
+      <SettingsCardSection title="Documents" icon={FileStack} tag="Form">
         {REQUIRED_DOCUMENTS.map((d) => (
           <DocumentPolicyRow key={d.key} name={d.name} required />
         ))}
@@ -329,31 +336,17 @@ export function GeneralTab() {
         ))}
       </SettingsCardSection>
 
-      {/* 10. OFFICIAL DOCUMENTS — what prints on the admission letter */}
-      <SettingsCardSection title="Official Documents" icon={FileCheck2}>
+      {/* 10. OFFICIAL DOCUMENTS — what may PRINT on generated documents.
+          Independent of form collection: Aadhaar, religion, category, blood
+          group and medical details are never printed; parent contacts print
+          only when this is ON. */}
+      <SettingsCardSection title="Official Documents" icon={FileCheck2} tag="Official Document">
         <ToggleRow
           label="Show sensitive details on official documents"
-          helper="Aadhaar, religion, category, blood group and parent contacts stay internal while OFF."
+          helper="Parent contact numbers print only while ON. Aadhaar, religion, category, blood group and medical details never print."
           checked={draftD.showPersonalData}
           onCheckedChange={(v) => setDraftD({ ...draftD, showPersonalData: v })}
         />
-      </SettingsCardSection>
-
-      {/* 11. ADVANCED */}
-      <SettingsCardSection title="Advanced" icon={SlidersHorizontal}>
-        <ToggleRow label="Custom Fields" checked={draftA.enableCustomFields}
-          onCheckedChange={toggleA('enableCustomFields')} />
-        <ValueRow label="Rejection Retention">
-          <div className="flex items-center gap-2">
-            <Input type="number" min={30} max={90} value={draftA.retentionDays}
-              onChange={(e) => setDraftA({
-                ...draftA,
-                retentionDays: Math.max(30, Math.min(90, parseInt(e.target.value) || 60)),
-              })}
-              className="w-16 h-7 text-center text-xs" />
-            <span className="text-xs text-muted-foreground">days</span>
-          </div>
-        </ValueRow>
       </SettingsCardSection>
     </SettingsCard>
   )

@@ -70,7 +70,10 @@ export function StudentProfileGrid({ data, fullName }: { data: AdmissionLetterDa
 
         <div className="col-span-2">
           <span className="text-[10px] font-bold text-slate-500 uppercase block">Father / Guardian</span>
-          <span className="font-semibold text-slate-800">{data.parents.fatherName} · {data.parents.fatherPhone}</span>
+          <span className="font-semibold text-slate-800">
+            {data.parents.fatherName}
+            {data.showSensitiveDetails && data.parents.fatherPhone ? ` · ${data.parents.fatherPhone}` : ''}
+          </span>
         </div>
       </div>
     </div>

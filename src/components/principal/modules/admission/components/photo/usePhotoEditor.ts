@@ -15,7 +15,7 @@ import { useCropInteraction } from './useCropInteraction'
  *
  * Composes three focused sub-hooks:
  *  - useCamera — live getUserMedia feed + frame capture
- *  - useFileUpload — JPG/PNG ≤5MB upload + decode
+ *  - useFileUpload — JPG/PNG ≤2MB upload + dimension check
  *  - useCropInteraction — pointer-driven move/resize on the crop rect
  *
  * Owns the cross-cutting state (mode, capturedImage, crop, rotation, applied)

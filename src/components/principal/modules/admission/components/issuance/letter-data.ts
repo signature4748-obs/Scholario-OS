@@ -1,6 +1,7 @@
 import { AdmissionLetterData } from '../../../OfficialAdmissionLetter'
 import { computeFeeSnapshot } from '../../../FeeStructureStep/fee-snapshot'
 import { defaultFeeDataState } from '../../../FeeStructureStep/types'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 
 export interface IssuanceArtifacts {
@@ -55,11 +56,14 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
       : `Scholario@${Math.floor(Math.random() * 9000 + 1000)}`
 
   // REAL fee numbers — derived from the applicant's own fee state through
-  // the same configuration the Fee step reads (Fee Management).
+  // the same configuration the Fee step reads (Fee Management). Transport /
+  // hostel eligibility comes from the actual admission feature flags, not a
+  // hardcoded value.
   const feeState = { ...defaultFeeDataState, ...(app.feeData || {}) }
+  const featureFlags = useSchoolSettingsStore.getState().admissionSettings.featureFlags
   const snapshot = computeFeeSnapshot(formData.className || '', feeState, {
-    enableTransport: true,
-    enableHostel: true,
+    enableTransport: featureFlags.enableTransport,
+    enableHostel: featureFlags.enableHostel,
   })
 
   const letterData: AdmissionLetterData = {
@@ -68,6 +72,11 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
     regNo,
     admissionDate: isCompleted ? app.submittedDate : new Date().toISOString().split('T')[0],
     academicSession: app.academicSession || '2025–2026',
+    // Official Documents print policy (Admission Settings → Official
+    // Documents): parent contact numbers print only while explicitly ON.
+    // Independent of what the digital form collects.
+    showSensitiveDetails:
+      useSchoolSettingsStore.getState().admissionSettings.showPersonalDataOnLetter,
     student: {
       firstName: formData.firstName,
       lastName: formData.lastName,

@@ -92,6 +92,11 @@ export function OcrFormUploadModal({
         setErrorMsg('This file type is not supported.')
         return
       }
+      if (file.size > 5 * 1024 * 1024) {
+        setStage('error')
+        setErrorMsg('File is too large. Maximum size is 5 MB.')
+        return
+      }
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)

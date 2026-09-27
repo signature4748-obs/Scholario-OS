@@ -26,7 +26,13 @@ export const CANVAS_SIZE = 600
 export const PREVIEW_W = 120
 export const PREVIEW_H = 155
 export const PASSPORT_RATIO = 3.5 / 4.5 // w/h
-export const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
+
+// Upload policy (spec §8): JPG / JPEG / PNG, max 2 MB. The crop pipeline
+// then optimizes to the passport output size (420×540 JPEG) — best practical
+// quality at a small storage size, never a blurry over-compression.
+export const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2 MB
+/** Minimum source resolution so the passport crop stays sharp. */
+export const MIN_DIMENSION = 200
 export const MIN_CROP_W = 100
 export const MIN_CROP_H = MIN_CROP_W / PASSPORT_RATIO
 export const OUTPUT_W = 420

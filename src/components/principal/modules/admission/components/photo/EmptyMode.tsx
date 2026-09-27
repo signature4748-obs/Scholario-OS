@@ -33,7 +33,7 @@ export function EmptyMode({
           </div>
           <div>
             <p className="text-xs font-semibold">Upload</p>
-            <p className="text-[10px] text-muted-foreground">JPG / PNG · 5 MB</p>
+            <p className="text-[10px] text-muted-foreground">JPG / PNG · 2 MB</p>
           </div>
         </button>
 

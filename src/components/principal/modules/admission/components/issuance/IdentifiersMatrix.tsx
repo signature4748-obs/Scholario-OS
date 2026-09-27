@@ -1,6 +1,5 @@
 'use client'
 
-import { GlassCard } from '@/components/shared/ui'
 import type { IssuanceArtifacts } from './letter-data'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 
@@ -9,33 +8,33 @@ interface IdentifiersMatrixProps {
   artifacts: IssuanceArtifacts
 }
 
-/** The four essential identifiers — label + value only. The values are
- *  self-explanatory; no invented status captions underneath. */
+/** The four essential identifiers — label + value only (spec §26), in the
+ *  same card language as Admission Settings (rounded-xl, thin border). */
 export function IdentifiersMatrix({ app, artifacts }: IdentifiersMatrixProps) {
   const { admissionNo, studentId, rollNo, regNo } = artifacts
   const formData = app.formData
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <GlassCard className="p-3.5 space-y-1">
+      <div className="rounded-xl border border-border/60 bg-card p-3.5 space-y-1">
         <span className="text-[10px] uppercase font-bold text-muted-foreground block">Admission No.</span>
-        <span className="font-mono font-extrabold text-sm text-foreground block break-all">{admissionNo}</span>
-      </GlassCard>
+        <span className="font-mono font-bold text-sm text-foreground block break-all">{admissionNo}</span>
+      </div>
 
-      <GlassCard className="p-3.5 space-y-1">
+      <div className="rounded-xl border border-border/60 bg-card p-3.5 space-y-1">
         <span className="text-[10px] uppercase font-bold text-muted-foreground block">Student ID</span>
-        <span className="font-mono font-extrabold text-sm text-foreground block break-all">{studentId}</span>
-      </GlassCard>
+        <span className="font-mono font-bold text-sm text-foreground block break-all">{studentId}</span>
+      </div>
 
-      <GlassCard className="p-3.5 space-y-1">
+      <div className="rounded-xl border border-border/60 bg-card p-3.5 space-y-1">
         <span className="text-[10px] uppercase font-bold text-muted-foreground block">Class & Roll No.</span>
-        <span className="font-bold text-sm text-foreground block">{formData.className} · Roll {rollNo}</span>
-      </GlassCard>
+        <span className="font-semibold text-sm text-foreground block">{formData.className} · Roll {rollNo}</span>
+      </div>
 
-      <GlassCard className="p-3.5 space-y-1">
+      <div className="rounded-xl border border-border/60 bg-card p-3.5 space-y-1">
         <span className="text-[10px] uppercase font-bold text-muted-foreground block">CBSE Reference</span>
-        <span className="font-mono font-extrabold text-xs text-foreground block break-all">{regNo}</span>
-      </GlassCard>
+        <span className="font-mono font-bold text-xs text-foreground block break-all">{regNo}</span>
+      </div>
     </div>
   )
 }

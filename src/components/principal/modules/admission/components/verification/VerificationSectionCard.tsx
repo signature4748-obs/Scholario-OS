@@ -1,92 +1,162 @@
 'use client'
 
-import React from 'react'
-import { Textarea } from '@/components/ui/textarea'
-import { GlassCard } from '@/components/shared/ui'
-import type { AdmissionApplication, SectionKey, SectionReviewState } from '@/lib/store/admission-store'
+import React, { useState } from 'react'
+import { CheckCircle2, AlertTriangle, XCircle, ChevronDown, Flag, Undo2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { cn } from '@/lib/utils'
+import type { AdmissionApplication, SectionKey } from '@/lib/store/admission-store'
 import { SectionDataContent } from './SectionDataContent'
+import { getSectionSummary, resolveSectionStatus } from './section-status'
 
 interface VerificationSectionCardProps {
   app: AdmissionApplication
   sectionKey: SectionKey
   title: string
   icon: React.ElementType
-  review: SectionReviewState
-  onStatusChange: (key: SectionKey, status: 'Complete' | 'Incomplete' | 'Needs Review') => void
-  onRemarkChange: (key: SectionKey, remarks: string) => void
+  onFlag: (key: SectionKey, status: 'Needs Review' | 'Incomplete', issue: string) => void
+  onClearFlag: (key: SectionKey) => void
 }
 
+function StatusPill({ status }: { status: 'Verified' | 'Needs Review' | 'Incomplete' }) {
+  if (status === 'Verified') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+        <CheckCircle2 className="h-4 w-4" /> Verified
+      </span>
+    )
+  }
+  if (status === 'Needs Review') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 shrink-0">
+        <AlertTriangle className="h-4 w-4" /> Needs Review
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 dark:text-rose-400 shrink-0">
+      <XCircle className="h-4 w-4" /> Incomplete
+    </span>
+  )
+}
+
+/**
+ * Compact verification row (spec §14–§17): ONE status per section, a real
+ * one-line data summary, and a View toggle. Full details + the flag-issue
+ * control only appear when the officer expands the section.
+ */
 export function VerificationSectionCard({
   app,
   sectionKey,
   title,
   icon: Icon,
-  review,
-  onStatusChange,
-  onRemarkChange,
+  onFlag,
+  onClearFlag,
 }: VerificationSectionCardProps) {
+  const [open, setOpen] = useState(false)
+  const [issueDraft, setIssueDraft] = useState('')
+
+  const status = resolveSectionStatus(sectionKey, app)
+  const summary = getSectionSummary(sectionKey, app)
+
   return (
-    <GlassCard key={sectionKey} className="p-4 space-y-3 border">
-      <div className="flex items-center justify-between pb-2 border-b">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-emerald-600" />
-          <h4 className="font-bold text-sm text-foreground">{title}</h4>
+    <div
+      className={cn(
+        'rounded-xl border bg-card transition-colors',
+        status.status === 'Incomplete'
+          ? 'border-rose-500/30'
+          : status.status === 'Needs Review'
+            ? 'border-amber-500/40'
+            : 'border-border'
+      )}
+    >
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
+          <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-semibold text-foreground min-w-0">{title}</span>
+          <span className="text-xs text-muted-foreground flex-1 min-w-[10rem] truncate hidden md:block">
+            {summary}
+          </span>
+          <StatusPill status={status.status} />
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground shrink-0"
+            >
+              {open ? 'Hide' : 'View'}
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+            </Button>
+          </CollapsibleTrigger>
         </div>
 
-        {/* Section Status Selector Buttons */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => onStatusChange(sectionKey, 'Complete')}
-            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
-              review.status === 'Complete'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-muted text-muted-foreground hover:bg-emerald-100'
-            }`}
+        {/* Concrete issue line — only when the section is not verified */}
+        {status.status !== 'Verified' && status.issue && (
+          <p
+            className={cn(
+              'px-4 pb-3 pt-0 pl-11 text-xs font-medium',
+              status.status === 'Incomplete'
+                ? 'text-rose-600 dark:text-rose-400'
+                : 'text-amber-600 dark:text-amber-400'
+            )}
           >
-            ✓ Complete
-          </button>
+            {status.issue}
+          </p>
+        )}
 
-          <button
-            onClick={() => onStatusChange(sectionKey, 'Needs Review')}
-            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
-              review.status === 'Needs Review'
-                ? 'bg-amber-500 text-white shadow-sm'
-                : 'bg-muted text-muted-foreground hover:bg-amber-100'
-            }`}
-          >
-            ⚠ Needs Review
-          </button>
+        {/* Mobile summary (hidden on md+) */}
+        <p className="px-4 pb-3 md:hidden text-xs text-muted-foreground">{summary}</p>
 
-          <button
-            onClick={() => onStatusChange(sectionKey, 'Incomplete')}
-            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
-              review.status === 'Incomplete'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-muted text-muted-foreground hover:bg-rose-100'
-            }`}
-          >
-            ✕ Incomplete
-          </button>
-        </div>
-      </div>
+        <CollapsibleContent>
+          <div className="border-t border-border/60 px-4 py-3.5 bg-muted/15 space-y-3">
+            <SectionDataContent sectionKey={sectionKey} app={app} />
 
-      {/* Section Data Content Summary */}
-      <div className="bg-muted/30 p-3 rounded-lg text-xs space-y-1.5">
-        <SectionDataContent sectionKey={sectionKey} app={app} />
-      </div>
-
-      {/* Section Officer Remarks Input */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-muted-foreground">
-          Officer Remarks for this section:
-        </label>
-        <Textarea
-          placeholder="Enter section-specific feedback or correction notes..."
-          value={review.remarks}
-          onChange={(e) => onRemarkChange(sectionKey, e.target.value)}
-          className="text-xs min-h-[50px] resize-none"
-        />
-      </div>
-    </GlassCard>
+            {/* Officer flag control — only inside the expanded view */}
+            <div className="pt-3 border-t border-border/60 flex flex-col sm:flex-row sm:items-center gap-2">
+              {status.flaggedByOfficer ? (
+                <>
+                  <span className="text-[11px] text-muted-foreground flex-1">
+                    Flagged by you{status.issue ? `: ${status.issue}` : ''}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onClearFlag(sectionKey)}
+                    className="h-7 text-[11px] gap-1.5"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                    Clear flag
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Input
+                    value={issueDraft}
+                    onChange={(e) => setIssueDraft(e.target.value)}
+                    placeholder="Issue note (optional) — e.g. TC copy is unreadable"
+                    className="h-8 text-xs flex-1 bg-card"
+                  />
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        onFlag(sectionKey, 'Needs Review', issueDraft)
+                        setIssueDraft('')
+                      }}
+                      className="h-7 text-[11px] gap-1.5 border-amber-300 text-amber-800 dark:text-amber-300 hover:bg-amber-50"
+                    >
+                      <Flag className="h-3.5 w-3.5" />
+                      Flag for correction
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   )
 }

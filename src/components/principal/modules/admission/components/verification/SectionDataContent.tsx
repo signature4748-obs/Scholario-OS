@@ -1,105 +1,239 @@
 'use client'
 
-import { toast } from 'sonner'
-import { CompactEnterpriseDocCard } from '../CompactEnterpriseDocCard'
+/**
+ * Full detail content for one verification section — rendered only when
+ * the officer expands the section (View). REAL application data only:
+ * no invented fallbacks, no fake OCR metrics, no compliance claims.
+ * Aadhaar numbers are masked (XXXX XXXX 3847) per the privacy policy.
+ */
+import { ExternalLink, Download } from 'lucide-react'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import type { SectionKey } from '@/lib/store/admission-store'
+import { maskAadhaar, getDocumentRows } from './section-status'
 
 interface SectionDataContentProps {
   sectionKey: SectionKey
   app: AdmissionApplication
 }
 
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <span className="text-muted-foreground block text-[10px] uppercase font-semibold tracking-wide">
+        {label}
+      </span>
+      <span className="text-foreground text-xs font-medium break-words">{value}</span>
+    </div>
+  )
+}
+
+const orDash = (v?: string | null) => (v && v.trim() ? v : '—')
+
 export function SectionDataContent({ sectionKey, app }: SectionDataContentProps) {
   const formData = app.formData
 
   if (sectionKey === 'personal') {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        <div><span className="text-muted-foreground block text-[10px]">Name:</span> <strong>{formData.firstName} {formData.lastName}</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">DOB:</span> <strong>{formData.dob}</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Gender & Blood:</span> <strong>{formData.gender} ({formData.bloodGroup || 'O+'})</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Nationality & Category:</span> <strong>{formData.nationality} ({formData.category})</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Aadhaar No:</span> <strong>{formData.aadhaarNo || 'Verified'}</strong></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Field label="Name" value={`${formData.firstName} ${formData.lastName}`} />
+        <Field label="Date of Birth" value={orDash(formData.dob)} />
+        <Field label="Gender" value={orDash(formData.gender)} />
+        <Field label="Aadhaar" value={maskAadhaar(formData.aadhaarNo)} />
+        <Field label="Social Category" value={orDash(formData.category)} />
+        <Field label="Blood Group" value={orDash(formData.bloodGroup)} />
+        <Field label="Religion" value={orDash(formData.religion)} />
+        <Field label="Nationality" value={orDash(formData.nationality)} />
       </div>
     )
   }
 
   if (sectionKey === 'parents') {
     return (
-      <div className="grid grid-cols-2 gap-2">
-        <div><span className="text-muted-foreground block text-[10px]">Father:</span> <strong>{formData.fatherName} ({formData.fatherOccupation}) · {formData.fatherPhone}</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Mother:</span> <strong>{formData.motherName} ({formData.motherOccupation}) · {formData.motherPhone}</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Emergency Contact:</span> <strong>{formData.emergencyName} ({formData.emergencyRelation}) · {formData.emergencyPhone}</strong></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field
+          label="Father"
+          value={`${orDash(formData.fatherName)}${formData.fatherOccupation ? ` · ${formData.fatherOccupation}` : ''}`}
+        />
+        <Field label="Father Contact" value={orDash(formData.fatherPhone)} />
+        <Field
+          label="Mother"
+          value={`${orDash(formData.motherName)}${formData.motherOccupation ? ` · ${formData.motherOccupation}` : ''}`}
+        />
+        <Field label="Mother Contact" value={orDash(formData.motherPhone)} />
+        <Field label="Father Aadhaar" value={maskAadhaar(formData.fatherAadhaar)} />
+        <Field label="Mother Aadhaar" value={maskAadhaar(formData.motherAadhaar)} />
+        <Field
+          label="Emergency Contact"
+          value={
+            formData.emergencyName
+              ? `${formData.emergencyName}${formData.emergencyRelation ? ` (${formData.emergencyRelation})` : ''} · ${orDash(formData.emergencyPhone)}`
+              : '—'
+          }
+        />
       </div>
     )
   }
 
   if (sectionKey === 'address') {
     return (
-      <div className="space-y-1">
-        <div><span className="text-muted-foreground block text-[10px]">Current Residence:</span> <strong>{formData.currentAddress}, {formData.district}, {formData.state} - {formData.pincode}</strong></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field
+          label="Current Address"
+          value={orDash(
+            [formData.currentAddress, formData.district, formData.state].filter(Boolean).join(', ')
+          )}
+        />
+        <Field
+          label="State / PIN"
+          value={orDash([formData.state, formData.pincode].filter(Boolean).join(' – '))}
+        />
+        <Field
+          label="Permanent Address"
+          value={formData.sameAsCurrentAddress ? 'Same as current address' : orDash(formData.permAddress)}
+        />
       </div>
     )
   }
 
   if (sectionKey === 'previousSchool') {
+    const isFresh = formData.admissionType === 'fresh' && !formData.previousSchool
+    if (isFresh) {
+      return (
+        <p className="text-xs text-muted-foreground">
+          Fresh admission — no previous school record required.
+        </p>
+      )
+    }
     return (
-      <div className="grid grid-cols-2 gap-2">
-        <div><span className="text-muted-foreground block text-[10px]">Previous School:</span> <strong>{formData.previousSchool} ({formData.previousBoard})</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Academic Session Selector:</span> <strong>{formData.previousYear || '2025–2026'}</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">TC Status & No:</span> <strong>{formData.tcStatus} · No: {formData.tcNumber || 'TC-2025-8841'}</strong></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Field label="Previous School" value={orDash(formData.previousSchool)} />
+        <Field label="Board" value={orDash(formData.previousBoard)} />
+        <Field label="Year" value={orDash(formData.previousYear)} />
+        <Field label="TC Status" value={orDash(formData.tcStatus)} />
+        <Field label="TC Number" value={orDash(formData.tcNumber)} />
+        <Field label="Reason for Leaving" value={orDash(formData.reasonForLeaving)} />
       </div>
     )
   }
 
   if (sectionKey === 'medical') {
     return (
-      <div className="grid grid-cols-2 gap-2">
-        <div><span className="text-muted-foreground block text-[10px]">Allergies / Special Needs:</span> <strong>{formData.allergies || 'None'}</strong></div>
-        <div><span className="text-muted-foreground block text-[10px]">Doctor Contact:</span> <strong>{formData.doctorName} ({formData.doctorPhone})</strong></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Field label="Allergies" value={orDash(formData.allergies)} />
+        <Field label="Conditions" value={orDash(formData.conditions)} />
+        <Field label="Special Needs" value={orDash(formData.specialNeeds)} />
+        <Field label="Height / Weight" value={orDash([formData.heightCm, formData.weightKg].filter(Boolean).join(' / '))} />
+        <Field label="Family Doctor" value={orDash(formData.doctorName)} />
+        <Field label="Doctor Contact" value={orDash(formData.doctorPhone)} />
       </div>
     )
   }
 
   if (sectionKey === 'classAllocation') {
     return (
-      <div className="grid grid-cols-2 gap-2">
-        <div><span className="text-muted-foreground block text-[10px]">Admitted Class & Section:</span> <strong>{formData.className} — Section {formData.section}</strong></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Field label="Class & Section" value={`Class ${formData.className} – ${formData.section}`} />
+        <Field label="Stream" value={orDash(formData.stream)} />
+        <Field label="Admission Type" value={orDash(formData.admissionType)} />
       </div>
     )
   }
 
   if (sectionKey === 'fees') {
+    const fee = app.feeData
+    const concession =
+      fee?.discountCode && fee.discountCode !== 'NONE'
+        ? fee.discountCode === 'CUSTOM'
+          ? `Custom waiver${fee.customDiscountValue ? ` (₹${fee.customDiscountValue.toLocaleString('en-IN')})` : ''}`
+          : fee.discountCode
+        : 'None'
     return (
-      <div className="space-y-1">
-        <div><span className="text-muted-foreground block text-[10px]">Payment Plan & Selected Heads:</span> <strong>{app.feeData?.paymentMethod || 'UPI / Bank Transfer'} · Heads Selected: {app.feeData?.selectedFeeHeadIds?.length || 5}</strong></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Field label="Concession" value={concession} />
+        <Field label="Transport" value={fee?.transportSelected ? 'Selected' : 'Not selected'} />
+        <Field label="Hostel" value={fee?.hostelSelected ? 'Selected' : 'Not selected'} />
       </div>
     )
   }
 
   if (sectionKey === 'documents') {
+    const rows = getDocumentRows(app)
     return (
-      <div className="pt-1">
-        <CompactEnterpriseDocCard
-          doc={{ key: 'birth_cert', name: 'Birth Certificate & TC', description: 'Mandatory Certificate Verification Matrix', mandatory: true }}
-          statusState={{ status: 'uploaded', fileName: 'Birth_Certificate.pdf', ocrConfidence: 98, verifiedBy: 'AI OCR', verificationTime: '10:20 AM' }}
-          onUpdateStatus={() => toast.info('OCR re-scanned successfully.')}
-        />
+      <div className="space-y-1.5">
+        {rows.map((d) => (
+          <div
+            key={d.key}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border/60 bg-card px-3 py-2"
+          >
+            <span className="text-xs font-medium text-foreground flex-1 min-w-0 truncate">
+              {d.name}
+            </span>
+            <span className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground shrink-0">
+              {d.required ? 'Required' : 'Optional'}
+            </span>
+            <span
+              className={
+                'text-[11px] font-semibold shrink-0 ' +
+                (d.verified
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : d.uploaded
+                    ? 'text-foreground'
+                    : d.required
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-muted-foreground')
+              }
+            >
+              {d.verified ? '✓ Verified' : d.uploaded ? 'Uploaded' : d.required ? '✕ Missing' : 'Not uploaded'}
+            </span>
+            {d.fileId && (
+              <span className="flex items-center gap-1 shrink-0">
+                <a
+                  href={`/api/admissions/upload/${encodeURIComponent(d.fileId)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground font-medium"
+                >
+                  <ExternalLink className="h-3 w-3" /> View
+                </a>
+                <a
+                  href={`/api/admissions/upload/${encodeURIComponent(d.fileId)}?download=1`}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground font-medium"
+                >
+                  <Download className="h-3 w-3" /> Download
+                </a>
+              </span>
+            )}
+          </div>
+        ))}
+        <p className="text-[10px] text-muted-foreground pt-1">
+          Replace an upload from the application form (Documents step).
+        </p>
       </div>
     )
   }
 
   if (sectionKey === 'photo') {
+    const photoOnFile = !!formData.photoDataUrl || !!formData.photoUploaded
     return (
-      <div className="flex items-center gap-3">
-        <div className="h-12 w-12 rounded-lg bg-emerald-600/10 text-emerald-800 flex items-center justify-center font-bold text-lg">
-          {formData.firstName[0]}{formData.lastName[0]}
-        </div>
-        <div className="text-xs">
-          <span className="font-semibold block text-emerald-800 dark:text-emerald-300">Passport Photo Standard Verified</span>
-          <span className="text-muted-foreground text-[10px]">35mm x 45mm white background complies with CBSE registration guidelines.</span>
-        </div>
+      <div className="flex items-center gap-4">
+        {formData.photoDataUrl ? (
+          <img
+            src={formData.photoDataUrl}
+            alt={`${formData.firstName} ${formData.lastName} passport photo`}
+            className="h-24 w-20 rounded-md border border-border object-cover"
+          />
+        ) : (
+          <div className="h-24 w-20 rounded-md border border-dashed border-border bg-muted/30 flex items-center justify-center text-[10px] text-muted-foreground">
+            {photoOnFile ? 'On file' : 'No photo'}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {formData.photoDataUrl
+            ? 'Uploaded passport photo on the application record.'
+            : photoOnFile
+              ? 'Photo on file — no digital copy attached to this record.'
+              : 'No photo uploaded with this application.'}
+        </p>
       </div>
     )
   }

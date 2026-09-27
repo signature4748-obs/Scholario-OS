@@ -1,19 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   useAdmissionStore,
-  SectionKey,
+  type SectionKey,
 } from '@/lib/store/admission-store'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { toast } from 'sonner'
 
 import { getSectionsConfig } from './verification/sections-config'
+import { countVerified } from './verification/section-status'
 import { VerificationHeader } from './verification/VerificationHeader'
 import { VerificationSectionCard } from './verification/VerificationSectionCard'
-import { VerificationSidebar } from './verification/VerificationSidebar'
+import { OfficerNotes, AuditHistory } from './verification/OfficerNotes'
 import { CorrectionDialog } from './verification/CorrectionDialog'
 import { RejectionDialog } from './verification/RejectionDialog'
 
@@ -24,6 +25,17 @@ interface VerificationWorkspaceProps {
   onOpenWizardToEdit: (appId: string) => void
 }
 
+/**
+ * Verification (Review) workspace — a VERIFICATION WORKSPACE, not a full
+ * application reproduction (spec §11–§24):
+ *
+ *   primary   → compact header + section statuses + decision actions
+ *   secondary → full section details (View expands a section)
+ *   tertiary  → audit history (collapsed by default)
+ *
+ * Every status is derived from the application's actual data and the
+ * school's admission configuration — nothing is hardcoded.
+ */
 export function VerificationWorkspace({
   appId,
   onBack,
@@ -49,29 +61,40 @@ export function VerificationWorkspace({
     )
   }
 
-  // Build the verification checklist once, honoring admission feature flags.
-  // Settings like enableMedical / enablePreviousSchool / enableStudentPhoto
-  // actually hide the corresponding sections — they're not visual-only.
+  // Section list derives from the school's ACTUAL admission configuration.
   const visibleSections = getSectionsConfig({
     enableMedical: featureFlags.enableMedical,
     enablePreviousSchool: featureFlags.enablePreviousSchool,
     enableStudentPhoto: featureFlags.enableStudentPhoto,
   })
 
-  const sectionReviews = app.sectionReviews || {}
+  const { verified, total, incomplete, flagged } = countVerified(visibleSections, app)
 
-  const handleSectionStatusChange = (key: SectionKey, status: 'Complete' | 'Incomplete' | 'Needs Review') => {
-    store.updateSectionReview(app.id, key, { status })
-    toast.success(`Section status updated to ${status}`)
+  const handleFlag = (
+    key: SectionKey,
+    status: 'Needs Review' | 'Incomplete',
+    issue: string
+  ) => {
+    store.updateSectionReview(app.id, key, { status, remarks: issue })
+    toast.success(`${status} — issue attached to the section`)
   }
 
-  const handleSectionRemarkChange = (key: SectionKey, remarks: string) => {
-    store.updateSectionReview(app.id, key, { remarks })
+  const handleClearFlag = (key: SectionKey) => {
+    store.updateSectionReview(app.id, key, { status: 'Complete', remarks: '' })
+    toast.success('Section flag cleared')
   }
 
   const handleApprove = () => {
+    // Real ERP guard: data-incomplete sections block approval. Officer
+    // "Needs Review" flags are advisory — the officer decides.
+    if (incomplete > 0) {
+      toast.error('Resolve incomplete sections before approving.', {
+        description: 'Required data (documents, photo) is missing.',
+      })
+      return
+    }
     store.approveApplication(app.id, overallRemarks)
-    toast.success('Application Approved! Opening Admission Issuance Workspace...')
+    toast.success('Application approved — opening issuance workspace…')
     onApprovedNext(app.id)
   }
 
@@ -81,7 +104,7 @@ export function VerificationWorkspace({
       return
     }
     store.requestCorrection(app.id, overallRemarks)
-    toast.success('Application returned for correction with section remarks.')
+    toast.success('Application returned for correction.')
     setCorrectionDialogOpen(false)
     onBack()
   }
@@ -91,20 +114,18 @@ export function VerificationWorkspace({
       toast.error('Please specify a rejection reason for compliance auditing.')
       return
     }
-    store.rejectApplication(app.id, rejectionReason, 60)
-    toast.success('Application moved to Rejected Queue (Retention active).')
+    store.rejectApplication(
+      app.id,
+      rejectionReason,
+      admissionSettings.rejectionRetentionDays || 60
+    )
+    toast.success('Application moved to the Rejected queue.')
     setRejectDialogOpen(false)
     onBack()
   }
 
-  // Count flagged sections
-  const flaggedCount = Object.values(sectionReviews).filter(
-    (s) => s.status === 'Needs Review' || s.status === 'Incomplete'
-  ).length
-
   return (
-    <div className="space-y-5">
-      {/* Back button — standalone, clean */}
+    <div className="space-y-4 max-w-4xl">
       <Button variant="outline" size="sm" onClick={onBack} className="h-8 gap-1.5 text-xs w-fit">
         <ArrowLeft className="h-3.5 w-3.5" />
         Back to Dashboard
@@ -112,55 +133,36 @@ export function VerificationWorkspace({
 
       <VerificationHeader
         app={app}
-        flaggedCount={flaggedCount}
+        verified={verified}
+        total={total}
+        flagged={flagged}
         onOpenWizardToEdit={onOpenWizardToEdit}
         onNeedCorrection={() => setCorrectionDialogOpen(true)}
         onReject={() => setRejectDialogOpen(true)}
         onApprove={handleApprove}
       />
 
-      {/* Main Grid: Section Checklist */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm tracking-tight flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              {visibleSections.length}-Section Official Verification Checklist
-            </h3>
-            <span className="text-xs text-muted-foreground font-mono">
-              {visibleSections.length - flaggedCount} / {visibleSections.length} Sections Verified
-            </span>
-          </div>
-
-          {visibleSections.map(({ key, title, icon }) => {
-            const review = sectionReviews[key] || { status: 'Complete', remarks: '' }
-            return (
-              <VerificationSectionCard
-                key={key}
-                app={app}
-                sectionKey={key}
-                title={title}
-                icon={icon}
-                review={review}
-                onStatusChange={handleSectionStatusChange}
-                onRemarkChange={handleSectionRemarkChange}
-              />
-            )
-          })}
-        </div>
-
-        {/* Sidebar: Overall Audit Trail & Summary */}
-        <div className="lg:col-span-4 space-y-4">
-          <VerificationSidebar
+      {/* Compact verification rows */}
+      <div className="space-y-2.5">
+        {visibleSections.map(({ key, title, icon }) => (
+          <VerificationSectionCard
+            key={key}
             app={app}
-            flaggedCount={flaggedCount}
-            overallRemarks={overallRemarks}
-            onOverallRemarksChange={setOverallRemarks}
+            sectionKey={key}
+            title={title}
+            icon={icon}
+            onFlag={handleFlag}
+            onClearFlag={handleClearFlag}
           />
-        </div>
+        ))}
       </div>
 
-      {/* Need Correction Confirmation Dialog */}
+      {/* ONE overall officer-notes field, near the decision area */}
+      <OfficerNotes value={overallRemarks} onChange={setOverallRemarks} />
+
+      {/* Audit history — collapsed by default */}
+      <AuditHistory app={app} />
+
       <CorrectionDialog
         open={correctionDialogOpen}
         onOpenChange={setCorrectionDialogOpen}
@@ -169,7 +171,6 @@ export function VerificationWorkspace({
         onConfirm={handleConfirmCorrection}
       />
 
-      {/* Rejection Confirmation Dialog */}
       <RejectionDialog
         open={rejectDialogOpen}
         onOpenChange={setRejectDialogOpen}

@@ -4,27 +4,37 @@
  * Single document card used inside the Documents wizard step.
  *
  * Deliberately minimal (Wave 2 spec): document name, Required/Optional
- * tag, status, filename, and ONE clear action — [Upload] when missing,
- * or [Preview] / [Verify] (and [Remove]) once uploaded. No decorative
- * action rows, no invented OCR scores, no description paragraphs.
+ * tag, status, real filename + size, and clear actions — [Upload] when
+ * missing, or [Preview] / [Download] / [Verify] / [Remove] once uploaded.
+ * No invented filenames, no invented OCR scores, no description paragraphs.
+ *
+ * Preview / Download open the ACTUAL stored file (via /api/admissions/upload)
+ * — they only appear when a real fileId exists on the record.
  */
 import {
   FileText, UploadCloud, ShieldCheck, Trash2,
-  Clock, AlertTriangle, CheckCircle2, AlertCircle,
+  Clock, AlertTriangle, CheckCircle2, AlertCircle, Loader2,
+  Download, ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { DocStatus } from '../types'
 import type { AdmissionDocumentDef } from '../lib/documents'
 
 export type { AdmissionDocumentDef as DocDescriptor }
 
+function formatSize(bytes?: number): string | null {
+  if (!bytes || bytes <= 0) return null
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
 export function DocumentCard({
   doc,
   st,
   verificationEnabled,
+  uploading = false,
   onUploadClick,
   onVerify,
   onRemove,
@@ -32,6 +42,7 @@ export function DocumentCard({
   doc: AdmissionDocumentDef
   st: DocStatus
   verificationEnabled: boolean
+  uploading?: boolean
   onUploadClick: (key: string) => void
   onVerify: (key: string) => void
   onRemove: (key: string) => void
@@ -42,6 +53,9 @@ export function DocumentCard({
   const isRejected = verificationEnabled && isUploaded && vStatus === 'rejected'
   const isPendingReview =
     verificationEnabled && isUploaded && (!vStatus || vStatus === 'pending')
+  const fileUrl = st.fileId
+    ? `/api/admissions/upload/${encodeURIComponent(st.fileId)}`
+    : null
 
   // Status badge — the single most important signal on the card.
   let vBadge: { label: string; className: string; Icon: typeof CheckCircle2 }
@@ -57,9 +71,6 @@ export function DocumentCard({
   } else {
     vBadge = { label: 'Not Uploaded', className: 'bg-muted/40 text-muted-foreground border-border/60', Icon: AlertCircle }
   }
-
-  const fileName =
-    st.fileName || (isUploaded ? `${doc.key}.pdf` : 'No file attached')
 
   return (
     <div
@@ -103,10 +114,13 @@ export function DocumentCard({
         </Badge>
       </div>
 
-      {/* Row 2: filename */}
+      {/* Row 2: real filename + stored size */}
       {isUploaded && (
         <p className="mt-1.5 pl-6 text-[11px] text-muted-foreground font-mono truncate">
-          {fileName}
+          {st.fileName || 'Stored file'}
+          {formatSize(st.fileSize) && (
+            <span className="font-sans text-muted-foreground/70"> · {formatSize(st.fileSize)}</span>
+          )}
         </p>
       )}
       {isUploaded && isRejected && st.rejectionReason && (
@@ -115,17 +129,22 @@ export function DocumentCard({
         </p>
       )}
 
-      {/* Row 3: ONE clear action */}
+      {/* Row 3: clear actions */}
       <div className="mt-2 flex items-center gap-2">
         {!isUploaded ? (
           <Button
             type="button"
             size="sm"
+            disabled={uploading}
             onClick={() => onUploadClick(doc.key)}
             className="h-7 text-[11px] px-3 gap-1.5 font-semibold"
           >
-            <UploadCloud className="h-3.5 w-3.5" />
-            Upload
+            {uploading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <UploadCloud className="h-3.5 w-3.5" />
+            )}
+            {uploading ? 'Uploading…' : 'Upload'}
           </Button>
         ) : (
           <div className="flex items-center gap-1.5">
@@ -140,19 +159,34 @@ export function DocumentCard({
                 Verify
               </Button>
             )}
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                toast.info('Preview', {
-                  description: `${doc.name} — ${fileName}`,
-                })
-              }
-              className="h-7 text-[11px] px-2.5 gap-1 text-muted-foreground hover:text-foreground font-medium"
-            >
-              Preview
-            </Button>
+            {fileUrl && (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  asChild
+                  className="h-7 text-[11px] px-2.5 gap-1 text-muted-foreground hover:text-foreground font-medium"
+                >
+                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Preview
+                  </a>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  asChild
+                  className="h-7 text-[11px] px-2.5 gap-1 text-muted-foreground hover:text-foreground font-medium"
+                >
+                  <a href={`${fileUrl}?download=1`}>
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </a>
+                </Button>
+              </>
+            )}
             <Button
               type="button"
               size="sm"
@@ -161,7 +195,7 @@ export function DocumentCard({
               className="h-7 text-[11px] px-2.5 gap-1 text-muted-foreground hover:text-rose-600 font-medium"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Remove
+              {fileUrl ? 'Remove' : 'Replace'}
             </Button>
           </div>
         )}

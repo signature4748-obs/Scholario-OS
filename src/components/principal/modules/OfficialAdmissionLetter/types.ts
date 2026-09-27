@@ -5,6 +5,11 @@ export interface AdmissionLetterData {
   regNo?: string
   admissionDate: string
   academicSession: string
+  /** Official Documents print policy — when false (default), sensitive
+   *  details such as parent contact numbers are excluded from the letter.
+   *  Aadhaar / religion / category / blood group / medical are NEVER printed
+   *  regardless of this flag (they are not part of the letter's data at all). */
+  showSensitiveDetails?: boolean
   student: {
     firstName: string
     lastName: string

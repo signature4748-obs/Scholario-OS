@@ -62,6 +62,54 @@ export interface DocumentCompletion {
 const isUploaded = (st?: DocStatusLike): boolean =>
   !!st && st.status === 'uploaded'
 
+/* ------------------------------------------------------------------ */
+/*  Upload policy — client side of the CLIENT + SERVER contract.       */
+/*  The server route re-validates everything (type by magic bytes,     */
+/*  size) so a client-side bypass cannot store an oversized file.      */
+/* ------------------------------------------------------------------ */
+
+/** Maximum supporting-document size (5 MB), enforced client AND server side. */
+export const DOC_MAX_BYTES = 5 * 1024 * 1024
+/** Native file-input accept list for supporting documents. */
+export const DOC_ACCEPT = 'application/pdf,image/jpeg,image/png'
+
+/**
+ * Client-side pre-validation. Returns an error message, or null when the
+ * file may be sent to the server (which will validate it again).
+ */
+export function validateDocumentFile(file: File): string | null {
+  if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) {
+    return 'Unsupported file type. Allowed: PDF, JPG, PNG.'
+  }
+  if (file.size > DOC_MAX_BYTES) {
+    return 'File is too large. Maximum size is 5 MB.'
+  }
+  return null
+}
+
+export interface UploadedDocFile {
+  fileId: string
+  fileName: string
+  size: number
+}
+
+/** Upload a supporting document; throws Error with a user-facing message. */
+export async function uploadAdmissionDocument(file: File): Promise<UploadedDocFile> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch('/api/admissions/upload', { method: 'POST', body: fd })
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.success) {
+    throw new Error(json?.error || 'Upload failed. Please try again.')
+  }
+  return { fileId: json.fileId, fileName: json.fileName, size: json.size }
+}
+
+/** Fire-and-forget removal of a stored file (record cleanup is local). */
+export function deleteAdmissionDocumentFile(fileId: string): void {
+  fetch(`/api/admissions/upload/${encodeURIComponent(fileId)}`, { method: 'DELETE' }).catch(() => {})
+}
+
 /**
  * Compute document completion for an application's docStatuses map.
  * Optional documents are counted for information only.

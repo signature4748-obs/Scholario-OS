@@ -19,36 +19,33 @@ export interface SectionVisibilityFlags {
 
 /**
  * Build the verification checklist, filtered by the admission feature flags.
- * Settings like `enableMedical`, `enablePreviousSchool`, and
- * `enableStudentPhoto` actually hide the corresponding sections — they're
- * not visual-only toggles.
+ * The section count is derived from the school's ACTUAL configuration —
+ * nothing is hardcoded (spec §16/§36). Settings like `enableMedical`,
+ * `enablePreviousSchool`, and `enableStudentPhoto` really hide the
+ * corresponding sections.
  */
 export function getSectionsConfig(flags: SectionVisibilityFlags = {}): SectionConfig[] {
-  const base: SectionConfig[] = [
-    { key: 'personal', title: '1. Personal Information', icon: User },
-    { key: 'parents', title: '2. Parents & Emergency Contacts', icon: Users },
-    { key: 'address', title: '3. Address & Residence Details', icon: MapPin },
+  const sections: SectionConfig[] = [
+    { key: 'personal', title: 'Personal', icon: User },
+    { key: 'parents', title: 'Parents & Emergency Contact', icon: Users },
+    { key: 'address', title: 'Address', icon: MapPin },
   ]
 
   if (flags.enablePreviousSchool !== false) {
-    base.push({ key: 'previousSchool', title: '4. Previous School & TC Record', icon: School })
+    sections.push({ key: 'previousSchool', title: 'Previous School', icon: School })
   }
 
   if (flags.enableMedical !== false) {
-    base.push({ key: 'medical', title: '5. Medical & Physical Health Profile', icon: HeartPulse })
+    sections.push({ key: 'medical', title: 'Medical', icon: HeartPulse })
   }
 
-  base.push({ key: 'classAllocation', title: '6. Class & Stream Allocation', icon: GraduationCap })
-  base.push({ key: 'fees', title: '7. Fee Structure & Concessions', icon: Wallet })
-  base.push({ key: 'documents', title: '8. Certificate & Document Scans', icon: FileText })
+  sections.push({ key: 'classAllocation', title: 'Class & Section', icon: GraduationCap })
+  sections.push({ key: 'fees', title: 'Fee / Financial', icon: Wallet })
+  sections.push({ key: 'documents', title: 'Documents', icon: FileText })
 
   if (flags.enableStudentPhoto !== false) {
-    base.push({ key: 'photo', title: '9. Student Photo & Visual Identity', icon: Camera })
+    sections.push({ key: 'photo', title: 'Photo', icon: Camera })
   }
 
-  return base
+  return sections
 }
-
-// Backward-compat: full unfiltered list (used by callers that haven't been
-// updated to pass flags yet). New callers should use getSectionsConfig(flags).
-export const SECTIONS_CONFIG: SectionConfig[] = getSectionsConfig()

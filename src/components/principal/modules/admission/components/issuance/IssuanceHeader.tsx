@@ -13,9 +13,9 @@ interface IssuanceHeaderProps {
 }
 
 /**
- * Issued-workspace header — student name + issuance status, nothing else.
- * The state is NOT repeated in a second heading or a description
- * paragraph; the identifiers and documents below carry the substance.
+ * Issued-workspace header — student name + issuance status, nothing else
+ * (spec §26). Typographic system matches Admission Settings: semibold
+ * heading, small meta line, compact pill, one clear primary action.
  */
 export function IssuanceHeader({
   app,
@@ -32,15 +32,15 @@ export function IssuanceHeader({
         </Button>
 
         <div className="flex items-center gap-2.5 min-w-0">
-          <h2 className="text-xl font-bold tracking-tight text-foreground truncate">
+          <h2 className="text-xl font-semibold tracking-tight text-foreground truncate">
             {app.applicantName}
           </h2>
           {isCompleted ? (
-            <Badge className="bg-teal-600 text-white text-xs font-bold shrink-0">
-              ✓ Issued & Enrolled
+            <Badge className="bg-emerald-600 text-white text-[11px] font-semibold shrink-0 gap-1">
+              <span aria-hidden>✓</span> Admission Issued &amp; Enrolled
             </Badge>
           ) : (
-            <Badge className="bg-emerald-600/10 text-emerald-800 border-emerald-300 text-xs font-semibold shrink-0">
+            <Badge className="bg-emerald-600/10 text-emerald-800 dark:text-emerald-300 border-emerald-300 text-[11px] font-semibold shrink-0">
               Ready for Issuance
             </Badge>
           )}
@@ -51,10 +51,10 @@ export function IssuanceHeader({
         <Button
           size="sm"
           onClick={onCompleteAndEnroll}
-          className="text-xs bg-teal-600 hover:bg-teal-700 text-white font-bold gap-1.5 shadow-md px-4 shrink-0"
+          className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 px-4 shrink-0"
         >
           <UserCheck className="h-4 w-4" />
-          Complete Admission & Enroll
+          Complete Admission &amp; Enroll
         </Button>
       )}
     </div>
