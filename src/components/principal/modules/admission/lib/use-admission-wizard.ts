@@ -24,6 +24,7 @@ import {
   initialData,
   type FormData,
 } from '../constants'
+import { getDocumentCompletion } from './documents'
 import type { FeeDataState } from '../../FeeStructureStep'
 
 export function useAdmissionWizard() {
@@ -149,6 +150,19 @@ export function useAdmissionWizard() {
   }
 
   const handleSubmit = () => {
+    // Document completion gate: the required document (Student Aadhaar
+    // Card) MUST be uploaded before submission. Optional documents never
+    // block (canonical policy — see lib/documents.ts).
+    const docCompletion = getDocumentCompletion(data.docStatuses)
+    if (!docCompletion.complete) {
+      toast.error('Required document missing', {
+        description:
+          'Upload the Student Aadhaar Card before submitting — optional documents are not required.',
+      })
+      setStep(9)
+      return
+    }
+
     const formDataPartial: Partial<FormData> = { ...data }
     const feeDataPartial: Partial<FeeDataState> = data.feeState || {}
 

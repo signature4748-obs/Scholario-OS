@@ -7,7 +7,7 @@ import {
 import { useDirtyState } from '@/components/principal/modules/shared/use-settings-dirty'
 import { Input } from '@/components/ui/input'
 import {
-  Lock, SlidersHorizontal, Stethoscope, Bus, Award, FileStack,
+  SlidersHorizontal, Stethoscope, Bus, Award, FileStack,
 } from 'lucide-react'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 
@@ -26,7 +26,6 @@ export function GeneralTab() {
 
   // Draft state for ALL settings on this tab (single source of truth).
   const initial = useMemo(() => ({
-    showPersonalDataOnLetter: settings.showPersonalDataOnLetter,
     dupEnabled: settings.duplicateDetection.enabled,
     retentionDays: settings.rejectionRetentionDays || 60,
     enableCustomFields: flags.enableCustomFields,
@@ -38,7 +37,7 @@ export function GeneralTab() {
     enableStudentPhoto: flags.enableStudentPhoto,
     enableParentPhoto: flags.enableParentPhoto,
     enableSignature: flags.enableSignature,
-  }), [settings.showPersonalDataOnLetter, settings.duplicateDetection.enabled,
+  }), [settings.duplicateDetection.enabled,
        settings.rejectionRetentionDays, flags])
 
   const [draft, setDraft] = useState(initial)
@@ -55,7 +54,6 @@ export function GeneralTab() {
   // Save commits every draft field to the real store at once.
   const save = useCallback(async () => {
     store.updateAdmissionSettings({
-      showPersonalDataOnLetter: draft.showPersonalDataOnLetter,
       rejectionRetentionDays: draft.retentionDays,
     })
     store.updateDuplicateDetection({ enabled: draft.dupEnabled })
@@ -85,14 +83,6 @@ export function GeneralTab() {
 
   return (
     <SettingsCard>
-      <SettingsCardSection title="Privacy" icon={Lock} defaultOpen>
-        <ToggleRow
-          label="Sensitive Data Protection"
-          checked={!draft.showPersonalDataOnLetter}
-          onCheckedChange={(v) => setDraft({ ...draft, showPersonalDataOnLetter: !v })}
-        />
-      </SettingsCardSection>
-
       <SettingsCardSection title="Duplicate Detection" icon={SlidersHorizontal} defaultOpen>
         <ToggleRow
           label="Enable Duplicate Detection"

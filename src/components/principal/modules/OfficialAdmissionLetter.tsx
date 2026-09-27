@@ -9,7 +9,6 @@ import { TopActionBar } from './OfficialAdmissionLetter/TopActionBar'
 import { Watermark, SchoolHeader } from './OfficialAdmissionLetter/SchoolHeader'
 import { StudentProfileGrid } from './OfficialAdmissionLetter/StudentProfileGrid'
 import { FeeBreakdownTable } from './OfficialAdmissionLetter/FeeBreakdownTable'
-import { PortalCredentialsCard } from './OfficialAdmissionLetter/PortalCredentialsCard'
 import { DigitalVerification, StatutoryDeclaration, Signatures } from './OfficialAdmissionLetter/DigitalVerification'
 import { buildAdmissionLetterHTML } from './OfficialAdmissionLetter/letter-html'
 import type { OfficialAdmissionLetterProps as Props } from './OfficialAdmissionLetter/types'
@@ -70,13 +69,10 @@ export function OfficialAdmissionLetter({ data, onClose }: Props) {
         {/* Student Profile Overview Grid */}
         <StudentProfileGrid data={data} fullName={fullName} />
 
-        {/* Section: Official Fee Breakdown Table */}
+        {/* Section: Official Fee Summary */}
         <FeeBreakdownTable data={data} />
 
-        {/* Student Portal Login Credentials & Onboarding Card */}
-        <PortalCredentialsCard data={data} />
-
-        {/* Digital Verification & School Seal Area */}
+        {/* Digital Verification reference & seal */}
         <DigitalVerification data={data} />
 
         {/* Statutory Declaration */}

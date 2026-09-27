@@ -17,7 +17,7 @@ interface PreviewDialogProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   effectiveFileName: string
-  effectiveOcr: number
+  effectiveOcr?: number
   effectiveVerifiedBy: string
   effectiveVerificationTime: string
   onDownload: () => void
@@ -76,7 +76,7 @@ export function PreviewDialog({
                 OCR Accuracy
               </span>
               <span className="font-mono font-semibold text-foreground mt-0.5 block">
-                {effectiveOcr}% Match
+                {effectiveOcr ? `${effectiveOcr}% Match` : '—'}
               </span>
             </div>
             <div>

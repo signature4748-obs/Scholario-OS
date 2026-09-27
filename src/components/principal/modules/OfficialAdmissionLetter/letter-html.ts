@@ -129,8 +129,7 @@ export function buildAdmissionLetterHTML(data: AdmissionLetterData, profile: Sch
     <tbody>${profileRows}</tbody>
   </table>
 
-  <h2>Official Fee Summary &amp; Receipt Status</h2>
-  <p style="text-align:right; margin:0 0 6px;"><span class="status">STATUS: PAID IN FULL (RCP-ADM-${esc(data.admissionNo)})</span></p>
+  <h2>Fee Summary</h2>
   <table class="fees">
     <thead><tr><th>Fee Head / Component</th><th class="num">Amount (INR)</th></tr></thead>
     <tbody>${feeRows}</tbody>
@@ -139,12 +138,11 @@ export function buildAdmissionLetterHTML(data: AdmissionLetterData, profile: Sch
   <div class="verify">
     <div>
       <div class="k">Document Identification</div>
-      <div class="v">DOC-ADM-2026-${esc(data.admissionNo)}</div>
+      <div class="v">DOC-ADM-${esc(data.admissionNo)}</div>
     </div>
     <div>
-      <div class="k">Digital Verification ID</div>
-      <div class="v">${esc(data.digitalVerificationId || `VER-2026-${data.admissionNo.slice(-4)}`)}</div>
-      <span class="verified">Digitally Verified</span>
+      <div class="k">Admission No</div>
+      <div class="v">${esc(data.admissionNo)} · Session ${esc(data.academicSession)}</div>
     </div>
   </div>
 

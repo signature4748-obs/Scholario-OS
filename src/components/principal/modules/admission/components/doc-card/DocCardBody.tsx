@@ -142,7 +142,7 @@ export function DocCardBody({
             <Sparkles className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
             <span className="text-muted-foreground font-medium">OCR Confidence:</span>
             <span className="font-semibold text-foreground font-mono">
-              {isUploaded ? `${effectiveOcr}%` : 'N/A'}
+              {isUploaded && effectiveOcr ? `${effectiveOcr}%` : '—'}
             </span>
           </div>
 

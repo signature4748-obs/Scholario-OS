@@ -164,10 +164,15 @@ export function AdmissionModule() {
         onClose={() => setIsBlankFormModalOpen(false)}
       />
 
-      {/* OCR ASSISTED FILLED FORM UPLOAD MODAL */}
+      {/* SCAN / IMPORT APPLICATION MODAL (real on-device OCR) */}
       <OcrFormUploadModal
         open={isOcrModalOpen}
         onClose={() => setIsOcrModalOpen(false)}
+        onManualEntry={() => {
+          setIsOcrModalOpen(false)
+          setViewMode('form')
+          setStep(1)
+        }}
         onApplyData={(extracted, attachment) => {
           setData((prev) => ({
             ...prev,
@@ -176,8 +181,9 @@ export function AdmissionModule() {
           }))
           setIsOcrModalOpen(false)
           setViewMode('form')
-          toast.success('Form data extracted & populated!', {
-            description: `Auto-filled admission fields from OCR scan (${attachment.confidence}% confidence)`,
+          setStep(1)
+          toast.success('Form fields populated from scan', {
+            description: 'Please verify each section — the draft is not submitted until you review and submit it.',
           })
         }}
       />

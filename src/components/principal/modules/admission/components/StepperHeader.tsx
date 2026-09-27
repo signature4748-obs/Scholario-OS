@@ -30,11 +30,34 @@ export function StepperHeader({
   stepperScrollRef: RefObject<HTMLDivElement | null>
   onSelect: (id: number) => void
 }) {
+  const total = visibleSteps.length
+  const current = Math.min(currentVisibleIndex + 1, total)
+  const currentLabel = visibleSteps[currentVisibleIndex]?.label ?? ''
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0
+
   return (
-    <GlassCard className="p-4 sm:p-6 pt-5 sm:pt-6 overflow-visible shadow-lg border-border/80">
+    <GlassCard className="p-4 sm:p-6 pt-4 sm:pt-6 overflow-visible shadow-lg border-border/80">
+      {/* Mobile — compact "Step N of M · Label" indicator */}
+      <div className="sm:hidden">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-bold text-foreground">
+            Step {current} of {total}
+            <span className="text-muted-foreground font-medium"> · {currentLabel}</span>
+          </p>
+          <span className="text-[10px] font-semibold text-muted-foreground tabular-nums">{pct}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full rounded-full bg-primary transition-all duration-300"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Desktop — full step strip */}
       <div
         ref={stepperScrollRef}
-        className="flex items-center overflow-x-auto pt-2 pb-3 gap-2 sm:gap-3 no-scrollbar overflow-y-visible scroll-smooth"
+        className="hidden sm:flex items-center overflow-x-auto pt-2 pb-3 gap-2 sm:gap-3 no-scrollbar overflow-y-visible scroll-smooth"
       >
         {visibleSteps.map((s, i) => {
           const StepIcon = s.icon

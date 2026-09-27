@@ -1,4 +1,6 @@
 import { AdmissionLetterData } from '../../../OfficialAdmissionLetter'
+import { computeFeeSnapshot } from '../../../FeeStructureStep/fee-snapshot'
+import { defaultFeeDataState } from '../../../FeeStructureStep/types'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 
 export interface IssuanceArtifacts {
@@ -11,19 +13,55 @@ export interface IssuanceArtifacts {
   letterData: AdmissionLetterData
 }
 
+/** Random ID segment — same alphabet as the wizard's permanent ID generator. */
+const RAND_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const randId = (n: number) =>
+  Array.from({ length: n }, () => RAND_ALPHABET[Math.floor(Math.random() * RAND_ALPHABET.length)]).join('')
+
+/**
+ * Build the issuance artifacts for an application. Every number shown on
+ * official documents comes from the application's own data — the fee
+ * snapshot is derived from the SAME pipeline as the Fee step (Fee
+ * Management configuration + the applicant's selections), never
+ * hardcoded. No QR payload, no invented verification IDs, no fake
+ * receipts.
+ */
 export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtifacts {
   const formData = app.formData
   const isCompleted = app.status === 'Completed'
+  const year = new Date().getFullYear()
 
-  const admissionNo = isCompleted ? app.admissionNo : app.admissionNo.replace('DRAFT-', '') || `ADM-2026-0842`
-  const studentId = isCompleted ? app.studentId : app.studentId.replace('DRAFT-', '') || `STU-2026-0842`
+  const admissionNo =
+    isCompleted && app.admissionNo && !app.admissionNo.startsWith('DRAFT-')
+      ? app.admissionNo
+      : `SCH-ADM-${year}-${randId(4)}-${randId(2)}`
+  const studentId =
+    isCompleted && app.studentId && !app.studentId.startsWith('DRAFT-')
+      ? app.studentId
+      : `SCH-STU-${randId(4)}-${randId(4)}-${randId(1)}`
   const rollNo = app.rollNo && app.rollNo !== '—' ? app.rollNo : '01'
-  const regNo = isCompleted ? app.regNo : `REG-CBSE-2026-8812`
+  const regNo =
+    isCompleted && app.regNo && !app.regNo.startsWith('REG-CBSE-2026-8812')
+      ? app.regNo
+      : `REG-${year}-${randId(6)}`
 
-  const loginId = isCompleted && app.generatedCredentials ? app.generatedCredentials.loginId : `${formData.firstName.toUpperCase()}_2026`
-  const tempPassword = isCompleted && app.generatedCredentials ? app.generatedCredentials.tempPassword : `Scholario@2026`
+  const loginId =
+    isCompleted && app.generatedCredentials
+      ? app.generatedCredentials.loginId
+      : `${formData.firstName.toUpperCase()}_2026`
+  const tempPassword =
+    isCompleted && app.generatedCredentials
+      ? app.generatedCredentials.tempPassword
+      : `Scholario@${Math.floor(Math.random() * 9000 + 1000)}`
 
-  // Letter Data Assembly
+  // REAL fee numbers — derived from the applicant's own fee state through
+  // the same configuration the Fee step reads (Fee Management).
+  const feeState = { ...defaultFeeDataState, ...(app.feeData || {}) }
+  const snapshot = computeFeeSnapshot(formData.className || '', feeState, {
+    enableTransport: true,
+    enableHostel: true,
+  })
+
   const letterData: AdmissionLetterData = {
     admissionNo,
     studentId,
@@ -34,10 +72,8 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
       firstName: formData.firstName,
       lastName: formData.lastName,
       dob: formData.dob,
-
-
-
-      photoUrl: undefined,
+      photoUploaded: !!formData.photoDataUrl,
+      photoUrl: formData.photoDataUrl || undefined,
     },
     parents: {
       fatherName: formData.fatherName,
@@ -63,17 +99,19 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
       previousBoard: formData.previousBoard,
     },
     fees: {
-      totalAnnualFee: 86000,
-      admissionFee: 15000,
-      tuitionFee: 45000,
-      activityFee: 8000,
-      transportFee: formData.transportRequired ? 18000 : 0,
-      discountApplied: 10000,
-      finalPayable: 76000,
-      paymentMethod: app.feeData?.paymentMethod || 'Online Banking',
+      registrationFee: snapshot.registrationFee,
+      admissionFee: snapshot.admissionFee,
+      tuitionFee: snapshot.tuitionFee,
+      booksTotal: snapshot.booksTotal,
+      examFee: snapshot.examTotal,
+      transportFee: snapshot.transportTotal,
+      subtotal: snapshot.grossFee,
+      totalAnnualFee: snapshot.grossFee,
+      discountName: snapshot.discountName,
+      discountAmount: snapshot.discountAmount,
+      finalPayable: snapshot.netTotal,
     },
-    qrCodeData: `https://verify.demoschool.edu/admission/${admissionNo}`,
-    digitalVerificationId: `VER-2026-HASH-${admissionNo.slice(-4)}-CBSE`,
+    credentials: { loginId, tempPassword },
   }
 
   return {

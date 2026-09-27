@@ -16,17 +16,11 @@ import type {
 /**
  * Owns the doc-card state, computed metadata, and event handlers.
  *
- * Computed values:
- *  - isUploaded / isLater — derived from statusState.status
- *  - effectiveFileName / effectiveOcr / effectiveVerifiedBy / effectiveVerificationTime
- *    — fall back to sensible defaults when the prop values are missing
- *  - statusLabel / statusBadgeStyle / StatusIcon — driving the top-right badge
- *
- * Handlers:
- *  - handleFileChange — simulates upload, generates random OCR score 95–99%,
- *    appends an audit log entry, fires onUpdateStatus + a success toast
- *  - handleDownload — guards on isUploaded, toasts a download message
- *  - handleDefer — fires onUpdateStatus('later') + an info toast
+ * Honest-state rules (Wave 2):
+ *  - Upload is an upload: no invented OCR score, no auto-"Verified",
+ *    no fake "AI Vision" verifier. OCR confidence appears only when a
+ *    real scan produced it.
+ *  - History starts empty; entries are appended as real actions happen.
  */
 export function useDocCard({
   doc,
@@ -42,55 +36,32 @@ export function useDocCard({
 
   // Default computed metadata if not set
   const effectiveFileName = isUploaded
-    ? statusState.fileName || `${doc.key}_Attested_Record.pdf`
+    ? statusState.fileName || `${doc.key}_document.pdf`
     : isLater
     ? 'Deferred for later submission'
     : 'No file attached yet'
 
-  const effectiveOcr = statusState.ocrConfidence ?? 98.5
-  const effectiveVerifiedBy = statusState.verifiedBy || 'AI Vision OCR System'
-  const effectiveVerificationTime = statusState.verificationTime || 'Today, 10:22 AM'
+  const effectiveOcr = statusState.ocrConfidence
+  const effectiveVerifiedBy = statusState.verifiedBy || '—'
+  const effectiveVerificationTime = statusState.verificationTime || '—'
 
-  // Simulated audit logs
-  const [historyLogs, setHistoryLogs] = useState<AuditLogEntry[]>([
-    {
-      id: 'log-1',
-      timestamp: 'Today, 10:20 AM',
-      action: 'File Upload Initialized',
-      actor: 'Applicant / Guardian',
-      details: `Document candidate provided for ${doc.name}`,
-    },
-    {
-      id: 'log-2',
-      timestamp: 'Today, 10:21 AM',
-      action: 'AI Vision OCR Analysis',
-      actor: 'Automated OCR Engine',
-      details: `Extracted key attributes with ${effectiveOcr}% confidence`,
-    },
-    {
-      id: 'log-3',
-      timestamp: 'Today, 10:22 AM',
-      action: 'Status Marked Verified',
-      actor: effectiveVerifiedBy,
-      details: 'All mandatory seals and credentials validated successfully',
-    },
-  ])
+  // Real history — starts empty, grows with actual actions.
+  const [historyLogs, setHistoryLogs] = useState<AuditLogEntry[]>([])
 
-  // Handle file selection / upload simulation
+  // Handle file selection — an honest upload (no invented confidence).
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
-      const selectedFileName = file ? file.name : `${doc.key}_Verified_Document.pdf`
+      const selectedFileName = file ? file.name : `${doc.key}_document.pdf`
       const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       const timeString = `Today, ${nowTime}`
-      const ocrScore = Math.floor(Math.random() * 5) + 95 // 95% - 99%
 
       onUpdateStatus(
         doc.key,
         'uploaded',
         selectedFileName,
-        ocrScore,
-        'AI Vision OCR System',
+        0,
+        '',
         timeString
       )
 
@@ -99,15 +70,13 @@ export function useDocCard({
         {
           id: `log-${Date.now()}`,
           timestamp: timeString,
-          action: isUploaded ? 'Document Replaced' : 'Document Uploaded & Verified',
-          actor: 'Current Admin User',
-          details: `File "${selectedFileName}" processed with ${ocrScore}% OCR confidence.`,
+          action: isUploaded ? 'Document Replaced' : 'Document Uploaded',
+          actor: 'Admission Office',
+          details: `File "${selectedFileName}" attached.`,
         },
       ])
 
-      toast.success(`${doc.name} uploaded successfully`, {
-        description: `Verified with ${ocrScore}% OCR confidence`,
-      })
+      toast.success(`${doc.name} uploaded`)
 
       if (e.target) e.target.value = ''
     },
@@ -139,10 +108,12 @@ export function useDocCard({
   let StatusIcon: LucideIcon = AlertCircle
 
   if (isUploaded) {
-    statusLabel = 'Verified'
-    statusBadgeStyle =
-      'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-    StatusIcon = CheckCircle2
+    const isVerifiedDoc = !!statusState.verifiedBy
+    statusLabel = isVerifiedDoc ? 'Verified' : 'Uploaded'
+    statusBadgeStyle = isVerifiedDoc
+      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+      : 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30'
+    StatusIcon = isVerifiedDoc ? CheckCircle2 : CheckCircle2
   } else if (isLater) {
     statusLabel = 'Deferred'
     statusBadgeStyle =

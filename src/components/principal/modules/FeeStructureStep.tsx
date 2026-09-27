@@ -23,7 +23,7 @@ export function FeeStructureStep({ className, feeState, onChangeFeeState, flags 
           </div>
           <div>
             <h3 className="text-sm font-bold font-display">Fee Structure — {calc.feeStructure?.category}</h3>
-            <p className="text-xs text-slate-600 dark:text-emerald-200/70">Class: {className || '—'} · Live from Fee Management</p>
+            <p className="text-xs text-slate-600 dark:text-emerald-200/70">Class: {className || '—'} · Managed in Fee Management</p>
           </div>
         </div>
         <Badge variant="outline" className="border-emerald-600/40 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-emerald-900/30 text-xs font-mono font-bold gap-1">
