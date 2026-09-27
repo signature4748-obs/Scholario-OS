@@ -403,6 +403,3 @@ export const initialApplications: AdmissionApplication[] = [
     ],
   },
 ]
-
-// Initial value for the active application selection.
-export const INITIAL_SELECTED_APPLICATION_ID = 'APP-2026-001'

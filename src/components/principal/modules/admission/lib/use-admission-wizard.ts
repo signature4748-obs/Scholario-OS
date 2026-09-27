@@ -36,6 +36,17 @@ export function useAdmissionWizard() {
   const [step, setStep] = useState(1)
   const [data, setData] = useState<FormData>(initialData)
 
+  // The application this wizard session is editing (Resume on a draft, or
+  // Edit on a returned-for-correction application). Null = brand-new
+  // application. Kept in a ref too so the auto-save effect reads the latest
+  // value without re-subscribing.
+  const [editingAppId, setEditingAppId] = useState<string | null>(null)
+  const editingAppIdRef = useRef<string | null>(null)
+  const beginEdit = (appId: string | null) => {
+    editingAppIdRef.current = appId
+    setEditingAppId(appId)
+  }
+
   // Stepper auto-scroll ref — effect wired after currentVisibleIndex is computed
   const stepperScrollRef = useRef<HTMLDivElement>(null)
 
@@ -134,9 +145,14 @@ export function useAdmissionWizard() {
   const [pendingSubmitData, setPendingSubmitData] = useState<{ formData: Partial<FormData>; feeState: Partial<FeeDataState> } | null>(null)
 
   const finalizeSubmission = (formDataPartial: Partial<FormData>, feeDataPartial: Partial<FeeDataState>) => {
-    const newAppId = `APP-${Date.now().toString().slice(-6)}`
-    const appId = admissionStore.createOrUpdateDraft(formDataPartial, feeDataPartial, newAppId)
-    admissionStore.submitApplication(appId)
+    // When editing an existing application (draft resume / correction
+    // resubmission), the submission UPDATES that record in place — it keeps
+    // its admission number, audit trail and identity. Only a brand-new
+    // application gets a fresh record id.
+    const appId =
+      editingAppIdRef.current || `APP-${Date.now().toString().slice(-6)}`
+    const submittedId = admissionStore.createOrUpdateDraft(formDataPartial, feeDataPartial, appId)
+    admissionStore.submitApplication(submittedId)
 
     toast.success('Application submitted', {
       description: `${data.firstName} ${data.lastName}'s application is now in the review queue.`,
@@ -144,6 +160,8 @@ export function useAdmissionWizard() {
 
     setPostSubmitDup(null)
     setPendingSubmitData(null)
+    beginEdit(null)
+    draftIdRef.current = null
     setData(createBlankData())
     setStep(1)
     setViewMode('list')
@@ -166,9 +184,13 @@ export function useAdmissionWizard() {
     const formDataPartial: Partial<FormData> = { ...data }
     const feeDataPartial: Partial<FeeDataState> = data.feeState || {}
 
-    // Check duplicates only at submit time
+    // Check duplicates only at submit time. The application being edited
+    // is excluded — a correction resubmission must never match itself.
     if (dupConfig.enabled) {
-      const match = checkDuplicates(data, dupConfig, students as any, admissionStore.applications || [])
+      const others = (admissionStore.applications || []).filter(
+        (a) => a.id !== editingAppIdRef.current
+      )
+      const match = checkDuplicates(data, dupConfig, students as any, others)
       if (match && match.matchType !== 'none') {
         setPostSubmitDup(match)
         setPendingSubmitData({ formData: formDataPartial, feeState: feeDataPartial })
@@ -202,7 +224,9 @@ export function useAdmissionWizard() {
 
     const saveDraft = () => {
       if (!data.firstName && !data.lastName) return
-      const id = draftIdRef.current || `DRAFT-${Date.now().toString().slice(-6)}`
+      // Editing an existing application → auto-save targets THAT record
+      // (never spawns a stray duplicate draft).
+      const id = editingAppIdRef.current || draftIdRef.current || `DRAFT-${Date.now().toString().slice(-6)}`
       draftIdRef.current = id
       admissionStore.createOrUpdateDraft({ ...data }, data.feeState || {}, id)
     }
@@ -226,6 +250,8 @@ export function useAdmissionWizard() {
     data,
     setData,
     set,
+    editingAppId,
+    beginEdit,
     handleToggleSameAddress,
     next,
     back,

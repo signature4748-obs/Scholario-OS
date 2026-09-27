@@ -51,6 +51,7 @@ export function AdmissionModule() {
     handleContinueAnyway,
     handleCancelSubmission,
     admissionStore,
+    beginEdit,
   } = wizard
 
   const [activeWorkspace, setActiveWorkspace] = useState<'none' | 'verification' | 'issuance'>('none')
@@ -92,6 +93,18 @@ export function AdmissionModule() {
             setActiveWorkspace('issuance')
           }}
           onOpenWizardToEdit={(appId) => {
+            // Load the flagged application's actual data into the wizard —
+            // same load path as the dashboard's Resume/Edit (otherwise the
+            // wizard would open with stale data from a previous session).
+            beginEdit(appId)
+            const appToEdit = admissionStore.applications.find((a) => a.id === appId)
+            if (appToEdit) {
+              setData({
+                ...initialData,
+                ...appToEdit.formData,
+                feeState: appToEdit.formData.feeState || initialData.feeState,
+              })
+            }
             setActiveWorkspace('none')
             setViewMode('form')
             setStep(1)
@@ -110,6 +123,8 @@ export function AdmissionModule() {
       {!isSettingsOpen && activeWorkspace === 'none' && viewMode === 'list' && (
         <AdmissionsDashboard
           onOpenWizard={(appId) => {
+            // Track WHICH application this wizard session edits (null = new).
+            beginEdit(appId ?? null)
             if (appId) {
               const appToEdit = admissionStore.applications.find((a) => a.id === appId)
               if (appToEdit) setData({ ...initialData, ...appToEdit.formData, feeState: appToEdit.formData.feeState || initialData.feeState })
@@ -170,6 +185,7 @@ export function AdmissionModule() {
         onClose={() => setIsOcrModalOpen(false)}
         onManualEntry={() => {
           setIsOcrModalOpen(false)
+          beginEdit(null)
           setViewMode('form')
           setStep(1)
         }}
@@ -179,6 +195,8 @@ export function AdmissionModule() {
             ...extracted,
             scannedAttachment: attachment,
           }))
+          // A scanned import is always a NEW application draft.
+          beginEdit(null)
           setIsOcrModalOpen(false)
           setViewMode('form')
           setStep(1)

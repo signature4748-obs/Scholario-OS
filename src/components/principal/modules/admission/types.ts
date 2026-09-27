@@ -149,16 +149,3 @@ export interface AdmissionFormData {
   feeState?: FeeDataState
   waiver?: WaiverInfo
 }
-
-export interface AdmissionRecord {
-  id: string
-  studentName: string
-  className: string
-  section: string
-  admissionNo: string
-  guardianName: string
-  guardianPhone: string
-  date: string
-  status: 'Draft' | 'Submitted' | 'Under Review' | 'Need Correction' | 'Resubmitted' | 'Approved' | 'Rejected' | 'Completed' | 'Archived'
-  photoUploaded?: boolean
-}
