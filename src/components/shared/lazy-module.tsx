@@ -4,7 +4,7 @@ import { Component, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import { AlertTriangle, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { ModuleLoading, prettifyModuleKey } from '@/components/shared/module-loading'
 
 /**
  * lazyModule — chunk-resilient lazy module loader (stabilization §22/§29).
@@ -156,9 +156,13 @@ export function lazyModule(
   loader: () => Promise<{ [key: string]: any }>,
   pick: string,
 ): React.ComponentType<any> {
+  // Friendly label for the loading caption ("Loading Students Classes…") —
+  // first-visit compiles take a few seconds and a nameless skeleton reads
+  // as broken; naming the module keeps the wait honest.
+  const loadingLabel = prettifyModuleKey(pick)
   const build = () =>
     dynamic(() => importWithRetry(loader).then((m) => m[pick] as React.ComponentType<any>), {
-      loading: ModuleLoading,
+      loading: () => <ModuleLoading label={loadingLabel} />,
     })
 
   function LazyModule(props: Record<string, any>) {

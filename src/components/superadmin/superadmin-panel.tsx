@@ -17,20 +17,20 @@ import { useState } from 'react'
 import { LayoutDashboard, Building2, SlidersHorizontal } from 'lucide-react'
 import { AppShell, type NavGroup } from '@/components/shell/app-shell'
 import dynamic from 'next/dynamic'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { ModuleLoading as ModuleLoadingBase } from '@/components/shared/module-loading'
 
 // Lazily-loaded chunks — each module compiles only when opened.
 const PlatformOverviewModule = dynamic(
   () => import('./modules/overview').then((m) => m.PlatformOverviewModule),
-  { loading: ModuleLoading }
+  { loading: () => <ModuleLoadingBase label="Platform Overview" /> }
 )
 const SchoolsModule = dynamic(
   () => import('./modules/schools').then((m) => m.SchoolsModule),
-  { loading: ModuleLoading }
+  { loading: () => <ModuleLoadingBase label="Schools" /> }
 )
 const PlatformControlsModule = dynamic(
   () => import('./modules/platform-controls').then((m) => m.PlatformControlsModule),
-  { loading: ModuleLoading }
+  { loading: () => <ModuleLoadingBase label="Platform Controls" /> }
 )
 
 const navGroups: NavGroup[] = [

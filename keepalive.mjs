@@ -21,6 +21,7 @@
 // All output goes to stdout — spawn-detached.mjs routes it to dev.log.
 
 import { spawn, exec } from 'node:child_process'
+import fs from 'node:fs'
 
 const ROOT = '/home/z/my-project'
 const PROBE_MS = 20_000
@@ -74,9 +75,34 @@ async function healthy(port, path) {
  * fired 20 first-hit compiles back-to-back: anon-rss 2.69GB > 4GB cgroup).
  */
 let warmStarted = 0
-function warmChunks() {
-  if (Date.now() - warmStarted < 10 * 60_000) return // cooldown
-  warmStarted = Date.now()
+async function warmChunks() {
+  const now = Date.now()
+  if (now - warmStarted < 60_000) return // 1-min re-entry guard (probe ticks)
+  // Is a warmer still walking? (Warms of the full 3-role chunk graph take
+  // 10–15 min — a time window cannot model that; process truth can.)
+  // [s] bracket: the exec'ed shell's own cmdline (containing this literal
+  // pattern text) must not match the regex it runs — keepalive v3.2 lesson.
+  const { stdout } = await sh(`pgrep -f "bun warm-chunk[s].mjs" | head -1`)
+  if (stdout.trim()) {
+    log('warm skipped — a warmer is already running')
+    warmStarted = now
+    return
+  }
+  // Abort-aware loop protection: a marker with no doneAt AND no live process
+  // means the last warm died mid-walk (server OOM). Cool off 5 minutes so a
+  // warming-induced crash cannot loop.
+  let marker = null
+  try {
+    marker = JSON.parse(fs.readFileSync(`${ROOT}/dev-warm-state.json`, 'utf8'))
+  } catch {
+    /* no marker yet — treat as completed */
+  }
+  if (marker && !marker.doneAt && marker.startedAt && now - marker.startedAt < 5 * 60_000) {
+    log('warm skipped — previous warm aborted < 5 min ago (loop guard)')
+    warmStarted = now
+    return
+  }
+  warmStarted = now
   log('post-restart chunk warm triggered (paced, background)')
   spawnDetached('bun', [`${ROOT}/spawn-detached.mjs`, 'bun', 'warm-chunks.mjs'], ROOT)
 }
