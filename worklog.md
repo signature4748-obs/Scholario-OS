@@ -3181,3 +3181,18 @@ Stage Summary:
 - UX polish shipped: named loading captions + honest dashboard error/retry states.
 - Residual: the warm walk itself takes 30-60 min for the full 3-role chunk graph (paced by design); during a warm, not-yet-visited modules open in 3-13s (still no OOM). If the sandbox restarts, the first ~1 min is the respawn window (keepalive auto-recovers, sessions survive).
 - Next-phase candidates: continue the QA cron loop (job 417673 active); optional — teacher/student module deep-flow audits like this one; optional — warm priority ordering (principal modules first).
+
+---
+Task ID: principal-audit-followup
+Agent: Z.ai Code (main orchestrator)
+Task: Investigate the /api/notifications-feed 500 + final wrap-up of the Principal stabilization round.
+
+Work Log:
+- INVESTIGATED: dev.log showed `⨯ SyntaxError: Unexpected end of JSON input at JSON.parse` on /api/notifications-feed (once, 11.3s compile) and the same signature on GET / (pre-restore, line 134). FULL ROUTE-CHAIN AUDIT: notifications-feed/route.ts → lib/api (withUser) → lib/auth (getCurrentUser, getSessionToken — cookie/Bearer only) → lib/user-preferences (safeJson try/catch) → lib/notices (string ops only) → lib/db (Prisma). ZERO unsafe JSON.parse in app code. The error signature on two DIFFERENT routes + empty stack frames + occurrence exactly during the duplicate-warmer window (two concurrent walks + 37s compiles + memory near ceiling) → Next.js dev-internal payload truncation under extreme compile load, not an app bug. TRIGGER ELIMINATED by the warm-dedup fix (pgrep process truth). Endpoint verified healthy (200) on every poll since.
+- FINAL VERIFICATION: login → dashboard (live data: 51 students, 88% attendance, ₹1.90L pending LIVE) → module speed sweep post-warm: Dashboard/Settings 0.5-2s, cold modules compiled on-demand 2-13s WITH NO OOM (paced system held at ~400-800MB available) — the OOM crash-loop is gone; worst case is now a slow first open, never a dead server.
+- Responsive re-verified (320/390/768: zero horizontal overflow). tsc 0 errors, lint clean, browser console zero errors across the full session.
+- Cron QA loop recreated (job 417761 — earlier instances were lost with session resets; each new session must verify `cron list` and recreate if empty).
+
+Stage Summary:
+- Principal role delivered at Teacher-panel stability: all 20 modules zero-error, all flows working, OOM root cause fixed with self-healing infrastructure (keepalive + paced auto-warm + dedup + abort-aware loop guard).
+- The remaining dev-only artifacts (first-open compile waits on not-yet-warm modules; rare dev-internal JSON.parse under extreme load) are sandbox-constraint artifacts, both self-recovering, neither reachable in production builds.
