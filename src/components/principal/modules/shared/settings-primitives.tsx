@@ -177,6 +177,49 @@ export function ValueRow({
   )
 }
 
+/* RadioRowGroup — name + inline radio options (e.g. Required / Optional) */
+export function RadioRowGroup({
+  label, helper, name, options, value, onValueChange,
+}: {
+  label: string
+  helper?: string
+  name: string
+  options: Array<{ value: string; label: string; hint?: string }>
+  value: string
+  onValueChange: (v: string) => void
+}) {
+  return (
+    <div className="py-3 border-t border-border/40 first:border-t-0">
+      <p className="text-sm text-foreground">{label}</p>
+      {helper && <p className="text-[11px] text-muted-foreground mt-0.5">{helper}</p>}
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="mt-2 flex flex-wrap gap-2"
+      >
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={value === opt.value}
+            title={opt.hint}
+            onClick={() => onValueChange(opt.value)}
+            className={
+              'rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ' +
+              (value === opt.value
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground')
+            }
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ActionBar — sticky bottom bar with Discard/Save. Hidden until dirty=true */
 export function ActionBar({
   discardLabel = 'Discard Changes',

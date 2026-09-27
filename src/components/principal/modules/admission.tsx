@@ -7,12 +7,12 @@
  * This file holds the orchestration state and view-switching only; every
  * wizard step, dialog, and presentational section now lives in its own file
  * under ./admission/.
- *
- * Behaviour is preserved byte-for-byte — only the file layout has changed.
  */
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { ArrowLeft } from 'lucide-react'
 import { StatusBadge, PageTransition } from '@/components/shared/ui'
+import { ModuleLoading } from '@/components/shared/module-loading'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
@@ -23,10 +23,16 @@ import { VerificationWorkspace } from './admission/components/VerificationWorksp
 import { IssuanceWorkspace } from './admission/components/IssuanceWorkspace'
 import { AdmissionSettingsPage } from './admission/components/AdmissionSettingsPage'
 import { FormWizard } from './admission/components/FormWizard'
-import { OcrFormUploadModal } from './admission/components/OcrFormUploadModal'
 import { useSeatCapacity } from './admission/lib/admission-utils'
 import { useAdmissionWizard } from './admission/lib/use-admission-wizard'
 import { initialData } from './admission/constants'
+
+// Lazy: the scan workspace pulls the local OCR engine + camera UI — it must
+// not weigh down opening Admissions (spec §39).
+const ScanApplicationModal = dynamic(
+  () => import('./admission/components/ScanApplicationModal').then((m) => m.ScanApplicationModal),
+  { ssr: false, loading: () => <ModuleLoading label="Opening scan workspace…" /> },
+)
 
 export function AdmissionModule() {
   const seatCapacity = useSeatCapacity()
@@ -51,6 +57,9 @@ export function AdmissionModule() {
     handleContinueAnyway,
     handleCancelSubmission,
     admissionStore,
+    startNewApplication,
+    loadApplicationIntoWizard,
+    applyScannedDraft,
   } = wizard
 
   const [activeWorkspace, setActiveWorkspace] = useState<'none' | 'verification' | 'issuance'>('none')
@@ -58,17 +67,6 @@ export function AdmissionModule() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isOcrModalOpen, setIsOcrModalOpen] = useState(false)
   const [isBlankFormModalOpen, setIsBlankFormModalOpen] = useState(false)
-
-  /** Load an existing application into the wizard editor (edit / resume). */
-  const loadApplicationIntoWizard = (appId: string) => {
-    const appToEdit = admissionStore.applications.find((a) => a.id === appId)
-    if (appToEdit) {
-      setData({ ...initialData, ...appToEdit.formData, feeState: appToEdit.formData.feeState || initialData.feeState })
-    } else {
-      setData(initialData)
-    }
-    setViewMode('form')
-  }
 
   return (
     <PageTransition className="space-y-6">
@@ -104,13 +102,11 @@ export function AdmissionModule() {
           }}
           onOpenWizardToEdit={(appId) => {
             setActiveWorkspace('none')
-            loadApplicationIntoWizard(appId)
-            setStep(1)
+            loadApplicationIntoWizard(appId, 1)
           }}
           onOpenWizardToDocuments={(appId) => {
             setActiveWorkspace('none')
-            loadApplicationIntoWizard(appId)
-            setStep(9)
+            loadApplicationIntoWizard(appId, 9)
           }}
         />
       )}
@@ -129,10 +125,8 @@ export function AdmissionModule() {
             if (appId) {
               loadApplicationIntoWizard(appId)
             } else {
-              setData(initialData)
+              startNewApplication()
             }
-            setStep(1)
-            setViewMode('form')
           }}
           onOpenVerificationWorkspace={(appId) => {
             setSelectedWorkspaceAppId(appId)
@@ -179,21 +173,13 @@ export function AdmissionModule() {
         onClose={() => setIsBlankFormModalOpen(false)}
       />
 
-      {/* OCR ASSISTED FILLED FORM UPLOAD MODAL */}
-      <OcrFormUploadModal
+      {/* SCAN / IMPORT APPLICATION (real local OCR — lazy loaded) */}
+      <ScanApplicationModal
         open={isOcrModalOpen}
         onClose={() => setIsOcrModalOpen(false)}
         onApplyData={(extracted, attachment) => {
-          setData((prev) => ({
-            ...prev,
-            ...extracted,
-            scannedAttachment: attachment,
-          }))
+          applyScannedDraft(extracted, attachment)
           setIsOcrModalOpen(false)
-          setViewMode('form')
-          toast.success('Form data extracted & populated!', {
-            description: `Auto-filled admission fields from OCR scan (${attachment.confidence}% confidence)`,
-          })
         }}
       />
 

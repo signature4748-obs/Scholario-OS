@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
           gender: body.gender || null,
           bloodGroup: body.bloodGroup || null,
           address: body.address || null,
+          photoDataUrl: typeof body.photoDataUrl === 'string' && body.photoDataUrl.startsWith('data:image/') ? body.photoDataUrl : null,
           routeId: body.routeId || null,
         },
         include: { class: true, user: { select: { name: true, email: true } } },

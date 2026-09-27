@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, RefreshCw } from 'lucide-react'
+import { Check, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { GlassCard } from '@/components/shared/ui'
@@ -15,6 +15,7 @@ interface PreviewPanelProps {
   onApply: () => void
   onEditCurrent: () => void
   onReplace: () => void
+  onRemove: () => void
 }
 
 /**
@@ -32,6 +33,7 @@ export function PreviewPanel({
   onApply,
   onEditCurrent,
   onReplace,
+  onRemove,
 }: PreviewPanelProps) {
   return (
     <GlassCard hover={false} className="p-4 space-y-3">
@@ -61,7 +63,7 @@ export function PreviewPanel({
         </p>
       </div>
 
-      {mode === 'editing' && (
+      {mode === 'editing' && !applied && (
         <Button type="button" size="sm" className="w-full h-9" onClick={onApply} disabled={!hasImage}>
           <Check className="h-4 w-4" />
           Use This Photo
@@ -74,9 +76,18 @@ export function PreviewPanel({
         </Button>
       )}
       {mode === 'editing' && (
-        <Button type="button" size="sm" variant="ghost" className="w-full h-8" onClick={onReplace}>
+        <Button type="button" size="sm" variant={applied ? 'outline' : 'ghost'} className="w-full h-8" onClick={onReplace}>
           <RefreshCw className="h-3.5 w-3.5" />
           Replace
+        </Button>
+      )}
+      {/* Remove — available whenever a photo is on file (spec §9).
+          Removal clears the canonical photoDataUrl: Photo step, Review, dossier
+          and letter all reflect the removal until a new photo is chosen. */}
+      {hasPhotoOnFile && applied && (
+        <Button type="button" size="sm" variant="ghost" className="w-full h-8 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onRemove}>
+          <Trash2 className="h-3.5 w-3.5" />
+          Remove Photo
         </Button>
       )}
 

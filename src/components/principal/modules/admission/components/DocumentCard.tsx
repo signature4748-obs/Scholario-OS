@@ -1,13 +1,13 @@
 'use client'
 
 /**
- * Single document card — Wave 2 compact redesign (spec §19/§20).
+ * Single document card — Wave 2 deep refinement (spec §3/§4).
  *
  * Communicates in 1–2 seconds: document name, Required/Optional,
  * uploaded state, verification status, and ONE primary action.
- * Actions are limited to Preview / Replace / Verify (+ Upload / Submit
- * Later when not uploaded). OCR confidence is a subtle metadata badge
- * ("98% OCR" · muted; "Review OCR" when confidence is low).
+ * Required carries the green SCHOLARIO emphasis; Optional is neutral
+ * (never reads like an error). OCR confidence is shown ONLY when a real
+ * local OCR reading exists (images); PDFs simply have no OCR badge.
  */
 import {
   FileText, Paperclip, Eye, RefreshCw, UploadCloud, Clock,
@@ -15,7 +15,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { DocStatus } from '../types'
 import type { AdmissionDocDescriptor } from '../lib/documents'
@@ -23,7 +22,7 @@ import { DocActionButton } from './StepShared'
 
 export type { AdmissionDocDescriptor as DocDescriptor } from '../lib/documents'
 
-/** Below this OCR confidence the badge asks for a human look. */
+/** Below this REAL OCR confidence the badge asks for a human look. */
 const OCR_REVIEW_THRESHOLD = 90
 
 export function DocumentCard({
@@ -33,6 +32,7 @@ export function DocumentCard({
   onUploadClick,
   onDefer,
   onVerify,
+  onPreview,
 }: {
   doc: AdmissionDocDescriptor
   st: DocStatus
@@ -40,6 +40,7 @@ export function DocumentCard({
   onUploadClick: (key: string) => void
   onDefer: (key: string) => void
   onVerify: (key: string) => void
+  onPreview: () => void
 }) {
   const isUploaded = st.status === 'uploaded'
   const isLater = st.status === 'later'
@@ -64,9 +65,10 @@ export function DocumentCard({
     vBadge = { label: 'Not Uploaded', className: 'bg-muted/40 text-muted-foreground border-border/60', Icon: AlertCircle }
   }
 
-  const fileName = st.fileName || (isUploaded ? `${doc.key}_document.pdf` : isLater ? 'Deferred for later submission' : 'No file attached')
+  const fileName = st.fileName || (isUploaded ? `${doc.key}_document` : isLater ? 'Deferred for later submission' : 'No file attached')
   const ocr = st.ocrConfidence ?? 0
   const lowOcr = ocr > 0 && ocr < OCR_REVIEW_THRESHOLD
+  const hasFile = isUploaded && !!st.dataUrl
 
   const accentBorder = isVerified
     ? 'border-emerald-500/30'
@@ -108,8 +110,8 @@ export function DocumentCard({
               className={cn(
                 'text-[10px] px-2 py-0 font-semibold rounded-full border',
                 doc.mandatory
-                  ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/25'
-                  : 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/25',
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
+                  : 'bg-muted/40 text-muted-foreground border-border/60',
               )}
             >
               {doc.mandatory ? 'Required' : 'Optional'}
@@ -118,7 +120,7 @@ export function DocumentCard({
               <vBadge.Icon className="h-3 w-3 shrink-0" />
               <span>{vBadge.label}</span>
             </Badge>
-            {/* Subtle OCR metadata badge (spec §20) */}
+            {/* Real OCR metadata — only when a genuine reading exists */}
             {isUploaded && ocr > 0 && (
               <span
                 className={cn(
@@ -141,7 +143,7 @@ export function DocumentCard({
           </div>
         </div>
 
-        {/* Actions — one primary per state (spec §19) */}
+        {/* Actions — one primary per state */}
         <div className="flex items-center gap-1.5 shrink-0 self-center">
           {!isUploaded ? (
             <>
@@ -152,6 +154,7 @@ export function DocumentCard({
                   variant="ghost"
                   onClick={() => onDefer(doc.key)}
                   className="h-7 text-[11px] px-2 gap-1 text-muted-foreground hover:text-foreground font-medium"
+                  title={doc.mandatory ? 'Defer — must be received before final enrollment' : 'Collect this later'}
                 >
                   <Clock className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Submit Later</span>
@@ -169,8 +172,8 @@ export function DocumentCard({
             </>
           ) : (
             <>
-              <DocActionButton icon={Eye} label="Preview" onClick={() => toast.info('Preview opened', { description: doc.name })} />
-              <DocActionButton icon={RefreshCw} label="Replace" onClick={() => toast.info('Replace dialog', { description: doc.name })} />
+              <DocActionButton icon={Eye} label="Preview" onClick={onPreview} disabled={!hasFile} />
+              <DocActionButton icon={RefreshCw} label="Replace" onClick={() => onUploadClick(doc.key)} />
               {isPendingReview && (
                 <Button
                   type="button"
@@ -187,7 +190,7 @@ export function DocumentCard({
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => toast.info('Replace dialog', { description: doc.name })}
+                  onClick={() => onUploadClick(doc.key)}
                   className="h-7 text-[11px] px-2.5 gap-1 border-violet-500/40 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10 font-medium"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />

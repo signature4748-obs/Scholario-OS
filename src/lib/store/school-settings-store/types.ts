@@ -203,6 +203,27 @@ export interface AdmissionFeatureFlags {
   boards: string[]
 }
 
+/**
+ * Document Output Privacy (Wave 2 deep spec §16/§17) — controls what the
+ * generated OFFICIAL documents expose. Deliberately separate from form
+ * field visibility: collecting a field in the form never automatically
+ * prints it on the admission letter.
+ */
+export interface DocumentPrivacyConfig {
+  /** Master switch: keep sensitive demographics off official documents. */
+  protectSensitiveFields: boolean
+  /** Fee summary section on the Official Admission Letter. */
+  letterShowsFeeSummary: boolean
+  /** Parent phone on the Official Admission Letter. */
+  letterShowsParentPhone: boolean
+  /** Residential address on the Official Admission Letter. */
+  letterShowsAddress: boolean
+  /** Previous school line on the Official Admission Letter. */
+  letterShowsPreviousSchool: boolean
+  /** Student photo on the Official Admission Letter (institutional norm). */
+  letterShowsPhoto: boolean
+}
+
 // Per-class seat capacity & waitlist threshold
 export interface ClassSeatConfig {
   className: string
@@ -365,13 +386,10 @@ export interface SchoolSettingsState {
 
   // Admission Settings
   admissionSettings: {
-    requiredDocs: string[]
-    studentIdFormat: string
-    rollNumberFormat: string
-    autoEnrollBooks: boolean
-    workflowSteps: string[]
-    showPersonalDataOnLetter: boolean
-    showDiscountBreakdown?: boolean
+    /** Workflow: is the student photo required or optional at admission? */
+    photoRequirement: 'required' | 'optional'
+    /** Document output privacy (form fields ≠ print fields, §16). */
+    documentPrivacy: DocumentPrivacyConfig
     rejectionRetentionDays: number
     fieldRules: AdmissionFormFieldRule[]
     featureFlags: AdmissionFeatureFlags

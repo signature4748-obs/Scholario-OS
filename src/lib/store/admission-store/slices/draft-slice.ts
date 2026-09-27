@@ -6,9 +6,9 @@ export const createDraftSlice: StateCreator<
   AdmissionStoreState,
   [],
   [],
-  Pick<AdmissionStoreState, 'createOrUpdateDraft'>
+  Pick<AdmissionStoreState, 'createOrUpdateDraft' | 'deleteDraft'>
 > = (set, get) => ({
-  createOrUpdateDraft: (formDataInput, feeDataInput, appId) => {
+  createOrUpdateDraft: (formDataInput, feeDataInput, appId, options) => {
     const state = get()
     const targetId = appId || state.selectedApplicationId || `APP-${Date.now().toString().slice(-6)}`
     const existing = state.applications.find((a) => a.id === targetId)
@@ -39,16 +39,20 @@ export const createDraftSlice: StateCreator<
               formData: mergedFormData,
               feeData: mergedFeeData,
               lastUpdatedDate: now,
-              auditTrail: [
-                ...app.auditTrail,
-                {
-                  id: `a-${Date.now()}`,
-                  timestamp: `${now} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-                  action: 'Draft Updated',
-                  actor: 'Applicant / Admin',
-                  notes: 'Form data saved in draft state',
-                },
-              ],
+              // Silent auto-saves keep the trail clean (no per-keystroke spam).
+              auditTrail:
+                options?.silent && app.status === 'Draft'
+                  ? app.auditTrail
+                  : [
+                      ...app.auditTrail,
+                      {
+                        id: `a-${Date.now()}`,
+                        timestamp: `${now} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+                        action: 'Draft Updated',
+                        actor: 'Applicant / Admin',
+                        notes: 'Form data saved in draft state',
+                      },
+                    ],
             }
           : app
       )
@@ -84,5 +88,15 @@ export const createDraftSlice: StateCreator<
       set({ applications: [newApp, ...state.applications], selectedApplicationId: targetId })
       return targetId
     }
+  },
+
+  /** Remove a DRAFT record (used when the draft is submitted as a real application). */
+  deleteDraft: (appId) => {
+    const state = get()
+    set({
+      applications: state.applications.filter(
+        (a) => !(a.id === appId && a.status === 'Draft'),
+      ),
+    })
   },
 })

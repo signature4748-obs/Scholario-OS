@@ -128,9 +128,20 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
             transition={{ type: 'spring', stiffness: 220, damping: 18 }}
             className="relative shrink-0 mx-auto sm:mx-0"
           >
-            <div className="flex h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem] items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-xl sm:text-2xl font-extrabold shadow-premium-lg ring-1 ring-emerald-500/25">
-              {initials}
-            </div>
+            {me?.student?.photoDataUrl ? (
+              // The canonical admission photograph — same image captured at
+              // admission and carried through issuance (spec §11).
+               
+              <img
+                src={me.student.photoDataUrl}
+                alt={`${displayName} photograph`}
+                className="h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem] rounded-2xl object-cover shadow-premium-lg ring-1 ring-emerald-500/25"
+              />
+            ) : (
+              <div className="flex h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem] items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-xl sm:text-2xl font-extrabold shadow-premium-lg ring-1 ring-emerald-500/25">
+                {initials}
+              </div>
+            )}
             <span
               className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white border-[3px] border-background"
               title="Active student"

@@ -82,6 +82,8 @@ async function enrollStudentOnServer(
           gender: f.gender || undefined,
           bloodGroup: f.bloodGroup || undefined,
           address: f.currentAddress || undefined,
+          // The canonical admission photo travels to the student record (§11).
+          photoDataUrl: f.photoDataUrl || undefined,
         }),
       })
       if (res.ok) return email
@@ -275,6 +277,7 @@ export const createCompletionSlice: StateCreator<
           bloodGroup: newStudent.bloodGroup,
           previousSchool: newStudent.previousSchool,
           admissionDate: now,
+          photoDataUrl: app.formData.photoDataUrl || undefined,
         })
         // Cross-reference: the admission record points at the roster id so
         // every module resolves the SAME student.

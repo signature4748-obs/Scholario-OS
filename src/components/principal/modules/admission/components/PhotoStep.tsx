@@ -110,6 +110,7 @@ export function PhotoStep({ photoDataUrl, onChange }: PhotoStepProps) {
             onApply={handleApply}
             onEditCurrent={() => loadImageFromDataUrl(photoDataUrl!, true)}
             onReplace={handleReplace}
+            onRemove={handleRemove}
           />
         </div>
       </div>

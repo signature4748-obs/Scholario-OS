@@ -1,5 +1,6 @@
 import { AdmissionLetterData } from '../../../OfficialAdmissionLetter'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import type { AdmissionFeeSummary } from '../../lib/fee-summary'
 
 export interface IssuanceArtifacts {
@@ -23,10 +24,13 @@ export function buildIssuanceArtifacts(
   const admissionNo = isCompleted ? app.admissionNo : app.admissionNo.replace('DRAFT-', '') || `ADM-2026-0842`
   const studentId = isCompleted ? app.studentId : app.studentId.replace('DRAFT-', '') || `STU-2026-0842`
   const rollNo = app.rollNo && app.rollNo !== '—' ? app.rollNo : '01'
-  const regNo = isCompleted ? app.regNo : `REG-CBSE-2026-8812`
+  const regNo = isCompleted ? app.regNo : app.regNo !== '—' ? app.regNo : `REG-${new Date().getFullYear()}`
 
-  const loginId = isCompleted && app.generatedCredentials ? app.generatedCredentials.loginId : `${formData.firstName.toUpperCase()}_2026`
-  const tempPassword = isCompleted && app.generatedCredentials ? app.generatedCredentials.tempPassword : `Scholario@2026`
+  // Portal credentials are generated ONCE at completion (completion-slice)
+  // and communicated via the separate secure Credentials sheet — never the
+  // official letter (spec §23).
+  const loginId = isCompleted && app.generatedCredentials ? app.generatedCredentials.loginId : '—'
+  const tempPassword = isCompleted && app.generatedCredentials ? app.generatedCredentials.tempPassword : '—'
 
   // Deterministic receipt number derived from the admission number (no fake
   // sequential counters — the same admission always yields the same receipt).
@@ -45,6 +49,8 @@ export function buildIssuanceArtifacts(
         transportFee: feeSummary.transportTotal,
         examFee: feeSummary.examTotal,
         booksTotal: feeSummary.booksTotal,
+        subtotal: feeSummary.grossFee,
+        totalAnnualFee: feeSummary.grossFee,
         discountName: feeSummary.totalDiscount > 0 ? feeSummary.discountLabel || 'Concession' : undefined,
         discountApplied: feeSummary.totalDiscount,
         finalPayable: feeSummary.netTotal,
@@ -57,9 +63,12 @@ export function buildIssuanceArtifacts(
         paymentMethod: app.feeData?.paymentMethod || 'Online Banking',
       }
 
-  // Letter Data Assembly
+  // Letter Data Assembly — the document output policy travels WITH the
+  // letter data so every render path (preview + download) applies the
+  // same privacy rules (spec §16/§17).
   const letterData: AdmissionLetterData = {
     admissionNo,
+    refNo: admissionNo,
     studentId,
     regNo,
     admissionDate: isCompleted ? app.submittedDate : new Date().toISOString().split('T')[0],
@@ -68,7 +77,10 @@ export function buildIssuanceArtifacts(
       firstName: formData.firstName,
       lastName: formData.lastName,
       dob: formData.dob,
-      photoUrl: undefined,
+      photoUploaded: !!formData.photoDataUrl,
+      // The CANONICAL admission photo — same image as the wizard, review,
+      // dossier, and (after issuance) the student record (spec §11).
+      photoUrl: formData.photoDataUrl || undefined,
     },
     parents: {
       fatherName: formData.fatherName,
@@ -94,8 +106,7 @@ export function buildIssuanceArtifacts(
       previousBoard: formData.previousBoard,
     },
     fees,
-    qrCodeData: `https://verify.demoschool.edu/admission/${admissionNo}`,
-    digitalVerificationId: `VER-2026-HASH-${admissionNo.slice(-4)}-CBSE`,
+    documentPrivacy: useSchoolSettingsStore.getState().admissionSettings.documentPrivacy,
   }
 
   return {

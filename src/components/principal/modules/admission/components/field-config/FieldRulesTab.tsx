@@ -106,6 +106,10 @@ export function FieldRulesTab() {
 
   return (
     <SettingsCard>
+      {/* Contextual line (spec §15) — states exactly what this tab controls. */}
+      <p className="text-xs text-muted-foreground -mt-1 mb-3">
+        Choose which fields appear on the admission form and which are mandatory.
+      </p>
       {/* Column header — makes the FIELD / VISIBILITY / REQUIRED relationship obvious (spec §10) */}
       <div className="hidden sm:flex items-center justify-end gap-6 pr-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 border-b border-border/30">
         <span className="w-11 text-center">Visibility</span>

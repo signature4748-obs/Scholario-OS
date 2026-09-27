@@ -50,6 +50,8 @@ export interface MeUser {
     guardianName?: string | null
     guardianPhone?: string | null
     address?: string | null
+    /** Canonical admission photograph (data URL) — same image captured at admission. */
+    photoDataUrl?: string | null
   } | null
   school?: {
     id: string

@@ -8,10 +8,11 @@
  * (with permanent-address auto-sync), step navigation, post-submit duplicate
  * detection flow, and the auto-save-draft side effect.
  */
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { students } from '@/lib/mock/students'
 import { toast } from 'sonner'
 import { useAdmissionStore } from '@/lib/store/admission-store'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import {
   useAdmissionFeatureFlags,
   useDuplicateDetectionConfig,
@@ -133,10 +134,91 @@ export function useAdmissionWizard() {
   const [postSubmitDup, setPostSubmitDup] = useState<DuplicateMatch | null>(null)
   const [pendingSubmitData, setPendingSubmitData] = useState<{ formData: Partial<FormData>; feeState: Partial<FeeDataState> } | null>(null)
 
+  // ─── Canonical draft persistence (spec §8) ────────────────────────────
+  // The wizard state IS the application draft — it is persisted to the
+  // admission store (and thus to tenant-scoped storage) on every change,
+  // debounced 600ms. The photo, documents, and every field survive a
+  // crash, a module switch, or a refresh. Final flush on unload.
+  const draftIdRef = useRef<string | null>(null)
+  const dataRef = useRef(data)
+  dataRef.current = data
+
+  const saveDraftNow = useCallback((silent: boolean) => {
+    const current = dataRef.current
+    if (!current.firstName && !current.lastName) return
+    const id = draftIdRef.current || `DRAFT-${Date.now().toString().slice(-6)}`
+    draftIdRef.current = id
+    // getState() (not the reactive hook value): saving must never re-render
+    // the wizard — a reactive dep here turns auto-save into an update loop.
+    useAdmissionStore.getState().createOrUpdateDraft({ ...current }, current.feeState || {}, id, { silent })
+  }, [])
+
+  // Debounced auto-save while filling the form.
+  useEffect(() => {
+    if (viewMode !== 'form') return
+    if (!data.firstName && !data.lastName) return
+    const t = setTimeout(() => saveDraftNow(true), 600)
+    return () => clearTimeout(t)
+  }, [viewMode, data, saveDraftNow])
+
+  // Immediate flush on tab hide / close / unmount — never lose the photo.
+  useEffect(() => {
+    if (viewMode !== 'form') return
+    const flush = () => saveDraftNow(true)
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flush()
+    }
+     
+  }, [viewMode, saveDraftNow])
+
+  /** Begin a NEW blank application (resets draft identity). */
+  const startNewApplication = useCallback(() => {
+    draftIdRef.current = null
+    setData(createBlankData())
+    setStep(1)
+    setViewMode('form')
+  }, [])
+
+  /** Load an existing application into the wizard (edit / resume / correct).
+   *  Auto-saves target THE application itself — never a duplicate draft. */
+  const loadApplicationIntoWizard = useCallback((appId: string, targetStep = 1) => {
+    const appToEdit = useAdmissionStore.getState().applications.find((a) => a.id === appId)
+    if (appToEdit) {
+      draftIdRef.current = appId
+      setData({ ...initialData, ...appToEdit.formData, feeState: appToEdit.formData.feeState || initialData.feeState })
+    } else {
+      draftIdRef.current = null
+      setData(initialData)
+    }
+    setStep(targetStep)
+    setViewMode('form')
+  }, [])
+
   const finalizeSubmission = (formDataPartial: Partial<FormData>, feeDataPartial: Partial<FeeDataState>) => {
-    const newAppId = `APP-${Date.now().toString().slice(-6)}`
-    const appId = admissionStore.createOrUpdateDraft(formDataPartial, feeDataPartial, newAppId)
-    admissionStore.submitApplication(appId)
+    const store = useAdmissionStore.getState()
+    // If the wizard is editing an EXISTING application (resume / correction),
+    // submit updates that record in place — never a duplicate. A fresh
+    // auto-saved DRAFT copy is superseded by the real APP- record and removed.
+    const editingId = draftIdRef.current
+    const editingApp = editingId
+      ? store.applications.find((a) => a.id === editingId)
+      : undefined
+    const isAutoDraft = !!editingApp && editingApp.status === 'Draft' && editingApp.id.startsWith('DRAFT-')
+
+    let appId: string
+    if (editingApp && !isAutoDraft) {
+      appId = store.createOrUpdateDraft(formDataPartial, feeDataPartial, editingApp.id)
+    } else {
+      appId = store.createOrUpdateDraft(formDataPartial, feeDataPartial, `APP-${Date.now().toString().slice(-6)}`)
+      if (isAutoDraft) store.deleteDraft(editingApp!.id)
+    }
+    store.submitApplication(appId)
+    draftIdRef.current = null
 
     toast.success('Application submitted', {
       description: `${data.firstName} ${data.lastName}'s application is now in the review queue.`,
@@ -152,6 +234,17 @@ export function useAdmissionWizard() {
   const handleSubmit = () => {
     const formDataPartial: Partial<FormData> = { ...data }
     const feeDataPartial: Partial<FeeDataState> = data.feeState || {}
+
+    // Photo policy (spec §9/§14): when the school requires a photo, a missing
+    // photo is surfaced clearly at submit — never a silent failure.
+    const settings = useSchoolSettingsStore.getState().admissionSettings
+    if (flags.enableStudentPhoto && settings.photoRequirement === 'required' && !data.photoDataUrl) {
+      toast.error('Photo required', {
+        description: 'Add a passport photo in the Photo step, or set the photo policy to Optional in Admissions Settings.',
+      })
+      setStep(8) // Photo step
+      return
+    }
 
     // Required-document policy (spec §3): a REQUIRED document that is
     // missing (not uploaded, not deferred) blocks submission. Deferred
@@ -173,9 +266,9 @@ export function useAdmissionWizard() {
       })
     }
 
-    // Check duplicates only at submit time
+    // Check duplicates only at submit time (never match the application against itself)
     if (dupConfig.enabled) {
-      const match = checkDuplicates(data, dupConfig, students as any, admissionStore.applications || [])
+      const match = checkDuplicates(data, dupConfig, students as any, admissionStore.applications || [], draftIdRef.current)
       if (match && match.matchType !== 'none') {
         setPostSubmitDup(match)
         setPendingSubmitData({ formData: formDataPartial, feeState: feeDataPartial })
@@ -198,31 +291,27 @@ export function useAdmissionWizard() {
     toast.info('Submission cancelled')
   }
 
-  // Auto-save draft on browser close / tab switch — no Save Draft button needed.
-  // If the principal exits midway, the application is silently saved as a Draft
-  // and can be resumed later. Drafts do NOT appear in Pending Review.
-  const draftIdRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (viewMode !== 'form') return
-    // Only auto-save if the user has entered at least a name
-    if (!data.firstName && !data.lastName) return
-
-    const saveDraft = () => {
-      if (!data.firstName && !data.lastName) return
-      const id = draftIdRef.current || `DRAFT-${Date.now().toString().slice(-6)}`
-      draftIdRef.current = id
-      admissionStore.createOrUpdateDraft({ ...data }, data.feeState || {}, id)
-    }
-
-    const handler = () => saveDraft()
-    window.addEventListener('beforeunload', handler)
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') saveDraft()
+  /** Apply a scanned form's extracted fields (spec §28–§35).
+   *  Always starts a FRESH application context — a scan is the start of a new
+   *  application, never a merge into whatever draft was previously open
+   *  (prevents data bleed between abandoned scans). Never auto-submits. */
+  const applyScannedDraft = useCallback((extracted: Partial<FormData>, attachment: { fileName: string; date: string; confidence: number }) => {
+    draftIdRef.current = null
+    setData({
+      ...createBlankData(),
+      ...extracted,
+      scannedAttachment: {
+        fileName: attachment.fileName,
+        date: attachment.date,
+        confidence: attachment.confidence,
+      },
     })
-    return () => {
-      window.removeEventListener('beforeunload', handler)
-    }
-  }, [viewMode, data, admissionStore])
+    setStep(1)
+    setViewMode('form')
+    toast.success('Application populated from scan', {
+      description: 'Review each step, then submit when everything checks out — nothing is submitted automatically.',
+    })
+  }, [])
 
   return {
     flags,
@@ -244,5 +333,8 @@ export function useAdmissionWizard() {
     handleContinueAnyway,
     handleCancelSubmission,
     admissionStore,
+    startNewApplication,
+    loadApplicationIntoWizard,
+    applyScannedDraft,
   }
 }

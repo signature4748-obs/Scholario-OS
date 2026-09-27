@@ -2,6 +2,7 @@
 
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import type { SectionKey } from '@/lib/store/admission-store'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { ADMISSION_DOCS } from '../../lib/documents'
 import type { DocStatus } from '../../types'
 
@@ -132,14 +133,25 @@ export function SectionDataContent({ sectionKey, app }: SectionDataContentProps)
   }
 
   if (sectionKey === 'photo') {
+    const photoUrl = formData.photoDataUrl
+    const photoRequired = useSchoolSettingsStore.getState().admissionSettings.photoRequirement === 'required'
     return (
       <div className="flex items-center gap-3">
-        <div className="h-12 w-12 rounded-lg bg-emerald-600/10 text-emerald-800 flex items-center justify-center font-bold text-lg">
-          {formData.firstName[0]}{formData.lastName[0]}
-        </div>
+        {photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photoUrl} alt={`${formData.firstName} ${formData.lastName} passport photo`} className="h-12 w-12 rounded-lg object-cover border border-border" />
+        ) : (
+          <div className="h-12 w-12 rounded-lg bg-muted text-muted-foreground flex items-center justify-center font-bold text-lg">
+            {formData.firstName[0]}{formData.lastName[0]}
+          </div>
+        )}
         <div className="text-xs">
-          <span className="font-semibold block text-emerald-800 dark:text-emerald-300">Passport Photo Standard Verified</span>
-          <span className="text-muted-foreground text-[10px]">35mm x 45mm white background complies with CBSE registration guidelines.</span>
+          <span className={photoUrl ? 'font-semibold block text-emerald-800 dark:text-emerald-300' : 'font-semibold block text-muted-foreground'}>
+            {photoUrl ? 'Photo attached' : photoRequired ? 'Photo required — not provided' : 'No photo selected'}
+          </span>
+          <span className="text-muted-foreground text-[10px]">
+            {photoUrl ? 'The same photo follows the application — dossier, admission letter, and the student record.' : 'Upload a passport photo from the Photo step.'}
+          </span>
         </div>
       </div>
     )

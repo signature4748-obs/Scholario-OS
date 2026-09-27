@@ -1,5 +1,5 @@
 import {
-  BookOpen, Tag, ShieldCheck, FileText, Lock,
+  BookOpen, Tag, ShieldCheck, FileText,
   Bus, Home, Palette, Shirt,
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
@@ -62,7 +62,6 @@ export function SelectionPanel(props: SelectionPanelProps) {
           <h4 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" /> Institutional Fee
           </h4>
-          <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground"><Lock className="h-2.5 w-2.5" /> From Fee Mgmt</Badge>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
           <FeeHeadRow label="Registration" value={registrationFee} />

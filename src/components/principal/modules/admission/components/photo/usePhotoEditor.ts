@@ -80,15 +80,25 @@ export function usePhotoEditor(
     useCropInteraction({
       canvasRef,
       crop,
-      setCrop,
+      // Any manual crop adjustment marks the photo as unsaved —
+      // the primary "Use This Photo" action reappears until re-applied.
+      setCrop: (next) => {
+        setCrop(next)
+        setApplied(false)
+      },
       hasImage: !!capturedImage,
     })
 
   const loadImageFromDataUrl = useCallback(
-    (dataUrl: string, silent = false) => {
+    (dataUrl: string, silent = false, markApplied = false) => {
       const img = new Image()
       img.crossOrigin = 'anonymous'
-      img.onload = () => ingestImage(img, silent ? undefined : 'Image loaded')
+      img.onload = () => {
+        ingestImage(img, silent ? undefined : 'Image loaded')
+        // A photo loaded from the application's saved state IS already applied —
+        // show the Saved state (Replace / Remove) rather than implying unsaved work.
+        if (markApplied) setApplied(true)
+      }
       img.onerror = () => toast.error('Failed to load image')
       img.src = dataUrl
     },
@@ -99,7 +109,7 @@ export function usePhotoEditor(
   useEffect(() => {
     if (initRef.current) return
     initRef.current = true
-    if (photoDataUrl) loadImageFromDataUrl(photoDataUrl, true)
+    if (photoDataUrl) loadImageFromDataUrl(photoDataUrl, true, true)
     // intentional: run once on mount only
   }, [photoDataUrl, loadImageFromDataUrl])
 

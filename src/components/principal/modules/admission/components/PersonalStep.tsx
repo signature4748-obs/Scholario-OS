@@ -15,6 +15,7 @@ import { school } from '@/lib/mock/school'
 import { AadhaarInput } from '@/components/shared/smart-inputs'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { useAdmissionFeatureFlags } from '../lib/admission-utils'
+import { useAdmissionFieldVisibility } from '../lib/hooks'
 import type { FormData } from '../constants'
 import { StepHeader, Field } from './StepShared'
 
@@ -26,6 +27,13 @@ export function PersonalStep({
   flags: ReturnType<typeof useAdmissionFeatureFlags>
 }) {
   const adm = useSchoolSettingsStore.getState().admissionSettings
+  const fieldVisible = useAdmissionFieldVisibility()
+  // A personal field renders only when BOTH its workflow feature flag AND its
+  // Fields-tab rule (visible) allow it (spec §15–§16).
+  const showAadhaar = flags.enableAadhaar && fieldVisible.aadhaarNo !== false
+  const showBloodGroup = flags.enableBloodGroup && fieldVisible.bloodGroup !== false
+  const showCategory = flags.enableCategory && fieldVisible.category !== false
+  const showReligion = flags.enableReligion && fieldVisible.religion !== false
   const religionOptions = ['Hindu', 'Muslim', 'Other']
   const cleanAadhaarDigits = (data.aadhaarNo || '').replace(/\D/g, '')
   const isValidAadhaar = cleanAadhaarDigits.length === 12
@@ -73,7 +81,7 @@ export function PersonalStep({
                 onChange={(e) => set('nationality', e.target.value)}
                 placeholder="e.g. Indian" className="h-10" />
             </Field>
-            {flags.enableBloodGroup && (
+            {showBloodGroup && (
               <Field label="Blood Group">
                 <Select value={data.bloodGroup} onValueChange={(v) => set('bloodGroup', v)}>
                   <SelectTrigger className="w-full h-10"><SelectValue placeholder="Select blood group" /></SelectTrigger>
@@ -89,15 +97,15 @@ export function PersonalStep({
         </div>
 
         {/* SECTION 2 — CATEGORY & RELIGION (conditional) */}
-        {(flags.enableCategory || flags.enableReligion) && (
+        {(showCategory || showReligion) && (
           <div className="pt-3 border-t border-border">
             <p className="text-xs font-bold text-primary mb-3 uppercase tracking-wider">
-              {flags.enableCategory && flags.enableReligion ? 'Category & Religion'
-                : flags.enableCategory ? 'Category'
+              {showCategory && showReligion ? 'Category & Religion'
+                : showCategory ? 'Category'
                 : 'Religion'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              {flags.enableCategory && (
+              {showCategory && (
                 <Field label="Category">
                   <Select value={data.category} onValueChange={(v) => set('category', v)}>
                     <SelectTrigger className="w-full h-10"><SelectValue placeholder="Select category" /></SelectTrigger>
@@ -109,7 +117,7 @@ export function PersonalStep({
                   </Select>
                 </Field>
               )}
-              {flags.enableReligion && (
+              {showReligion && (
                 <Field label="Religion">
                   <Select value={data.religion || adm.defaultReligion} onValueChange={(v) => set('religion', v)}>
                     <SelectTrigger className="w-full h-10"><SelectValue placeholder="Select religion" /></SelectTrigger>
@@ -126,7 +134,7 @@ export function PersonalStep({
         )}
 
         {/* SECTION 3 — GOVERNMENT ID (Aadhaar, conditional) */}
-        {flags.enableAadhaar && (
+        {showAadhaar && (
           <div className="pt-3 border-t border-border">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wider">

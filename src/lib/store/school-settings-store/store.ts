@@ -36,8 +36,32 @@ export const useSchoolSettingsStore = create<SchoolSettingsState>()(
       // entries and patches the existing ones' names/types to match
       // the new seed WITHOUT losing any user-edited catalogue entries
       // they may have added on top.
-      version: 8,
+      version: 9,
       migrate: (persistedState: any, fromVersion: number) => {
+        // ─── v9 — ADMISSION SETTINGS RE-ARCHITECTURE (Wave 2 deep §12–§18) ─
+        // Dead settings removed (requiredDocs/studentIdFormat/rollNumberFormat/
+        // autoEnrollBooks/workflowSteps — never read by any consumer); new
+        // Workflow photoRequirement + Document Output Privacy added. The old
+        // showPersonalDataOnLetter semantic carries forward into
+        // documentPrivacy.protectSensitiveFields (old false = protected).
+        if (fromVersion < 9 && persistedState?.admissionSettings) {
+          const adm = persistedState.admissionSettings
+          if (!adm.documentPrivacy) {
+            adm.documentPrivacy = {
+              ...initialState.admissionSettings.documentPrivacy,
+              protectSensitiveFields: adm.showPersonalDataOnLetter === undefined
+                ? true
+                : !adm.showPersonalDataOnLetter,
+            }
+          }
+          if (!adm.photoRequirement) adm.photoRequirement = 'required'
+          delete adm.requiredDocs
+          delete adm.studentIdFormat
+          delete adm.rollNumberFormat
+          delete adm.autoEnrollBooks
+          delete adm.workflowSteps
+          delete adm.showPersonalDataOnLetter
+        }
         // ─── v8 — RESULTS / GRADING CONFIGURATION (Student Results) ────
         // Appends the school-configured grading scale + result-privacy
         // policy + report-card composition to persisted profiles that

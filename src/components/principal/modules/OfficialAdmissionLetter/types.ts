@@ -1,3 +1,5 @@
+import type { DocumentPrivacyConfig } from '@/lib/store/school-settings-store/types'
+
 export interface AdmissionLetterData {
   admissionNo: string
   refNo?: string
@@ -10,6 +12,7 @@ export interface AdmissionLetterData {
     lastName: string
     dob: string
     photoUploaded?: boolean
+    /** The canonical admission photo (data URL) — same image as the wizard, dossier and student record. */
     photoUrl?: string
   }
   parents: {
@@ -53,12 +56,8 @@ export interface AdmissionLetterData {
     finalPayable: number
     paymentMethod?: string
   }
-  credentials?: {
-    loginId: string
-    tempPassword: string
-  }
-  qrCodeData?: string
-  digitalVerificationId?: string
+  /** Document output policy (spec §16/§17) — gates what the letter prints. */
+  documentPrivacy?: DocumentPrivacyConfig
 }
 
 export interface OfficialAdmissionLetterProps {

@@ -11,11 +11,15 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
+import { useAdmissionFieldVisibility } from '../lib/hooks'
 import type { FormData } from '../constants'
 import { StepHeader, Field } from './StepShared'
 
 export function PreviousSchoolStep({ data, set, onSkip }: { data: FormData; set: <K extends keyof FormData>(k: K, v: FormData[K]) => void; admissionType?: string; onSkip?: () => void }) {
   const adm = useSchoolSettingsStore.getState().admissionSettings
+  const fieldVisible = useAdmissionFieldVisibility()
+  const showBoard = fieldVisible.previousBoard !== false
+  const showTc = fieldVisible.tcNumber !== false
 
   const handleSkip = () => {
     set('previousSchool', '')
@@ -50,20 +54,24 @@ export function PreviousSchoolStep({ data, set, onSkip }: { data: FormData; set:
               </Select>
             </Field>
 
-            <Field label="Previous Board">
-              <Select value={data.previousBoard} onValueChange={(v) => set('previousBoard', v)}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Select board" /></SelectTrigger>
-                <SelectContent>
-                  {adm.previousBoards.map((b) => (
-                    <SelectItem key={b} value={b}>{b}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+            {showBoard && (
+              <Field label="Previous Board">
+                <Select value={data.previousBoard} onValueChange={(v) => set('previousBoard', v)}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Select board" /></SelectTrigger>
+                  <SelectContent>
+                    {adm.previousBoards.map((b) => (
+                      <SelectItem key={b} value={b}>{b}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
 
-            <Field label="Transfer Certificate (TC) Number">
-              <Input value={data.tcNumber} onChange={(e) => set('tcNumber', e.target.value)} placeholder="Enter TC number" />
-            </Field>
+            {showTc && (
+              <Field label="Transfer Certificate (TC) Number">
+                <Input value={data.tcNumber} onChange={(e) => set('tcNumber', e.target.value)} placeholder="Enter TC number" />
+              </Field>
+            )}
 
             <Field label="Reason for Leaving" full>
               <Textarea value={data.reasonForLeaving} onChange={(e) => set('reasonForLeaving', e.target.value)} placeholder="e.g. Relocation, better opportunities" className="min-h-[50px]" />

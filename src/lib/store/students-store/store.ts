@@ -479,6 +479,7 @@ export const useStudentsStore = create<StudentsState>()(
       rollNo,
       name: input.name.trim(),
       avatar: initials,
+      photoDataUrl: input.photoDataUrl,
       gender: input.gender,
       classId: input.classId,
       className: cls?.name ?? '—',

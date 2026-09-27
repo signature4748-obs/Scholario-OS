@@ -1,4 +1,4 @@
-import { Plus, SlidersHorizontal, UploadCloud } from 'lucide-react'
+import { Plus, SlidersHorizontal, ScanLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface DashboardHeaderProps {
@@ -31,11 +31,11 @@ export function DashboardHeader({
           <SlidersHorizontal className="h-3.5 w-3.5" />
           Settings
         </Button>
-        {/* Scan Filled Form (OCR) — downloads moved to dedicated Downloads sidebar module */}
+        {/* Scan / Import a filled paper application (real local OCR) */}
         {onOpenOcrModal && (
           <Button variant="outline" size="sm" onClick={onOpenOcrModal} className="text-xs gap-1.5">
-            <UploadCloud className="h-3.5 w-3.5" />
-            Scan Form
+            <ScanLine className="h-3.5 w-3.5" />
+            Scan / Import
           </Button>
         )}
         {/* Single primary action */}

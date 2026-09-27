@@ -3,12 +3,19 @@
  * evaluation rules used across the Admissions module (wizard step, review
  * workspace, dossier and issuance gating).
  *
- * Wave 2 rules (spec §2/§3):
- *   REQUIRED documents are policy blockers — an admission cannot be
- *   finalized while one is missing, UNLESS it was explicitly deferred
- *   ("Submit Later") by the admission desk.
- *   OPTIONAL documents never block anything, but if uploaded they still
- *   pass through the same verification workflow.
+ * Canonical school policy (Wave 2 deep spec §1):
+ *   REQUIRED — Student Aadhaar Card (the only policy blocker).
+ *   OPTIONAL — Transfer Certificate, Character Certificate, Birth
+ *   Certificate, Previous Mark Sheet, Migration Certificate. Optional
+ *   documents never block completion; if uploaded they still pass through
+ *   the same verification workflow.
+ *
+ * Completion rule (§2): the Documents step is COMPLETE when
+ *   requiredCompleted === requiredTotal
+ * — never "uploaded / total", which would wrongly let optional documents
+ * block completion. A deferred ("Submit Later") required document is the
+ * explicit desk escape hatch: submission proceeds, final enrollment is
+ * tracked against it.
  */
 
 import type { DocStatus } from '../types'
@@ -27,12 +34,12 @@ export interface AdmissionDocDescriptor {
  * Required set mirrors the school's configured admission policy.
  */
 export const ADMISSION_DOCS: AdmissionDocDescriptor[] = [
-  { key: 'birthCert', name: 'Birth Certificate', description: 'Municipal or hospital record', mandatory: true },
-  { key: 'tc', name: 'Transfer Certificate (TC)', description: 'Previous school leaving certificate', mandatory: true },
   { key: 'aadhaar', name: 'Student Aadhaar Card', description: 'UIDAI identity copy', mandatory: true },
-  { key: 'marksheet', name: 'Previous Class Marksheet', description: 'Last academic year report card', mandatory: true },
-  { key: 'migration', name: 'Migration Certificate', description: 'Board migration certificate (Class IX+)', mandatory: false },
+  { key: 'tc', name: 'Transfer Certificate (TC)', description: 'Previous school leaving certificate', mandatory: false },
   { key: 'character', name: 'Character Certificate', description: 'Conduct certificate from previous school', mandatory: false },
+  { key: 'birthCert', name: 'Birth Certificate', description: 'Municipal or hospital record', mandatory: false },
+  { key: 'marksheet', name: 'Previous Mark Sheet', description: 'Last academic year report card', mandatory: false },
+  { key: 'migration', name: 'Migration Certificate', description: 'Board migration certificate (Class IX+)', mandatory: false },
 ]
 
 export const REQUIRED_DOCS = ADMISSION_DOCS.filter((d) => d.mandatory)
@@ -99,4 +106,46 @@ export function evaluateRequiredDocs(
 /** True when submission/finalization must be blocked (a required doc is missing). */
 export function requiredDocsBlockSubmission(docStatuses: Record<string, DocStatus>): boolean {
   return evaluateRequiredDocs(docStatuses).some((i) => i.kind === 'missing')
+}
+
+export interface DocumentsCompletion {
+  /** requiredCompleted === requiredTotal (the ONLY completion rule, §2). */
+  complete: boolean
+  requiredTotal: number
+  /** Uploaded OR deferred required documents (deferred = explicit desk decision). */
+  requiredCompleted: number
+  requiredDeferred: number
+  optionalTotal: number
+  optionalUploaded: number
+}
+
+/**
+ * The canonical Documents-step completion (spec §2).
+ * Optional uploads are informational only — they never affect `complete`.
+ */
+export function getDocumentsCompletion(docStatuses: Record<string, DocStatus>): DocumentsCompletion {
+  const requiredTotal = REQUIRED_DOCS.length
+  let requiredCompleted = 0
+  let requiredDeferred = 0
+  for (const doc of REQUIRED_DOCS) {
+    const st = docStatuses[doc.key]
+    if (st && (st.status === 'uploaded' || st.status === 'later')) {
+      requiredCompleted++
+      if (st.status === 'later') requiredDeferred++
+    }
+  }
+  const optionalTotal = OPTIONAL_DOCS.length
+  let optionalUploaded = 0
+  for (const doc of OPTIONAL_DOCS) {
+    const st = docStatuses[doc.key]
+    if (st && st.status === 'uploaded') optionalUploaded++
+  }
+  return {
+    complete: requiredCompleted === requiredTotal && requiredTotal > 0,
+    requiredTotal,
+    requiredCompleted,
+    requiredDeferred,
+    optionalTotal,
+    optionalUploaded,
+  }
 }

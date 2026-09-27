@@ -196,6 +196,9 @@ model Student {
   gender        String?
   bloodGroup    String?
   address       String?
+  /// Canonical admission photograph (data URL) — same image captured at
+  /// admission; presented on the profile/ID surfaces where permitted.
+  photoDataUrl  String?
   routeId       String?
   route         Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())

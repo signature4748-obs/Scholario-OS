@@ -1,7 +1,6 @@
 'use client'
 
-import { Wallet, Lock } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Wallet } from 'lucide-react'
 import type { FeeStructureStepProps as Props } from './FeeStructureStep/types'
 import { useFeeCalculations } from './FeeStructureStep/useFeeCalculations'
 import { SelectionPanel } from './FeeStructureStep/SelectionPanel'
@@ -15,20 +14,18 @@ export function FeeStructureStep({ className, feeState, onChangeFeeState, flags 
 
   return (
     <div className="space-y-5">
-      {/* Header — READ-ONLY indicator */}
-      <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 text-slate-900 dark:text-emerald-50 border border-emerald-200/80 dark:border-emerald-800/50 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center justify-center">
-            <Wallet className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold font-display">Fee Structure — {calc.feeStructure?.category}</h3>
-            <p className="text-xs text-slate-600 dark:text-emerald-200/70">Class: {className || '—'} · Live from Fee Management</p>
-          </div>
+      {/* Header — one subtle provenance note (spec §6: say it once) */}
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
+          <Wallet className="h-5 w-5" />
         </div>
-        <Badge variant="outline" className="border-emerald-600/40 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-emerald-900/30 text-xs font-mono font-bold gap-1">
-          <Lock className="h-3 w-3" /> Read-Only
-        </Badge>
+        <div>
+          <h3 className="text-sm font-bold font-display">Fee Structure</h3>
+          <p className="text-xs text-muted-foreground">
+            {className ? `Class ${className.replace(/^Class\s*/i, '')}` : 'Select a class to see the applicable fee'}
+            {' · Read-only, managed in Fee Management'}
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

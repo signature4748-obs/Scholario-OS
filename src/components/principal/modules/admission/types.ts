@@ -16,6 +16,8 @@ export interface DocStatus {
   status: 'uploaded' | 'pending' | 'later'
   verificationStatus?: DocVerificationStatus
   fileName?: string
+  /** Stored file content (data URL) — powers real Preview/Replace. PDFs keep their data URL too. */
+  dataUrl?: string
   ocrConfidence?: number
   verifiedBy?: string
   verificationTime?: string

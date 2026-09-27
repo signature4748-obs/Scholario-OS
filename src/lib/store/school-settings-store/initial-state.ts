@@ -288,19 +288,18 @@ export const initialState: StateShape = {
   },
 
   admissionSettings: {
-    requiredDocs: [
-      'Birth Certificate',
-      'Transfer Certificate (TC)',
-      'Previous Class Marksheet',
-      'Aadhaar Card (Student & Parent)',
-      'Passport Size Photographs (4)',
-      'Category Certificate (if applicable)',
-    ],
-    studentIdFormat: 'ADM-2026-XXXX',
-    rollNumberFormat: 'CLASS-SEC-ROLL',
-    autoEnrollBooks: true,
-    workflowSteps: ['Application Submission', 'Document Verification', 'Principal Interview', 'Fee Payment & Enrollment'],
-    showPersonalDataOnLetter: false,
+    // Workflow (Wave 2 deep spec §14) — photo is part of the admission policy.
+    photoRequirement: 'required',
+    // Document output privacy (§16/§17): sensitive fields are NEVER printed
+    // on official documents by default; collecting ≠ printing.
+    documentPrivacy: {
+      protectSensitiveFields: true,
+      letterShowsFeeSummary: true,
+      letterShowsParentPhone: true,
+      letterShowsAddress: false,
+      letterShowsPreviousSchool: true,
+      letterShowsPhoto: true,
+    },
     rejectionRetentionDays: 60,
     fieldRules: [
       { fieldKey: 'aadhaarNo', label: 'Student Aadhaar Number', section: 'Personal', visible: true, required: false },

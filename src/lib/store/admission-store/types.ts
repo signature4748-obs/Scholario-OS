@@ -83,8 +83,11 @@ export interface AdmissionStoreState {
   createOrUpdateDraft: (
     formData: Partial<AdmissionFormData>,
     feeData?: Partial<FeeDataState>,
-    appId?: string
+    appId?: string,
+    options?: { silent?: boolean },
   ) => string
+  /** Remove a DRAFT record (submission supersedes the auto-saved draft copy). */
+  deleteDraft: (appId: string) => void
   submitApplication: (id: string) => void
   updateSectionReview: (
     appId: string,

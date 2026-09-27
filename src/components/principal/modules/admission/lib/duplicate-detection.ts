@@ -44,7 +44,9 @@ export function checkDuplicates(
   data: Partial<AdmissionFormData>,
   config: DuplicateDetectionConfig,
   existingStudents: DuplicateCheckable[],
-  existingApplications: Array<{ id: string; applicantName: string; className: string; admissionNo: string; formData: AdmissionFormData; status: string }>
+  existingApplications: Array<{ id: string; applicantName: string; className: string; admissionNo: string; formData: AdmissionFormData; status: string }>,
+  /** The application currently being edited/resubmitted — never a duplicate of itself. */
+  excludeApplicationId?: string | null
 ): DuplicateMatch {
   if (!config.enabled) return { matchType: 'none', score: 0, matchedField: '', existingRecord: { id: '', name: '', className: '', admissionNo: '', source: 'student' }, matchedFields: [] }
 
@@ -123,9 +125,10 @@ export function checkDuplicates(
     }
   }
 
-  // Check against existing applications (excluding drafts/rejected)
+  // Check against existing applications (excluding drafts/rejected/self)
   for (const a of existingApplications) {
     if (a.status === 'Rejected' || a.status === 'Archived' || a.status === 'Draft') continue
+    if (excludeApplicationId && a.id === excludeApplicationId) continue
     const f = a.formData
     const aName = a.applicantName.toLowerCase()
     const aDob = (f.dob || '').toLowerCase()

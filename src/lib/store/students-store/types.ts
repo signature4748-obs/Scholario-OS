@@ -67,6 +67,8 @@ export interface StudentRecord {
   rollNo: string
   name: string
   avatar: string
+  /** Canonical admission photograph (data URL) — same image as the admission record. */
+  photoDataUrl?: string
   gender: Gender
   classId: string
   className: string
@@ -323,5 +325,7 @@ export interface StudentsState {
     bloodGroup?: string
     previousSchool?: string
     admissionDate?: string
+    /** Canonical admission photograph (data URL). */
+    photoDataUrl?: string
   }) => StudentRecord
 }

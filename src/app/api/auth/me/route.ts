@@ -76,6 +76,7 @@ async function getStudentContext(user: { id: string; schoolId: string | null }) 
     guardianName: student.guardianName,
     guardianPhone: student.guardianPhone,
     address: student.address,
+    photoDataUrl: student.photoDataUrl,
   }
 }
 

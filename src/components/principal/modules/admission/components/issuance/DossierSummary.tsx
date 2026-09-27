@@ -15,7 +15,7 @@ import { formatDate, formatINR } from '@/lib/format'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import { getAdmissionStatusMeta } from '@/lib/store/admission-store/status'
 import type { IssuanceArtifacts } from './letter-data'
-import { evaluateRequiredDocs, summarizeDocGroup, REQUIRED_DOCS, OPTIONAL_DOCS } from '../../lib/documents'
+import { evaluateRequiredDocs, summarizeDocGroup, OPTIONAL_DOCS, getDocumentsCompletion } from '../../lib/documents'
 import type { AdmissionFeeSummary } from '../../lib/fee-summary'
 
 interface DossierSummaryProps {
@@ -57,8 +57,8 @@ export function DossierSummary({ app, artifacts, feeSummary, verificationEnabled
 
   const requiredIssues = evaluateRequiredDocs(f.docStatuses || {})
   const missingRequired = requiredIssues.filter((i) => i.kind === 'missing').length
-  const reqDocs = summarizeDocGroup(REQUIRED_DOCS, f.docStatuses || {}, verificationEnabled)
   const optDocs = summarizeDocGroup(OPTIONAL_DOCS, f.docStatuses || {}, verificationEnabled)
+  const docsCompletion = getDocumentsCompletion(f.docStatuses || {})
 
   const timeline = [
     { label: 'Submitted', value: app.submittedDate },
@@ -79,9 +79,18 @@ export function DossierSummary({ app, artifacts, feeSummary, verificationEnabled
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-base">
-              {fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-            </div>
+            {f.photoDataUrl ? (
+              <div className="h-14 w-12 shrink-0 rounded-md border border-border overflow-hidden bg-muted/30">
+                {/* The canonical admission photo — same image as the wizard,
+                    review, and official letter (spec §11). */}
+                { }
+                <img src={f.photoDataUrl} alt={`${fullName} photograph`} className="h-full w-full object-cover" />
+              </div>
+            ) : (
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-base">
+                {fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="text-base font-bold text-foreground truncate">{fullName || '—'}</p>
               <p className="text-xs text-muted-foreground">
@@ -113,12 +122,11 @@ export function DossierSummary({ app, artifacts, feeSummary, verificationEnabled
       {/* ── DOCUMENT STATUS ── */}
       <DossierSection icon={FileStack} title="Document Status">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 dark:bg-rose-500/10 px-3 py-2.5">
-            <p className="text-[11px] font-bold text-rose-700 dark:text-rose-300">Required</p>
+          <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-2.5">
+            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">Required</p>
             <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
-              {reqDocs.total} total · {reqDocs.uploaded} uploaded
-              {verificationEnabled && reqDocs.pending > 0 ? ` · ${reqDocs.pending} pending` : ''}
-              {reqDocs.deferred > 0 ? ` · ${reqDocs.deferred} deferred` : ''}
+              {docsCompletion.requiredCompleted}/{docsCompletion.requiredTotal} complete
+              {docsCompletion.requiredDeferred > 0 ? ` · ${docsCompletion.requiredDeferred} deferred` : ''}
             </p>
             {missingRequired > 0 && (
               <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 mt-1">
@@ -126,10 +134,11 @@ export function DossierSummary({ app, artifacts, feeSummary, verificationEnabled
               </p>
             )}
           </div>
-          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 dark:bg-cyan-500/10 px-3 py-2.5">
-            <p className="text-[11px] font-bold text-cyan-700 dark:text-cyan-300">Optional</p>
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+            <p className="text-[11px] font-bold text-muted-foreground">Optional</p>
             <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
-              {optDocs.total} total · {optDocs.uploaded} uploaded
+              {docsCompletion.optionalUploaded}/{docsCompletion.optionalTotal} uploaded
+              {verificationEnabled && optDocs.pending > 0 ? ` · ${optDocs.pending} pending` : ''}
             </p>
           </div>
         </div>
