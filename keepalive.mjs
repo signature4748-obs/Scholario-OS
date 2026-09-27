@@ -65,6 +65,22 @@ async function healthy(port, path) {
   }
 }
 
+/**
+ * Post-restart chunk warming: after a (re)spawned Next server becomes
+ * healthy, run warm-chunks.mjs once in the background. The warmer walks the
+ * page + every referenced /_next chunk SEQUENTIALLY — pacing first-hit
+ * compiles so they never stack up during a user's own browsing (the OOM
+ * killer took down the server when a full 20-module Principal walkthrough
+ * fired 20 first-hit compiles back-to-back: anon-rss 2.69GB > 4GB cgroup).
+ */
+let warmStarted = 0
+function warmChunks() {
+  if (Date.now() - warmStarted < 10 * 60_000) return // cooldown
+  warmStarted = Date.now()
+  log('post-restart chunk warm triggered (paced, background)')
+  spawnDetached('bun', [`${ROOT}/spawn-detached.mjs`, 'bun', 'warm-chunks.mjs'], ROOT)
+}
+
 function spawnDetached(cmd, args, cwd = ROOT) {
   const child = spawn(cmd, args, { cwd, detached: true, stdio: ['ignore', 'ignore', 'ignore'] })
   child.unref()
@@ -108,7 +124,7 @@ async function waitForFreePort(port, patterns, cwd, timeoutMs = 20_000) {
 }
 
 const state = {
-  next: { downProbes: 0, compiling: false, respawnedAt: 0 },
+  next: { downProbes: 0, compiling: false, respawnedAt: 0, warmed: false },
   stream: { downProbes: 0, respawnedAt: 0 },
 }
 
@@ -123,9 +139,18 @@ async function ensureService(name, port, path, patterns, spawnArgs, cwd, st) {
         st.compiling = true
         log(`:${port} listening but not answering yet — likely compiling; leaving it alone`)
       }
-    } else if (st.compiling) {
-      st.compiling = false
-      log(`:${port} recovered (healthy again)`)
+    } else {
+      if (st.compiling) {
+        st.compiling = false
+        log(`:${port} recovered (healthy again)`)
+      }
+      // First healthy probe after boot/respawn → pace-warm all chunks
+      // in the background so user browsing never stacks first-hit
+      // compiles (OOM guard). Only for the Next service.
+      if (!st.warmed && name === 'next dev') {
+        st.warmed = true
+        warmChunks()
+      }
     }
     st.downProbes = 0
     return
@@ -152,6 +177,7 @@ async function ensureService(name, port, path, patterns, spawnArgs, cwd, st) {
   }
   spawnDetached('bun', [`${ROOT}/spawn-detached.mjs`, ...spawnArgs], cwd)
   st.respawnedAt = Date.now()
+  st.warmed = false // re-warm once the respawned server is healthy
 }
 
 async function tick() {
