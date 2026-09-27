@@ -65,3 +65,4 @@ keepalive.pid
 
 # scratch debug scripts
 scripts/tmp/
+dev-warm-state.json

@@ -20,18 +20,33 @@
 //
 // Sequential fetches + a delay keep compile memory pressure flat; the walk
 // aborts cleanly if the server dies mid-warm (keepalive will re-trigger it
-// after respawn).
+// after respawn). A dev-warm-state.json marker records {startedAt, doneAt}
+// so keepalive can distinguish COMPLETED warms (re-warm freely after the
+// next respawn) from ABORTED ones (brief cool-off to prevent warm loops).
+
+import fs from 'node:fs'
 
 const BASE = 'http://localhost:3000'
 const DELAY_MS = 400 // pacing between fetches — keeps GC ahead of compiles
 const MAX_URLS = 400 // hard cap on discovery
 const MAX_DEPTH = 30
+const STATE_FILE = new URL('./dev-warm-state.json', import.meta.url)
 const seen = new Set()
 let fetched = 0
 let failed = 0
 let dead = 0 // consecutive connection failures → server died mid-warm
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+function writeState(state) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state))
+  } catch {
+    /* best-effort marker */
+  }
+}
+
+writeState({ startedAt: Date.now(), doneAt: null })
 
 async function visit(url, depth) {
   if (seen.has(url) || seen.size > MAX_URLS || dead >= 3) return
@@ -74,8 +89,10 @@ async function visit(url, depth) {
 }
 
 await visit(BASE + '/', 0)
+const aborted = dead >= 3
+writeState({ startedAt: Date.now(), doneAt: aborted ? null : Date.now() })
 console.log(
   `[warm] done: ${fetched} fetched (${failed} failed), ${seen.size} unique urls${
-    dead >= 3 ? ' — ABORTED (server unreachable mid-warm; keepalive will re-trigger)' : ''
+    aborted ? ' — ABORTED (server unreachable mid-warm; keepalive will re-trigger)' : ''
   }`,
 )
