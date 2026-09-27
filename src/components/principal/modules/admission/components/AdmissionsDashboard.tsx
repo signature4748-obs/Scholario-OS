@@ -82,6 +82,9 @@ export function AdmissionsDashboard({
       <ApplicationsTable
         filteredApps={filteredApps}
         store={store}
+        activeTab={activeTab}
+        searchQuery={searchQuery}
+        selectedClass={selectedClass}
         onOpenWizard={onOpenWizard}
         onOpenVerificationWorkspace={onOpenVerificationWorkspace}
         onOpenIssuanceWorkspace={onOpenIssuanceWorkspace}

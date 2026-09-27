@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ShieldCheck, FileWarning, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   useAdmissionStore,
@@ -16,12 +16,15 @@ import { VerificationSectionCard } from './verification/VerificationSectionCard'
 import { VerificationSidebar } from './verification/VerificationSidebar'
 import { CorrectionDialog } from './verification/CorrectionDialog'
 import { RejectionDialog } from './verification/RejectionDialog'
+import { evaluateRequiredDocs } from '../lib/documents'
 
 interface VerificationWorkspaceProps {
   appId: string
   onBack: () => void
   onApprovedNext: (appId: string) => void
   onOpenWizardToEdit: (appId: string) => void
+  /** Jump straight to the wizard's Documents step (missing-required-docs banner). */
+  onOpenWizardToDocuments?: (appId: string) => void
 }
 
 export function VerificationWorkspace({
@@ -29,6 +32,7 @@ export function VerificationWorkspace({
   onBack,
   onApprovedNext,
   onOpenWizardToEdit,
+  onOpenWizardToDocuments,
 }: VerificationWorkspaceProps) {
   const store = useAdmissionStore()
   const admissionSettings = useSchoolSettingsStore((s) => s.admissionSettings)
@@ -69,7 +73,20 @@ export function VerificationWorkspace({
     store.updateSectionReview(app.id, key, { remarks })
   }
 
+  // Required-document policy (spec §3): missing required docs block approval;
+  // deferred ones are allowed but stay visible to the officer.
+  const requiredIssues = evaluateRequiredDocs(app.formData.docStatuses || {})
+  const missingRequired = requiredIssues.filter((i) => i.kind === 'missing')
+  const deferredRequired = requiredIssues.filter((i) => i.kind === 'deferred')
+  const blockApprove = missingRequired.length > 0
+
   const handleApprove = () => {
+    if (blockApprove) {
+      toast.error('Required documents missing', {
+        description: 'Upload the missing required documents (or defer them) before approving.',
+      })
+      return
+    }
     store.approveApplication(app.id, overallRemarks)
     toast.success('Application Approved! Opening Admission Issuance Workspace...')
     onApprovedNext(app.id)
@@ -113,11 +130,47 @@ export function VerificationWorkspace({
       <VerificationHeader
         app={app}
         flaggedCount={flaggedCount}
+        sectionCount={visibleSections.length}
+        blockApprove={blockApprove}
         onOpenWizardToEdit={onOpenWizardToEdit}
         onNeedCorrection={() => setCorrectionDialogOpen(true)}
         onReject={() => setRejectDialogOpen(true)}
         onApprove={handleApprove}
       />
+
+      {/* Required-document policy banners (spec §3) */}
+      {blockApprove && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 dark:bg-rose-500/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-start gap-2.5 flex-1 min-w-0">
+            <FileWarning className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-rose-700 dark:text-rose-300">
+                {missingRequired.length} required {missingRequired.length === 1 ? 'document is' : 'documents are'} missing — approval blocked
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {missingRequired.map((m) => m.doc.name).join(', ')} must be uploaded (or explicitly deferred) before this application can be approved.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => (onOpenWizardToDocuments ? onOpenWizardToDocuments(app.id) : onOpenWizardToEdit(app.id))}
+            className="text-xs h-7 shrink-0 border-rose-300 text-rose-700 dark:text-rose-300 hover:bg-rose-500/10"
+          >
+            Open Documents
+          </Button>
+        </div>
+      )}
+      {!blockApprove && deferredRequired.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10 px-4 py-3 flex items-start gap-2.5">
+          <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800 dark:text-amber-200">
+            <strong>{deferredRequired.length} required {deferredRequired.length === 1 ? 'document' : 'documents'} deferred:</strong>{' '}
+            {deferredRequired.map((d) => d.doc.name).join(', ')} — submission permitted, but must be received before final enrollment.
+          </p>
+        </div>
+      )}
 
       {/* Main Grid: Section Checklist */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -125,10 +178,10 @@ export function VerificationWorkspace({
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm tracking-tight flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              {visibleSections.length}-Section Official Verification Checklist
+              {visibleSections.length}-Section Verification Checklist
             </h3>
             <span className="text-xs text-muted-foreground font-mono">
-              {visibleSections.length - flaggedCount} / {visibleSections.length} Sections Verified
+              {visibleSections.length - flaggedCount} / {visibleSections.length} Verified
             </span>
           </div>
 

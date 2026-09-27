@@ -10,6 +10,13 @@ import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import { useDirtyState } from '@/components/principal/modules/shared/use-settings-dirty'
 import { FIELD_SECTIONS } from './types'
 
+/**
+ * FieldRow — FIELD · VISIBILITY · REQUIRED (spec §10).
+ *
+ * Invariant: Required can only be ON when Visible is ON. Turning Visible
+ * OFF automatically turns Required OFF (never an impossible state).
+ * Mobile: the switches stack under the field label instead of squeezing.
+ */
 function FieldRow({
   label, visible, required, onToggleVisible, onToggleRequired,
 }: {
@@ -20,17 +27,27 @@ function FieldRow({
   onToggleRequired: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3 border-t border-border/40 first:border-t-0">
-      <p className="text-sm text-foreground flex-1 min-w-0 truncate">{label}</p>
-      <div className="flex items-center gap-5 shrink-0">
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <Switch checked={visible} onCheckedChange={onToggleVisible} />
-          <span className={cn('text-[11px]', visible ? 'text-foreground' : 'text-muted-foreground')}>Visible</span>
-        </label>
-        <label className={cn('flex items-center gap-1.5', required ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')}>
-          <Switch disabled={!visible} checked={required} onCheckedChange={onToggleRequired} />
-          <span className={cn('text-[11px]', required ? 'text-foreground' : 'text-muted-foreground')}>Required</span>
-        </label>
+    <div className="py-3 border-t border-border/40 first:border-t-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <p className="text-sm text-foreground flex-1 min-w-0 truncate" title={label}>{label}</p>
+        <div className="flex items-center gap-4 sm:gap-6 shrink-0 sm:pr-1">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Switch checked={visible} onCheckedChange={onToggleVisible} aria-label={`${label} visible`} />
+            <span className={cn('text-[11px] w-11', visible ? 'text-foreground font-medium' : 'text-muted-foreground')}>Visible</span>
+          </label>
+          <label
+            className={cn('flex items-center gap-2 select-none', visible ? 'cursor-pointer' : 'cursor-not-allowed')}
+            title={visible ? undefined : 'Required needs Visible to be enabled first'}
+          >
+            <Switch
+              disabled={!visible}
+              checked={required && visible}
+              onCheckedChange={onToggleRequired}
+              aria-label={`${label} required`}
+            />
+            <span className={cn('text-[11px] w-13', required && visible ? 'text-foreground font-medium' : 'text-muted-foreground')}>Required</span>
+          </label>
+        </div>
       </div>
     </div>
   )
@@ -51,16 +68,22 @@ export function FieldRulesTab() {
   )
 
   const save = useCallback(async () => {
-    store.updateAdmissionSettings({ fieldRules: draft })
+    // Sanitize on save: Required implies Visible (spec §10 — no impossible states).
+    store.updateAdmissionSettings({
+      fieldRules: draft.map((r) => ({ ...r, required: r.required && r.visible })),
+    })
   }, [draft, store])
 
   const discard = useCallback(() => { setDraft(initial) }, [initial])
 
   useDirtyState('admission-fields', dirty, save, discard)
 
+  // Cascade rule: turning Visible OFF forces Required OFF immediately.
   const toggleVisible = (fieldKey: string) => {
     setDraft((prev) => prev.map((r) =>
-      r.fieldKey === fieldKey ? { ...r, visible: !r.visible } : r
+      r.fieldKey === fieldKey
+        ? { ...r, visible: !r.visible, required: !r.visible ? false : r.required }
+        : r
     ))
   }
   const toggleRequired = (fieldKey: string) => {
@@ -83,11 +106,23 @@ export function FieldRulesTab() {
 
   return (
     <SettingsCard>
+      {/* Column header — makes the FIELD / VISIBILITY / REQUIRED relationship obvious (spec §10) */}
+      <div className="hidden sm:flex items-center justify-end gap-6 pr-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 border-b border-border/30">
+        <span className="w-11 text-center">Visibility</span>
+        <span className="w-13 text-center">Required</span>
+      </div>
+
       {FIELD_SECTIONS.map((meta, idx) => {
         const rules = grouped[meta.id] || []
         if (rules.length === 0) return null
         return (
-          <SettingsCardSection key={meta.id} defaultOpen={idx === 0} icon={meta.icon} title={meta.title}>
+          <SettingsCardSection
+            key={meta.id}
+            defaultOpen={idx === 0}
+            icon={meta.icon}
+            title={meta.title}
+            description={meta.description}
+          >
             {rules.map((rule) => (
               <FieldRow
                 key={rule.fieldKey}
@@ -120,6 +155,10 @@ export function FieldRulesTab() {
           </SettingsCardSection>
         )
       })}
+
+      <p className="text-[11px] text-muted-foreground px-1 pt-1">
+        A field must be visible before it can be required — turning visibility off clears the required flag.
+      </p>
     </SettingsCard>
   )
 }

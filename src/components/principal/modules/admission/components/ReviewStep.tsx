@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  User, Users, MapPin, GraduationCap, School as SchoolIcon, Bus,
+  User, Users, MapPin, GraduationCap, School as SchoolIcon, Bus, FileText,
   Pencil, ChevronDown,
 } from 'lucide-react'
 import { school } from '@/lib/mock/school'
@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import {
   useAdmissionFeatureFlags,
 } from '../lib/admission-utils'
+import { REQUIRED_DOCS, OPTIONAL_DOCS, summarizeDocGroup } from '../lib/documents'
 import type { FormData } from '../constants'
 
 export function ReviewStep({ data, flags, onJumpTo }: { data: FormData; flags: ReturnType<typeof useAdmissionFeatureFlags>; set: <K extends keyof FormData>(k: K, v: FormData[K]) => void; onJumpTo: (step: number) => void }) {
@@ -31,6 +32,14 @@ export function ReviewStep({ data, flags, onJumpTo }: { data: FormData; flags: R
       return next
     })
   }
+
+  // Documents summary for the final review (spec §3 — the officer sees
+  // required/optional document state before submitting).
+  const verificationOn = !!flags.enableDocumentVerification
+  const reqDocs = summarizeDocGroup(REQUIRED_DOCS, data.docStatuses, verificationOn)
+  const optDocs = summarizeDocGroup(OPTIONAL_DOCS, data.docStatuses, verificationOn)
+  const reqMissing = reqDocs.notUploaded
+  const reqDeferred = reqDocs.deferred
 
   const sections = [
     { id: 'Personal', step: 1, icon: User, rows: [
@@ -66,6 +75,10 @@ export function ReviewStep({ data, flags, onJumpTo }: { data: FormData; flags: R
       { label: 'Transport', value: data.transportRequired ? data.transportRoute || 'Yes' : 'No' },
       ...(data.hostelRequired ? [{ label: 'Hostel', value: data.hostelRoomType || 'Yes' }] : []),
     ]}] : []),
+    { id: 'Documents', step: 9, icon: FileText, rows: [
+      { label: 'Required', value: `${reqDocs.uploaded}/${reqDocs.total} uploaded${reqDeferred > 0 ? ` · ${reqDeferred} deferred` : ''}${reqMissing > 0 ? ` · ${reqMissing} missing` : ''}` },
+      { label: 'Optional', value: `${optDocs.uploaded}/${optDocs.total} uploaded` },
+    ]},
   ]
 
   return (

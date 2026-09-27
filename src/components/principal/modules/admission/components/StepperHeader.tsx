@@ -1,15 +1,18 @@
 'use client'
 
 /**
- * Stepper Header — the horizontal scrollable wizard step nav.
- * Extracted from the original admission.tsx monolith (Task ID: 21).
+ * Stepper Header — wizard step navigation.
  *
- * Auto-scrolls horizontally to keep the current step centered.
+ * Desktop (≥sm): the full horizontal stepper with completed/current/future
+ * states, auto-scrolled to keep the current step centered.
+ * Mobile (<sm): a compact "Step 3 of 9 · Class" indicator with chevrons
+ * (spec §18 — never a cramped horizontal stepper on small screens).
  */
 import { RefObject } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
+import { cn } from '@/lib/utils'
 
 export interface WizardStep {
   id: number
@@ -30,11 +33,59 @@ export function StepperHeader({
   stepperScrollRef: RefObject<HTMLDivElement | null>
   onSelect: (id: number) => void
 }) {
+  const currentStep = visibleSteps[currentVisibleIndex] ?? visibleSteps[0]
+  const goPrev = () => {
+    if (currentVisibleIndex > 0) onSelect(visibleSteps[currentVisibleIndex - 1].id)
+  }
+  const goNext = () => {
+    if (currentVisibleIndex < visibleSteps.length - 1) onSelect(visibleSteps[currentVisibleIndex + 1].id)
+  }
+
   return (
-    <GlassCard className="p-4 sm:p-6 pt-5 sm:pt-6 overflow-visible shadow-lg border-border/80">
+    <GlassCard className="overflow-visible shadow-lg border-border/80">
+      {/* ── Mobile: compact step indicator (spec §18) ── */}
+      <div className="sm:hidden flex items-center justify-between gap-2 p-3">
+        <button
+          type="button"
+          onClick={goPrev}
+          disabled={currentVisibleIndex === 0}
+          aria-label="Previous step"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground disabled:opacity-40 hover:bg-muted/50 transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="flex flex-col items-center min-w-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+            Step {currentVisibleIndex + 1} of {visibleSteps.length}
+          </span>
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={currentStep?.id}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+              className="text-sm font-semibold text-foreground truncate"
+            >
+              {currentStep?.label}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+        <button
+          type="button"
+          onClick={goNext}
+          disabled={currentVisibleIndex >= visibleSteps.length - 1}
+          aria-label="Next step"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground disabled:opacity-40 hover:bg-muted/50 transition-colors"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* ── Desktop: full horizontal stepper ── */}
       <div
         ref={stepperScrollRef}
-        className="flex items-center overflow-x-auto pt-2 pb-3 gap-2 sm:gap-3 no-scrollbar overflow-y-visible scroll-smooth"
+        className="hidden sm:flex items-center overflow-x-auto pt-5 pb-3 px-6 gap-2 sm:gap-3 no-scrollbar overflow-y-visible scroll-smooth"
       >
         {visibleSteps.map((s, i) => {
           const StepIcon = s.icon
@@ -80,9 +131,10 @@ export function StepperHeader({
                   </AnimatePresence>
                 </motion.div>
                 <span
-                  className={`text-[10px] sm:text-xs font-medium whitespace-nowrap transition-colors ${
-                    isCurrent ? 'text-primary font-bold' : isCompleted ? 'text-foreground' : 'text-muted-foreground'
-                  }`}
+                  className={cn(
+                    'text-[10px] sm:text-xs font-medium whitespace-nowrap transition-colors',
+                    isCurrent ? 'text-primary font-bold' : isCompleted ? 'text-foreground' : 'text-muted-foreground',
+                  )}
                 >
                   {s.label}
                 </span>

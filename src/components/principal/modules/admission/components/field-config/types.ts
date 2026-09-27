@@ -73,14 +73,16 @@ export interface FieldSectionMeta {
   id: string
   title: string
   icon: LucideIcon
+  /** One short contextual line (spec §11 — max one line). */
+  description?: string
 }
 
 export const FIELD_SECTIONS: FieldSectionMeta[] = [
-  { id: 'Personal', title: 'Personal', icon: Users },
-  { id: 'Parents', title: 'Parents', icon: Users },
-  { id: 'Previous School', title: 'Previous School', icon: Building2 },
-  { id: 'Medical', title: 'Medical', icon: Stethoscope },
-  { id: 'Transport & Hostel', title: 'Hostel & Transport', icon: Bus },
+  { id: 'Personal', title: 'Personal', icon: Users, description: 'Identity details collected on the admission form' },
+  { id: 'Parents', title: 'Parents', icon: Users, description: 'Guardian identity and contact fields' },
+  { id: 'Previous School', title: 'Previous School', icon: Building2, description: 'Academic history from the last school' },
+  { id: 'Medical', title: 'Medical', icon: Stethoscope, description: 'Health information collected during admission' },
+  { id: 'Transport & Hostel', title: 'Hostel & Transport', icon: Bus, description: 'Facility opt-in and preference fields' },
 ]
 
 /* ------------------------------------------------------------------ */

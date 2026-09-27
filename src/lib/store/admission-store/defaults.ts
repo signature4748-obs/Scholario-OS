@@ -92,7 +92,8 @@ export const defaultInitialFormData: AdmissionFormData = {
   hostelRoomType: '',
 
   docStatuses: {
-    birth_cert: { status: 'uploaded', fileName: 'Birth_Certificate_Ira.pdf', ocrConfidence: 99, verifiedBy: 'AI Vision OCR System', verificationTime: 'Today, 10:20 AM' },
+    // Keys match the canonical document catalogue (lib/documents.ts).
+    birthCert: { status: 'uploaded', fileName: 'Birth_Certificate_Ira.pdf', ocrConfidence: 99, verifiedBy: 'AI Vision OCR System', verificationTime: 'Today, 10:20 AM' },
     aadhaar: { status: 'uploaded', fileName: 'Student_Parent_Aadhaar.pdf', ocrConfidence: 97, verifiedBy: 'AI Vision OCR System', verificationTime: 'Today, 10:21 AM' },
     tc: { status: 'uploaded', fileName: 'TC_Original_Signed.pdf', ocrConfidence: 98, verifiedBy: 'AI Vision OCR System', verificationTime: 'Today, 10:22 AM' },
     marksheet: { status: 'uploaded', fileName: 'UKG_Progress_Report.pdf', ocrConfidence: 96, verifiedBy: 'AI Vision OCR System', verificationTime: 'Today, 10:22 AM' },

@@ -59,6 +59,17 @@ export function AdmissionModule() {
   const [isOcrModalOpen, setIsOcrModalOpen] = useState(false)
   const [isBlankFormModalOpen, setIsBlankFormModalOpen] = useState(false)
 
+  /** Load an existing application into the wizard editor (edit / resume). */
+  const loadApplicationIntoWizard = (appId: string) => {
+    const appToEdit = admissionStore.applications.find((a) => a.id === appId)
+    if (appToEdit) {
+      setData({ ...initialData, ...appToEdit.formData, feeState: appToEdit.formData.feeState || initialData.feeState })
+    } else {
+      setData(initialData)
+    }
+    setViewMode('form')
+  }
+
   return (
     <PageTransition className="space-y-6">
       {/* Wizard view: show back button + step indicator */}
@@ -93,8 +104,13 @@ export function AdmissionModule() {
           }}
           onOpenWizardToEdit={(appId) => {
             setActiveWorkspace('none')
-            setViewMode('form')
+            loadApplicationIntoWizard(appId)
             setStep(1)
+          }}
+          onOpenWizardToDocuments={(appId) => {
+            setActiveWorkspace('none')
+            loadApplicationIntoWizard(appId)
+            setStep(9)
           }}
         />
       )}
@@ -111,8 +127,7 @@ export function AdmissionModule() {
         <AdmissionsDashboard
           onOpenWizard={(appId) => {
             if (appId) {
-              const appToEdit = admissionStore.applications.find((a) => a.id === appId)
-              if (appToEdit) setData({ ...initialData, ...appToEdit.formData, feeState: appToEdit.formData.feeState || initialData.feeState })
+              loadApplicationIntoWizard(appId)
             } else {
               setData(initialData)
             }

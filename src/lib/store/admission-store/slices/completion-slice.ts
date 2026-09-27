@@ -1,7 +1,99 @@
 import type { StateCreator } from 'zustand'
-import type { AdmissionStatus, AdmissionStoreState } from '../types'
+import type { AdmissionStatus, AdmissionStoreState, AdmissionApplication } from '../types'
 import { students, Student } from '@/lib/mock/students'
 import { useStudentsStore } from '@/lib/store/students-store'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
+import { useCurrentUser } from '@/lib/store/current-user-store'
+import { computeAdmissionFeeSummary } from '@/components/principal/modules/admission/lib/fee-summary'
+
+/**
+ * Match an admission form class ("Class 3", section "A") to a canonical DB
+ * class ("Grade 3 - A"). Admission forms and the DB roster use different
+ * naming styles, so matching is level-based: extract the numeric grade from
+ * both names, then prefer an exact section match.
+ */
+function matchDbClass(
+  dbClasses: Array<{ id: string; name: string; section?: string | null }>,
+  className: string,
+  section: string,
+): { id: string } | undefined {
+  const level = (className.match(/\d+/) || [])[0]
+  if (!level) return undefined
+  const sameLevel = dbClasses.filter((c) => (c.name.match(/\d+/) || [])[0] === level)
+  if (sameLevel.length === 0) return undefined
+  return (
+    sameLevel.find((c) => (c.section || '').toUpperCase() === section.toUpperCase()) ||
+    sameLevel.find((c) => c.name.includes(section)) ||
+    sameLevel[0]
+  )
+}
+
+/**
+ * Canonical server enrolment (spec §28/§29): the completed admission
+ * creates the student in the SCHOOL DATABASE (POST /api/students) so the
+ * Principal directory, teacher rosters, attendance, exams, fees and
+ * timetable all resolve the SAME canonical student. Best-effort — the
+ * admission record itself is already persisted when this runs.
+ * Returns the created account's email (the working portal login).
+ */
+async function enrollStudentOnServer(
+  app: Pick<AdmissionApplication, 'applicantName' | 'formData'>,
+  details: { admissionNo: string; rollNo: string },
+  tempPassword: string,
+): Promise<string | null> {
+  const f = app.formData
+  const first = (f.firstName || 'student').trim().toLowerCase().replace(/[^a-z0-9]+/g, '.')
+  const last = (f.lastName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '.')
+  // Email domain follows the school of the signed-in admission officer.
+  const officerEmail = useCurrentUser.getState().me?.email || ''
+  const domain = officerEmail.includes('@') ? officerEmail.split('@')[1] : 'greenwood.edu.in'
+  const base = `${first}${last ? '.' + last : ''}`.replace(/\.\./g, '.')
+
+  try {
+    // Resolve the canonical DB class by grade level + section (school-scoped).
+    // API responses are wrapped: { ok: true, data: [...] }.
+    const classesRes = await fetch('/api/classes?counts=1', { credentials: 'same-origin' })
+    const classesJson = classesRes.ok ? await classesRes.json().catch(() => null) : null
+    const classes: Array<{ id: string; name: string; section?: string | null }> = Array.isArray(classesJson)
+      ? classesJson
+      : Array.isArray(classesJson?.data)
+      ? classesJson.data
+      : []
+    const cls = matchDbClass(classes, f.className || '', f.section || 'A')
+
+    // Create the student user account with the generated portal password.
+    // Email collisions (siblings) resolve with a numeric suffix.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const email = attempt === 0 ? `${base}@${domain}` : `${base}${attempt + 1}@${domain}`
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          name: app.applicantName,
+          email,
+          password: tempPassword,
+          classId: cls?.id || undefined,
+          rollNo: details.rollNo,
+          admissionNo: details.admissionNo,
+          guardianName: f.fatherName || f.motherName || undefined,
+          guardianPhone: f.fatherPhone || f.motherPhone || undefined,
+          dob: f.dob || undefined,
+          gender: f.gender || undefined,
+          bloodGroup: f.bloodGroup || undefined,
+          address: f.currentAddress || undefined,
+        }),
+      })
+      if (res.ok) return email
+      const body = await res.json().catch(() => ({}))
+      const retryable = /email/i.test(String(body.error || '')) || res.status === 409
+      if (!retryable) return null // Non-email failure — admission already persisted.
+    }
+  } catch {
+    // Server enrolment is best-effort — never blocks the issuance flow.
+  }
+  return null
+}
 
 export const createCompletionSlice: StateCreator<
   AdmissionStoreState,
@@ -28,6 +120,36 @@ export const createCompletionSlice: StateCreator<
 
     const loginId = `${app.formData.firstName.toUpperCase()}_2026`
     const tempPassword = `Scholario@${Math.floor(Math.random() * 9000 + 1000)}`
+
+    // Canonical server enrolment (fire-and-forget): creates the student in
+    // the school DATABASE with these exact credentials; on success the
+    // record's loginId is updated to the working email address.
+    void enrollStudentOnServer(
+      { applicantName: app.applicantName, formData: app.formData },
+      { admissionNo: finalAdmissionNo, rollNo: finalRollNo },
+      tempPassword,
+    ).then((accountEmail) => {
+      if (!accountEmail) return
+      set((s) => ({
+        applications: s.applications.map((item) =>
+          item.id === appId
+            ? { ...item, generatedCredentials: { ...item.generatedCredentials!, loginId: accountEmail } }
+            : item
+        ),
+      }))
+    })
+
+    // Canonical fee derivation (spec §28): the new student's fee record uses
+    // the SAME fee engine as the wizard + issuance documents — no fake totals.
+    const settingsState = useSchoolSettingsStore.getState()
+    const feeSummary = computeAdmissionFeeSummary(
+      app.formData.className || '',
+      app.feeData,
+      {
+        enableTransport: settingsState.admissionSettings.featureFlags.enableTransport,
+        enableHostel: settingsState.admissionSettings.featureFlags.enableHostel,
+      },
+    )
 
     const updatedApps = state.applications.map((item) =>
       item.id === appId
@@ -87,9 +209,9 @@ export const createCompletionSlice: StateCreator<
       previousSchool: app.formData.previousSchool || 'N/A',
       status: 'Active',
       attendance: 100,
-      feeStatus: 'Paid',
-      feePaid: 86000,
-      feeTotal: 86000,
+      feeStatus: feeSummary.initialInstallment >= feeSummary.netTotal ? 'Paid' : 'Partial',
+      feePaid: feeSummary.initialInstallment,
+      feeTotal: feeSummary.netTotal,
       transport: app.formData.transportRequired,
       hostel: app.formData.hostelRequired,
       scholarship: 0,
@@ -101,6 +223,30 @@ export const createCompletionSlice: StateCreator<
     // Push to mock students array if present
     if (students && !students.some((s) => s.id === newStudent.id || s.admissionNo === newStudent.admissionNo)) {
       students.unshift(newStudent)
+    }
+
+    // ─── SEAT LEDGER (spec §15) ───────────────────────────────────────
+    // Issuing the admission consumes one seat in the allocated class.
+    // Class names differ in style across sources ("Class 9" ledger vs
+    // "Grade 9" form), so the match is level-based. Rejected/restored
+    // admissions never touched the counter (nothing is incremented before
+    // issuance), so no leak is possible.
+    try {
+      const level = (app.formData.className || '').match(/\d+/)?.[0]
+      const seatRow = level
+        ? settingsState.admissionSettings.seatCapacity.find(
+            (c) => (c.className.match(/\d+/) || [])[0] === level,
+          )
+        : settingsState.admissionSettings.seatCapacity.find(
+            (c) => c.className === app.formData.className,
+          )
+      if (seatRow) {
+        settingsState.updateSeatCapacity(seatRow.className, {
+          enrolled: seatRow.enrolled + 1,
+        })
+      }
+    } catch {
+      // Seat ledger is best-effort — never blocks the issuance itself.
     }
 
     // ─── CONNECTED ROSTER ENROLMENT ────────────────────────────────────

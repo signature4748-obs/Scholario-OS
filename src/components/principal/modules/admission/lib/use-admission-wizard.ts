@@ -18,6 +18,7 @@ import {
   checkDuplicates,
   type DuplicateMatch,
 } from './admission-utils'
+import { evaluateRequiredDocs } from './documents'
 import {
   STEPS,
   createBlankData,
@@ -151,6 +152,26 @@ export function useAdmissionWizard() {
   const handleSubmit = () => {
     const formDataPartial: Partial<FormData> = { ...data }
     const feeDataPartial: Partial<FeeDataState> = data.feeState || {}
+
+    // Required-document policy (spec §3): a REQUIRED document that is
+    // missing (not uploaded, not deferred) blocks submission. Deferred
+    // ("Submit Later") is the explicit workflow escape hatch; OPTIONAL
+    // documents never block.
+    const requiredIssues = evaluateRequiredDocs(data.docStatuses)
+    const missing = requiredIssues.filter((i) => i.kind === 'missing')
+    if (missing.length > 0) {
+      toast.error(`${missing.length} required ${missing.length === 1 ? 'document is' : 'documents are'} missing`, {
+        description: `${missing.map((m) => m.doc.name).join(', ')} — upload them or choose "Submit Later" before submitting.`,
+      })
+      setStep(9) // Documents step
+      return
+    }
+    const deferred = requiredIssues.filter((i) => i.kind === 'deferred')
+    if (deferred.length > 0) {
+      toast.info('Submitting with deferred required documents', {
+        description: `${deferred.map((d) => d.doc.name).join(', ')} deferred by the admission desk — must be received before final enrollment.`,
+      })
+    }
 
     // Check duplicates only at submit time
     if (dupConfig.enabled) {

@@ -4,28 +4,32 @@ import { Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { GlassCard } from '@/components/shared/ui'
 import { formatDate, formatINR } from '@/lib/format'
+import { useSchoolProfile } from '@/lib/school-profile'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import type { IssuanceArtifacts } from './letter-data'
+import type { AdmissionFeeSummary } from '../../lib/fee-summary'
 
 interface FeeReceiptTabProps {
   app: AdmissionApplication
   artifacts: IssuanceArtifacts
+  feeSummary: AdmissionFeeSummary
 }
 
-export function FeeReceiptTab({ app, artifacts }: FeeReceiptTabProps) {
-  const { admissionNo } = artifacts
+export function FeeReceiptTab({ app, artifacts, feeSummary }: FeeReceiptTabProps) {
+  const { admissionNo, receiptNo } = artifacts
   const formData = app.formData
+  const profile = useSchoolProfile()
 
   return (
     <GlassCard className="p-6 max-w-2xl mx-auto space-y-6 border">
-      <div className="flex justify-between items-start border-b pb-4">
+      <div className="flex justify-between items-start border-b pb-4 gap-3">
         <div>
           <h3 className="font-extrabold text-lg">Official Fee Receipt</h3>
-          <p className="text-xs text-muted-foreground">Demo School of Scholario · Accounts Office</p>
+          <p className="text-xs text-muted-foreground">{profile.name || 'Demo School of Scholario'} · Accounts Office</p>
         </div>
         <div className="text-right">
-          <span className="text-xs font-mono font-bold block">Receipt No: REC-2026-9921</span>
-          <span className="text-xs text-muted-foreground">Date: {formatDate(new Date().toISOString().split('T')[0])}</span>
+          <span className="text-xs font-mono font-bold block">{receiptNo}</span>
+          <span className="text-xs text-muted-foreground">Date: {formatDate(app.lastUpdatedDate || new Date().toISOString().split('T')[0])}</span>
         </div>
       </div>
 
@@ -48,22 +52,26 @@ export function FeeReceiptTab({ app, artifacts }: FeeReceiptTabProps) {
         </div>
       </div>
 
+      {/* Canonical fee line items (spec §28 — derived from the school fee engine) */}
       <div className="border rounded-xl overflow-hidden text-xs">
         <div className="grid grid-cols-12 p-2.5 bg-muted/60 font-bold uppercase text-[10px]">
           <div className="col-span-8">Fee Particulars</div>
           <div className="col-span-4 text-right">Amount (INR)</div>
         </div>
-        <div className="divide-y p-2.5 space-y-1.5">
-          <div className="flex justify-between"><span>Admission Fee (One-time)</span><span>₹15,000</span></div>
-          <div className="flex justify-between"><span>Tuition Fee (Quarterly)</span><span>₹45,000</span></div>
-          <div className="flex justify-between"><span>Annual Activity & Development</span><span>₹8,000</span></div>
-          {formData.transportRequired && (
-            <div className="flex justify-between"><span>Transport Fee (Quarterly)</span><span>₹18,000</span></div>
-          )}
-          <div className="flex justify-between text-emerald-600 font-semibold"><span>Early Bird Discount Concession</span><span>-₹10,000</span></div>
-          <div className="flex justify-between font-extrabold text-sm pt-2 border-t">
-            <span>Total Amount Paid</span>
-            <span className="text-emerald-700 dark:text-emerald-300">{formatINR(76000)}</span>
+        <div className="divide-y p-2.5 space-y-0">
+          {feeSummary.lines.map((line) => (
+            <div key={line.label} className={`flex justify-between py-1.5 ${line.kind === 'discount' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : ''}`}>
+              <span>{line.label}</span>
+              <span className="tabular-nums">{line.kind === 'discount' ? `−${formatINR(line.amount).replace('−', '')}` : formatINR(line.amount)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between font-extrabold text-sm pt-2.5 border-t mt-1.5">
+            <span>Net Amount Payable</span>
+            <span className="text-emerald-700 dark:text-emerald-300">{formatINR(feeSummary.netTotal)}</span>
+          </div>
+          <div className="flex justify-between text-[11px] text-muted-foreground">
+            <span>First installment due at admission</span>
+            <span className="tabular-nums">{formatINR(feeSummary.initialInstallment)}</span>
           </div>
         </div>
       </div>

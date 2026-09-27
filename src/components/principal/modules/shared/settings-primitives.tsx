@@ -101,11 +101,13 @@ export function SettingsCard({
 
 /* SettingsCardSection — collapsible row with icon + title + chevron */
 export function SettingsCardSection({
-  title, icon: Icon, defaultOpen = false, children,
+  title, icon: Icon, defaultOpen = false, description, children,
 }: {
   title: string
   icon?: ComponentType<{ className?: string }>
   defaultOpen?: boolean
+  /** One short contextual line under the group title (max ~60 chars). */
+  description?: string
   children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -114,7 +116,12 @@ export function SettingsCardSection({
       <CollapsibleTrigger asChild>
         <button type="button" className="w-full flex items-center gap-3 py-4 text-left">
           {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
-          <p className="text-base font-medium text-foreground flex-1">{title}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-medium text-foreground">{title}</p>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">{description}</p>
+            )}
+          </div>
           <ChevronRight
             className={cn(
               'h-4 w-4 text-muted-foreground transition-transform shrink-0',

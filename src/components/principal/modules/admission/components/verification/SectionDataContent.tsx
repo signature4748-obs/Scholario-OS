@@ -1,13 +1,62 @@
 'use client'
 
-import { toast } from 'sonner'
-import { CompactEnterpriseDocCard } from '../CompactEnterpriseDocCard'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
 import type { SectionKey } from '@/lib/store/admission-store'
+import { ADMISSION_DOCS } from '../../lib/documents'
+import type { DocStatus } from '../../types'
 
 interface SectionDataContentProps {
   sectionKey: SectionKey
   app: AdmissionApplication
+}
+
+/** Compact read-only document status rows for the verification checklist. */
+function DocumentStatusRows({ app }: { app: AdmissionApplication }) {
+  const docStatuses = app.formData.docStatuses || {}
+  const st = (key: string): DocStatus => docStatuses[key] || { status: 'pending' }
+
+  const statusLabel = (s: DocStatus): string => {
+    if (s.status === 'later') return 'Deferred'
+    if (s.status !== 'uploaded') return 'Not Uploaded'
+    switch (s.verificationStatus) {
+      case 'verified': return 'Verified'
+      case 'rejected': return 'Rejected'
+      case 'replace_requested': return 'Replace Requested'
+      default: return 'Uploaded · Pending Review'
+    }
+  }
+  const statusClass = (s: DocStatus): string => {
+    if (s.status === 'later') return 'text-amber-600 dark:text-amber-400'
+    if (s.status !== 'uploaded') return 'text-muted-foreground'
+    switch (s.verificationStatus) {
+      case 'verified': return 'text-emerald-600 dark:text-emerald-400'
+      case 'rejected': return 'text-rose-600 dark:text-rose-400'
+      case 'replace_requested': return 'text-violet-600 dark:text-violet-400'
+      default: return 'text-amber-600 dark:text-amber-400'
+    }
+  }
+
+  return (
+    <div className="space-y-1 w-full">
+      {ADMISSION_DOCS.map((doc) => {
+        const s = st(doc.key)
+        return (
+          <div key={doc.key} className="flex items-center justify-between gap-3 text-xs">
+            <span className="truncate">
+              <strong className="text-foreground">{doc.name}</strong>
+              <span className={doc.mandatory ? 'text-rose-600 dark:text-rose-400 ml-1.5' : 'text-muted-foreground ml-1.5'}>
+                {doc.mandatory ? 'Required' : 'Optional'}
+              </span>
+            </span>
+            <span className={`shrink-0 font-medium ${statusClass(s)}`}>
+              {statusLabel(s)}
+              {s.status === 'uploaded' && s.ocrConfidence ? ` · ${s.ocrConfidence}% OCR` : ''}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 export function SectionDataContent({ sectionKey, app }: SectionDataContentProps) {
@@ -79,15 +128,7 @@ export function SectionDataContent({ sectionKey, app }: SectionDataContentProps)
   }
 
   if (sectionKey === 'documents') {
-    return (
-      <div className="pt-1">
-        <CompactEnterpriseDocCard
-          doc={{ key: 'birth_cert', name: 'Birth Certificate & TC', description: 'Mandatory Certificate Verification Matrix', mandatory: true }}
-          statusState={{ status: 'uploaded', fileName: 'Birth_Certificate.pdf', ocrConfidence: 98, verifiedBy: 'AI OCR', verificationTime: '10:20 AM' }}
-          onUpdateStatus={() => toast.info('OCR re-scanned successfully.')}
-        />
-      </div>
-    )
+    return <DocumentStatusRows app={app} />
   }
 
   if (sectionKey === 'photo') {

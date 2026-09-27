@@ -1,5 +1,6 @@
 import { AdmissionLetterData } from '../../../OfficialAdmissionLetter'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
+import type { AdmissionFeeSummary } from '../../lib/fee-summary'
 
 export interface IssuanceArtifacts {
   admissionNo: string
@@ -9,9 +10,13 @@ export interface IssuanceArtifacts {
   loginId: string
   tempPassword: string
   letterData: AdmissionLetterData
+  receiptNo: string
 }
 
-export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtifacts {
+export function buildIssuanceArtifacts(
+  app: AdmissionApplication,
+  feeSummary?: AdmissionFeeSummary,
+): IssuanceArtifacts {
   const formData = app.formData
   const isCompleted = app.status === 'Completed'
 
@@ -22,6 +27,35 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
 
   const loginId = isCompleted && app.generatedCredentials ? app.generatedCredentials.loginId : `${formData.firstName.toUpperCase()}_2026`
   const tempPassword = isCompleted && app.generatedCredentials ? app.generatedCredentials.tempPassword : `Scholario@2026`
+
+  // Deterministic receipt number derived from the admission number (no fake
+  // sequential counters — the same admission always yields the same receipt).
+  const receiptNo = `REC-${new Date(app.submittedDate || Date.now()).getFullYear()}-${admissionNo.replace(/[^0-9]/g, '').slice(-6) || '000001'}`
+
+  // Canonical fee breakdown (spec §28): derived from the school fee engine
+  // (computeAdmissionFeeSummary) — falls back to a minimal shape only when
+  // no summary was supplied (legacy callers).
+  const fees: AdmissionLetterData['fees'] = feeSummary
+    ? {
+        registrationFee: feeSummary.registrationFee,
+        admissionFee: feeSummary.admissionFee,
+        tuitionFee: feeSummary.tuitionFee,
+        annualCharges: feeSummary.otherHeadsTotal,
+        activityFee: feeSummary.activityKitTotal,
+        transportFee: feeSummary.transportTotal,
+        examFee: feeSummary.examTotal,
+        booksTotal: feeSummary.booksTotal,
+        discountName: feeSummary.totalDiscount > 0 ? feeSummary.discountLabel || 'Concession' : undefined,
+        discountApplied: feeSummary.totalDiscount,
+        finalPayable: feeSummary.netTotal,
+        paymentMethod: app.feeData?.paymentMethod || 'Online Banking',
+      }
+    : {
+        admissionFee: 0,
+        tuitionFee: 0,
+        finalPayable: 0,
+        paymentMethod: app.feeData?.paymentMethod || 'Online Banking',
+      }
 
   // Letter Data Assembly
   const letterData: AdmissionLetterData = {
@@ -34,9 +68,6 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
       firstName: formData.firstName,
       lastName: formData.lastName,
       dob: formData.dob,
-
-
-
       photoUrl: undefined,
     },
     parents: {
@@ -62,16 +93,7 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
       previousSchool: formData.previousSchool,
       previousBoard: formData.previousBoard,
     },
-    fees: {
-      totalAnnualFee: 86000,
-      admissionFee: 15000,
-      tuitionFee: 45000,
-      activityFee: 8000,
-      transportFee: formData.transportRequired ? 18000 : 0,
-      discountApplied: 10000,
-      finalPayable: 76000,
-      paymentMethod: app.feeData?.paymentMethod || 'Online Banking',
-    },
+    fees,
     qrCodeData: `https://verify.demoschool.edu/admission/${admissionNo}`,
     digitalVerificationId: `VER-2026-HASH-${admissionNo.slice(-4)}-CBSE`,
   }
@@ -84,5 +106,6 @@ export function buildIssuanceArtifacts(app: AdmissionApplication): IssuanceArtif
     loginId,
     tempPassword,
     letterData,
+    receiptNo,
   }
 }

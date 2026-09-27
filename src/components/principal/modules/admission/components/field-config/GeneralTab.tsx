@@ -85,42 +85,46 @@ export function GeneralTab() {
 
   return (
     <SettingsCard>
-      <SettingsCardSection title="Privacy" icon={Lock} defaultOpen>
+      <SettingsCardSection title="Privacy" icon={Lock} description="Controls what the admission letter reveals" defaultOpen>
         <ToggleRow
           label="Sensitive Data Protection"
+          helper="Hides religion, category, blood group, gender and Aadhaar from issued documents"
           checked={!draft.showPersonalDataOnLetter}
           onCheckedChange={(v) => setDraft({ ...draft, showPersonalDataOnLetter: !v })}
         />
       </SettingsCardSection>
 
-      <SettingsCardSection title="Duplicate Detection" icon={SlidersHorizontal} defaultOpen>
+      <SettingsCardSection title="Duplicate Detection" icon={SlidersHorizontal} description="Warns the admission desk before a duplicate student is created" defaultOpen>
         <ToggleRow
           label="Enable Duplicate Detection"
+          helper={draft.dupEnabled
+            ? `Active checks: Aadhaar · Name + DOB · Parent phone${settings.duplicateDetection.checkKeys.address ? ' · Address' : ''}`
+            : 'OFF — applications are created without duplicate checks (explicit school choice)'}
           checked={draft.dupEnabled}
           onCheckedChange={toggle('dupEnabled')}
         />
       </SettingsCardSection>
 
-      <SettingsCardSection title="Medical" icon={Stethoscope}>
+      <SettingsCardSection title="Medical" icon={Stethoscope} description="Health information collected during admission">
         <ToggleRow label="Medical Section" checked={draft.enableMedical}
           onCheckedChange={toggle('enableMedical')} />
       </SettingsCardSection>
 
-      <SettingsCardSection title="Transport & Hostel" icon={Bus}>
+      <SettingsCardSection title="Transport & Hostel" icon={Bus} description="Facility opt-ins offered during admission">
         <ToggleRow label="Transport Facility" checked={draft.enableTransport}
           onCheckedChange={toggle('enableTransport')} />
         <ToggleRow label="Hostel Facility" checked={draft.enableHostel}
           onCheckedChange={toggle('enableHostel')} />
       </SettingsCardSection>
 
-      <SettingsCardSection title="Financial" icon={Award}>
+      <SettingsCardSection title="Financial" icon={Award} description="Concession options in the fee structure step">
         <ToggleRow label="Scholarship" checked={draft.enableScholarship}
           onCheckedChange={toggle('enableScholarship')} />
         <ToggleRow label="Fee Waiver" checked={draft.enableFeeWaiver}
           onCheckedChange={toggle('enableFeeWaiver')} />
       </SettingsCardSection>
 
-      <SettingsCardSection title="Documents" icon={FileStack}>
+      <SettingsCardSection title="Documents" icon={FileStack} description="Photos and signatures gathered at admission">
         <ToggleRow label="Student Photo" checked={draft.enableStudentPhoto}
           onCheckedChange={toggle('enableStudentPhoto')} />
         <ToggleRow label="Parent Photo" checked={draft.enableParentPhoto}
@@ -129,7 +133,7 @@ export function GeneralTab() {
           onCheckedChange={toggle('enableSignature')} />
       </SettingsCardSection>
 
-      <SettingsCardSection title="Advanced" icon={SlidersHorizontal}>
+      <SettingsCardSection title="Advanced" icon={SlidersHorizontal} description="Rejection record retention policy">
         <ToggleRow label="Custom Fields" checked={draft.enableCustomFields}
           onCheckedChange={toggle('enableCustomFields')} />
         <ValueRow label="Rejection Retention">

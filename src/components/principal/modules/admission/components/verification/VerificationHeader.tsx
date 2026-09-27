@@ -6,10 +6,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { AdmissionApplication } from '@/lib/store/admission-store'
+import { getAdmissionStatusMeta } from '@/lib/store/admission-store/status'
 
 interface VerificationHeaderProps {
   app: AdmissionApplication
   flaggedCount: number
+  /** Total visible verification sections (flag-driven). */
+  sectionCount: number
+  /** Required-document policy blocks the Approve action. */
+  blockApprove: boolean
   onOpenWizardToEdit: (appId: string) => void
   onNeedCorrection: () => void
   onReject: () => void
@@ -19,11 +24,15 @@ interface VerificationHeaderProps {
 export function VerificationHeader({
   app,
   flaggedCount,
+  sectionCount,
+  blockApprove,
   onOpenWizardToEdit,
   onNeedCorrection,
   onReject,
   onApprove,
 }: VerificationHeaderProps) {
+  const statusMeta = getAdmissionStatusMeta(app.status)
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -36,6 +45,9 @@ export function VerificationHeader({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold tracking-tight text-foreground">{app.applicantName}</h2>
               <Badge variant="outline" className="font-mono text-[10px]">{app.admissionNo}</Badge>
+              <Badge variant="outline" className={`text-[10px] font-semibold ${statusMeta.className}`} title={statusMeta.description}>
+                {statusMeta.label}
+              </Badge>
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
               <span>Class <strong className="text-foreground">{app.className} — {app.section}</strong></span>
@@ -53,7 +65,7 @@ export function VerificationHeader({
           <div className="flex items-center gap-2 text-xs">
             <span className="text-muted-foreground">Verification:</span>
             <div className="flex items-center gap-1">
-              <span className="font-bold text-emerald-600">{9 - flaggedCount}/9</span>
+              <span className="font-bold text-emerald-600">{sectionCount - flaggedCount}/{sectionCount}</span>
               <span className="text-muted-foreground">sections verified</span>
             </div>
             {flaggedCount > 0 && (
@@ -63,8 +75,8 @@ export function VerificationHeader({
             )}
           </div>
 
-          {/* Decision buttons — only 3 actions, clear hierarchy */}
-          <div className="flex items-center gap-2">
+          {/* Decision buttons — 3 actions, clear hierarchy, wrap on mobile */}
+          <div className="flex flex-wrap items-center gap-2">
             {app.status === 'Need Correction' && (
               <Button
                 variant="outline"
@@ -97,7 +109,9 @@ export function VerificationHeader({
             <Button
               size="sm"
               onClick={onApprove}
-              className="text-xs h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm"
+              disabled={blockApprove}
+              title={blockApprove ? 'Upload or defer the missing required documents first' : statusMeta.description}
+              className="text-xs h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm disabled:opacity-50"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               Approve

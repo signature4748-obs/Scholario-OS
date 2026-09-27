@@ -1,7 +1,7 @@
 'use client'
 
 import { FileText, Wallet, KeyRound, Sparkles, MessageSquare } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export type IssuanceTabKey = 'letter' | 'receipt' | 'credentials' | 'welcome' | 'dispatches'
 
@@ -10,28 +10,35 @@ interface IssuanceTabsProps {
   onTabChange: (tab: IssuanceTabKey) => void
 }
 
+/** Compact labels — full labels live in the header Documents menu. */
 const TABS: { key: IssuanceTabKey; label: string; icon: React.ElementType }[] = [
-  { key: 'letter', label: 'Official Admission Letter', icon: FileText },
-  { key: 'receipt', label: 'Official Fee Receipt', icon: Wallet },
-  { key: 'credentials', label: 'Student Portal Credentials', icon: KeyRound },
-  { key: 'welcome', label: 'Welcome & Orientation Letter', icon: Sparkles },
-  { key: 'dispatches', label: 'Multi-Channel Notifications', icon: MessageSquare },
+  { key: 'letter', label: 'Letter', icon: FileText },
+  { key: 'receipt', label: 'Receipt', icon: Wallet },
+  { key: 'credentials', label: 'Credentials', icon: KeyRound },
+  { key: 'welcome', label: 'Welcome', icon: Sparkles },
+  { key: 'dispatches', label: 'Dispatches', icon: MessageSquare },
 ]
 
 export function IssuanceTabs({ activeTab, onTabChange }: IssuanceTabsProps) {
   return (
-    <div className="flex items-center gap-2 border-b pb-2">
+    <div className="flex items-center gap-1.5 border-b pb-2 overflow-x-auto no-scrollbar" role="tablist" aria-label="Issuance documents">
       {TABS.map(({ key, label, icon: Icon }) => (
-        <Button
+        <button
           key={key}
-          size="sm"
-          variant={activeTab === key ? 'default' : 'ghost'}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === key}
           onClick={() => onTabChange(key)}
-          className={`text-xs gap-1.5 ${activeTab === key ? 'bg-emerald-600 text-white' : ''}`}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors shrink-0',
+            activeTab === key
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+          )}
         >
           <Icon className="h-3.5 w-3.5" />
           {label}
-        </Button>
+        </button>
       ))}
     </div>
   )
