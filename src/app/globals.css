@@ -501,54 +501,67 @@ button:active:not(:disabled) {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
 }
 
-input[type="date"] {
-  color-scheme: light dark;
-  position: relative;
-  cursor: pointer;
-  box-sizing: border-box !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  height: 2.25rem !important; /* 36px matches standard h-9 input */
-  max-height: 2.25rem !important;
-  padding-top: 0.25rem !important;
-  padding-bottom: 0.25rem !important;
-  padding-left: 0.75rem !important;
-  padding-right: 0.5rem !important;
-  font-size: 0.875rem !important; /* 14px text-sm */
-  line-height: 1.25rem !important;
-  vertical-align: middle !important;
-  margin: 0 !important;
-  overflow: hidden !important;
-}
+/*
+ * Native <input type="date"> normalization — Safari/iPad-safe.
+ * Lives in @layer base so Tailwind height/size utilities (h-8, text-xs, …)
+ * can override these defaults per control; the base default matches the
+ * standard h-9 (36px) input so unclassed date fields stay consistent with
+ * their neighbours. The ::-webkit pseudo-elements keep !important because
+ * no utility ever targets them and Safari's intrinsic sizing must not
+ * inflate the control.
+ */
+@layer base {
+  input[type="date"] {
+    color-scheme: light dark;
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    cursor: pointer;
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
+    height: 2.25rem; /* 36px — matches h-9; override with h-8/h-10 etc. */
+    max-height: 2.5rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    padding-left: 0.75rem;
+    padding-right: 0.5rem;
+    font-size: 0.875rem; /* 14px text-sm; override with text-xs etc. */
+    line-height: 1.25rem;
+    vertical-align: middle;
+    margin: 0;
+    overflow: hidden;
+  }
 
-input[type="date"]::-webkit-date-and-time-value {
-  text-align: left;
-  min-height: 1.25rem !important;
-  height: 1.25rem !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  display: flex !important;
-  align-items: center !important;
-}
+  input[type="date"]::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.25rem !important;
+    height: 1.25rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
 
-input[type="date"]::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  opacity: 0.7;
-  filter: invert(0.5);
-  transition: opacity 0.2s ease;
-  width: 1rem !important;
-  height: 1rem !important;
-  padding: 0 !important;
-  margin: 0 0 0 0.25rem !important;
-  flex-shrink: 0 !important;
-}
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.7;
+    filter: invert(0.5);
+    transition: opacity 0.2s ease;
+    width: 1rem !important;
+    height: 1rem !important;
+    padding: 0 !important;
+    margin: 0 0 0 0.25rem !important;
+    flex-shrink: 0 !important;
+  }
 
-input[type="date"]::-webkit-calendar-picker-indicator:hover {
-  opacity: 1;
-}
+  input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
 
-.dark input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.9);
+  .dark input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.9);
+  }
 }
 
 

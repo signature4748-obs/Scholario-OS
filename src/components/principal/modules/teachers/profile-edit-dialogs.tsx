@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { DatePicker } from '@/components/ui/date-picker'
 import { toast } from 'sonner'
 import { departments } from '@/lib/mock/school'
 import { useTeachersStore, type TeacherRecord, type PositionAssignment } from '@/lib/store/teachers-store'
@@ -235,7 +236,17 @@ export function EmploymentEditDialog({ teacher, open, onClose }: { teacher: Teac
           </div>
           <div>
             <Label className="text-xs">Joining date</Label>
-            <Input type="date" value={draft.joiningDate} onChange={(e) => setDraft((d) => ({ ...d, joiningDate: e.target.value }))} className={`mt-1 ${smallInput}`} />
+            {/* Compact popover calendar — h-8 matches the neighbouring
+                small inputs; portal-positioned so it never overflows the
+                modal (Safari/iPad safe, no native control). */}
+            <DatePicker
+              value={draft.joiningDate}
+              onChange={(v) => { if (v) setDraft((d) => ({ ...d, joiningDate: v })) }}
+              placeholder="Select date"
+              compact
+              formatStr="d MMM yyyy"
+              className="mt-1"
+            />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">

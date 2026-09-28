@@ -17,12 +17,15 @@
  *  · Footer carries the selection summary and a changes summary; Save is
  *    disabled until something actually changed.
  *
- * Class-teacher appointments are NOT part of this modal — they are a separate
- * responsibility managed in Students & Classes → Classes (canonical system).
+ * Class-teacher appointments are NOT part of this modal — they are a
+ * canonical assignment managed in Students & Classes → Classes and surface
+ * on the Teacher Profile's Class Teacher row (which carries its own Manage
+ * link). No explanation is shown here: the picker stays purely about
+ * classes and subjects.
  */
 
 import { useMemo, useState } from 'react'
-import { BookOpen, Check, Search, X, ArrowRight } from 'lucide-react'
+import { BookOpen, Check, Search, X } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription,
@@ -45,8 +48,6 @@ interface Props {
   setSelectedSubjects: React.Dispatch<React.SetStateAction<string[]>>
   onReplaceConflictTeacher: (conflictTeacherId: string, newSubjects: string[], newClasses: string[]) => void
   onSave: () => void
-  /** Navigate to Students & Classes → Classes (class-teacher appointments). */
-  onNavigateClasses?: () => void
 }
 
 const count = (n: number, one: string, many: string = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -55,7 +56,7 @@ export function WorkloadAllocationModal({
   open, onClose, selectedTeacher, teachers,
   selectedClasses, setSelectedClasses,
   selectedSubjects, setSelectedSubjects,
-  onReplaceConflictTeacher, onSave, onNavigateClasses,
+  onReplaceConflictTeacher, onSave,
 }: Props) {
   const [search, setSearch] = useState('')
   const configState = useAcademicConfig(open)
@@ -350,18 +351,6 @@ export function WorkloadAllocationModal({
                     ))}
                   </div>
                 </section>
-              )}
-
-              {/* ---------- class-teacher pointer (§14 — separate system) ---------- */}
-              {onNavigateClasses && (
-                <button
-                  type="button"
-                  onClick={() => { onClose(); onNavigateClasses() }}
-                  className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
-                >
-                  Class-teacher appointments are managed in Students &amp; Classes → Classes
-                  <ArrowRight className="h-2.5 w-2.5" />
-                </button>
               )}
             </>
           )}

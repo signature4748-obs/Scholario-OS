@@ -1,6 +1,7 @@
 'use client'
 
-import { Lock, Key, Coins, ShieldCheck, ShieldAlert, Copy } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Lock, Coins, ShieldCheck, ShieldAlert, Copy, Eye, EyeOff } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -9,8 +10,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import { format } from 'date-fns'
 import { formatINR } from '@/lib/format'
+import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 import type { TeacherRecord } from '@/lib/store/teachers-store'
 import type { TeacherCredentials } from './use-teachers-state'
 
@@ -75,54 +79,121 @@ interface CredentialsModalProps extends CommonProps {
 }
 
 export function CredentialsSlipModal({ credentials, open, onClose }: CredentialsModalProps) {
+  /**
+   * SECURITY: the temporary passcode is masked by default. The reveal flag is
+   * local component state only (never persisted anywhere) and resets whenever
+   * the slip is re-opened or a different teacher's credentials are displayed.
+   */
+  const [passcodeRevealed, setPasscodeRevealed] = useState(false)
+  const general = useSchoolSettingsStore((s) => s.general)
+
+  useEffect(() => {
+    setPasscodeRevealed(false)
+  }, [open, credentials])
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-primary">
-            <Key className="h-5 w-5" /> Teacher Portal Account Slip
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            Portal identification and credentials for {credentials?.name}.
-          </DialogDescription>
-        </DialogHeader>
-
-        {credentials && (
-          <div className="py-2">
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2.5 font-mono text-xs">
-              <div className="flex justify-between border-b border-border/50 pb-1.5">
-                <span className="text-muted-foreground">Teacher Name:</span>
-                <strong className="text-foreground font-sans font-bold">{credentials.name}</strong>
-              </div>
-              <div className="flex justify-between border-b border-border/50 pb-1.5">
-                <span className="text-muted-foreground">Employee ID:</span>
-                <strong className="text-foreground">{credentials.empId}</strong>
-              </div>
-              <div className="flex justify-between border-b border-border/50 pb-1.5">
-                <span className="text-muted-foreground">Username:</span>
-                <strong className="text-foreground font-bold">{credentials.username}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Temp Passcode:</span>
-                <strong className="text-primary font-bold">{credentials.tempPassword}</strong>
-              </div>
-            </div>
+      <DialogContent className="gap-0 p-0 max-w-[calc(100vw-2rem)] sm:max-w-sm">
+        {/* Official credential document (slip) */}
+        <div className="px-5 py-5 sm:px-6">
+          {/* Institutional letterhead */}
+          <div className="text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
+              Scholario
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {general.schoolName.trim() || 'Scholario'}
+            </p>
           </div>
-        )}
+          <Separator className="mt-4" />
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose} className="text-xs">Close</Button>
+          {/* Document title */}
+          <DialogTitle className="mt-5 text-center text-lg font-semibold tracking-tight text-foreground">
+            Teacher Portal Credentials
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Portal sign-in credentials issued to {credentials?.name ?? 'the teacher'}.
+          </DialogDescription>
+
+          {credentials && (
+            <>
+              {/* Document rows */}
+              <dl className="mt-4 divide-y divide-border border-y border-border">
+                <div className="py-3">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Teacher</dt>
+                  <dd className="mt-1 text-sm font-semibold text-foreground">{credentials.name}</dd>
+                </div>
+                <div className="py-3">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Employee ID</dt>
+                  <dd className="mt-1 font-mono text-sm text-foreground">{credentials.empId}</dd>
+                </div>
+                <div className="py-3">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Portal Username</dt>
+                  <dd className="mt-1 break-all text-sm text-foreground">{credentials.username}</dd>
+                </div>
+                <div className="py-3">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Temporary Passcode</dt>
+                  <dd className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    {passcodeRevealed ? (
+                      <code className="break-all font-mono text-sm font-semibold tracking-wide text-foreground">
+                        {credentials.tempPassword}
+                      </code>
+                    ) : (
+                      <span className="font-mono text-sm tracking-[0.3em] text-muted-foreground">
+                        ••••••••••
+                      </span>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setPasscodeRevealed((v) => !v)}
+                      aria-label={passcodeRevealed ? 'Hide temporary passcode' : 'Show temporary passcode'}
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                    >
+                      {passcodeRevealed ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </dd>
+                </div>
+              </dl>
+
+              {/* Security note */}
+              <div className="mt-4 border-l-2 border-amber-500/60 bg-amber-500/[0.04] py-2 pl-3.5 pr-3">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  <span className="font-medium text-foreground">This passcode is temporary.</span>{' '}
+                  Please change it after first sign-in.
+                </p>
+              </div>
+
+              {/* Issue footer — signature block */}
+              <Separator className="mt-5" />
+              <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <p className="text-[11px] text-muted-foreground">Issued by School Administration</p>
+                <p className="text-[11px] text-muted-foreground">{format(new Date(), 'd MMMM yyyy')}</p>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4 sm:px-6">
+          <Button variant="outline" onClick={onClose} className="h-9 px-4 text-xs">
+            Close
+          </Button>
           <Button
             variant="default"
             onClick={() => {
               navigator.clipboard.writeText(`Employee ID: ${credentials?.empId}\nUsername: ${credentials?.username}\nTemp Passcode: ${credentials?.tempPassword}`)
               toast.success('Login details copied to clipboard!')
             }}
-            className="text-xs"
+            className="h-9 px-4 text-xs"
           >
-            <Copy className="h-3.5 w-3.5" /> Copy Details
+            <Copy className="h-3.5 w-3.5" /> Copy Credentials
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

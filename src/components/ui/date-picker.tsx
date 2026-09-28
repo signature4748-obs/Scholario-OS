@@ -37,6 +37,12 @@ export interface DatePickerProps {
   maxDate?: string
   /** Min selectable date (YYYY-MM-DD). */
   minDate?: string
+  /**
+   * date-fns format used to render the selected value in the trigger.
+   * Defaults to "PPP" (e.g. "Sep 28th, 2026"); pass "d MMM yyyy" for the
+   * compact document style ("28 Sep 2026") used inside form dialogs.
+   */
+  formatStr?: string
 }
 
 const STATE_DOT_COLOR: Record<DayState, string> = {
@@ -56,6 +62,7 @@ export function DatePicker({
   dayStateMap,
   maxDate,
   minDate,
+  formatStr = "PPP",
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -146,7 +153,7 @@ export function DatePicker({
           <div className="flex items-center gap-2 truncate">
             <CalendarIcon className={cn("shrink-0 text-muted-foreground", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
             <span className="truncate">
-              {selectedDate ? format(selectedDate, "PPP") : placeholder}
+              {selectedDate ? format(selectedDate, formatStr) : placeholder}
             </span>
           </div>
           {value && (

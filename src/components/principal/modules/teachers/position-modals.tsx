@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -123,11 +124,16 @@ export function AssignPositionModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Effective from</Label>
-              <Input
-                type="date"
+              {/* Compact popover calendar — same visual height as the
+                  neighbouring inputs; portal-positioned so it never
+                  overflows the modal (Safari/iPad safe, no native control). */}
+              <DatePicker
                 value={effectiveDate}
-                onChange={(e) => setEffectiveDate(e.target.value)}
-                className="mt-1 h-9 text-xs"
+                onChange={(v) => { if (v) setEffectiveDate(v) }}
+                placeholder="Select date"
+                compact
+                formatStr="d MMM yyyy"
+                className="mt-1 h-9"
               />
             </div>
             <div>

@@ -98,6 +98,12 @@ export function useTeachersActions(s: TeachersState) {
       toast.error('Choose a responsibility to assign')
       return
     }
+    // Class Teacher is a canonical appointment (Students & Classes → Classes)
+    // — it can never be assigned through the responsibility flow.
+    if (s.selectedPosIdToAssign === 'pos-class-teacher') {
+      toast.error('Class Teacher is assigned from Students & Classes → Classes')
+      return
+    }
     s.assignPositionToTeacher(
       s.targetTeacherIdForPos,
       s.selectedPosIdToAssign,
@@ -122,6 +128,10 @@ export function useTeachersActions(s: TeachersState) {
     }
     if (!s.overrideTeacherId || !s.selectedPosForOverride) {
       toast.error('Choose a responsibility to activate')
+      return
+    }
+    if (s.selectedPosForOverride === 'pos-class-teacher') {
+      toast.error('Class Teacher is assigned from Students & Classes → Classes')
       return
     }
     const target = s.teachers.find((t) => t.id === s.overrideTeacherId)

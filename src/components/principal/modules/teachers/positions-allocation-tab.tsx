@@ -104,14 +104,16 @@ export function PositionsAllocationTab({
   positionsList,
   onManageWorkload,
   onManageResponsibilities,
+  onManageClassTeacher,
 }: {
   teacher: TeacherRecord
   positionsList: PositionDefinition[]
   onManageWorkload: (t: TeacherRecord) => void
   onManageResponsibilities: (t: TeacherRecord) => void
+  /** Deep-links to Students & Classes → Classes (canonical class-teacher appointments). */
+  onManageClassTeacher?: () => void
 }) {
   const rosterState = useClassTeacherRoster()
-  const activePermissions = getTeacherActivePermissions(teacher, positionsList)
   const [employmentEditOpen, setEmploymentEditOpen] = useState(false)
   const [removingAssignment, setRemovingAssignment] = useState<PositionAssignment | null>(null)
   const [viewingAssignment, setViewingAssignment] = useState<PositionAssignment | null>(null)
@@ -127,18 +129,39 @@ export function PositionsAllocationTab({
     : null
 
   // Administrative / co-curricular responsibilities: every position
-  // assignment that is not a base teaching role.
+  // assignment that is not a base teaching role. Class Teacher is never
+  // listed here — it is a canonical appointment shown in Teaching
+  // Allocation above.
+  const isClassTeacherAssignment = (p: PositionAssignment) =>
+    p.positionId === 'pos-class-teacher' || /class\s*teacher/i.test(p.positionTitle)
   const responsibilities = teacher.positions.filter(
     (p) =>
       p.status === 'Active' &&
-      !['Subject Teacher', 'Class Teacher'].includes(p.positionTitle) &&
-      !/class teacher/i.test(p.positionTitle)
+      !['Subject Teacher'].includes(p.positionTitle) &&
+      !isClassTeacherAssignment(p),
   )
   const pendingResponsibilities = teacher.positions.filter(
-    (p) => p.status === 'Pending Acceptance'
+    (p) => p.status === 'Pending Acceptance' && !isClassTeacherAssignment(p),
   )
   const hasResponsibilities =
     responsibilities.length > 0 || pendingResponsibilities.length > 0 || teacher.examResponsibilities.length > 0
+
+  // PERMISSIONS derive from (a) the teacher's actual responsibilities —
+  // excluding any legacy Class Teacher position assignment so no duplicate
+  // state influences them — plus (b) the canonical Class Teacher permission
+  // set when the server roster (Students & Classes → Classes) actually
+  // appoints this teacher. Changing or removing the canonical appointment
+  // therefore updates the derived permissions automatically.
+  const classTeacherDefinition = positionsList.find(
+    (p) => p.id === 'pos-class-teacher' || /class\s*teacher/i.test(p.title),
+  )
+  const activePermissions = Array.from(new Set([
+    ...getTeacherActivePermissions(
+      { ...teacher, positions: teacher.positions.filter((p) => !isClassTeacherAssignment(p)) },
+      positionsList,
+    ),
+    ...(serverClasses.length > 0 && classTeacherDefinition ? classTeacherDefinition.permissions : []),
+  ]))
 
   return (
     <div className="space-y-6">
@@ -187,11 +210,29 @@ export function PositionsAllocationTab({
             value={teacher.classes.length > 0 ? teacher.classes.join(', ') : 'No class assignments'}
             muted={teacher.classes.length === 0}
           />
-          <Field
-            label="Class Teacher"
-            value={classTeacherValue ?? 'No class-teacher appointment'}
-            muted={!classTeacherValue || classTeacherValue === 'Loading…' || classTeacherValue === 'Unavailable'}
-          />
+          {/* Class Teacher — canonical appointment (server roster) with its
+              own quiet Manage link to Students & Classes → Classes. */}
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">Class Teacher</p>
+            <div className="flex items-start gap-1.5 mt-0.5 min-w-0">
+              <p
+                className={cn(
+                  'text-sm font-medium break-words',
+                  classTeacherValue && classTeacherValue !== 'Loading…' && classTeacherValue !== 'Unavailable'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground italic font-normal',
+                )}
+              >
+                {classTeacherValue ?? 'No class-teacher appointment'}
+              </p>
+              {onManageClassTeacher && (
+                <SectionAction
+                  icon={Settings2} label="Manage" onClick={onManageClassTeacher}
+                  ariaLabel={`Manage class-teacher appointments for ${teacher.name} in Students and Classes`}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </section>
 

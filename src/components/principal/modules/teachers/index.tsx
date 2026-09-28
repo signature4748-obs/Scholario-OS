@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   UserPlus, FileCheck, FileSpreadsheet,
   ChevronLeft, SlidersHorizontal, Users,
@@ -59,6 +59,18 @@ export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string
     ? s.teachers.find((t) => t.id === s.selectedTeacher!.id) ?? s.selectedTeacher
     : null
 
+  // Class Teacher is a CANONICAL appointment managed in Students & Classes
+  // → Classes — never a generic responsibility. It is filtered out of the
+  // responsibility-assignment dropdowns here; the definition itself stays in
+  // the positions list because it still powers the canonical class-teacher
+  // permission set shown on the profile.
+  const assignablePositions = useMemo(
+    () => s.positionsList.filter(
+      (p) => p.id !== 'pos-class-teacher' && !/class\s*teacher/i.test(p.title),
+    ),
+    [s.positionsList],
+  )
+
   // Deep-link: command palette teacher results open the faculty profile
   // directly. The DB id doesn't exist in the demo roster, so match by
   // name (exact → prefix); fall back to the directory with an honest toast.
@@ -114,6 +126,7 @@ export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string
           onOpenTermination={() => actions.handleOpenTerminationModal(liveSelectedTeacher!)}
           onManageWorkload={actions.handleManageWorkload}
           onManageResponsibilities={actions.handleManageResponsibilities}
+          onManageClassTeacher={onNavigate ? () => onNavigate('students:classes') : undefined}
         />
       ) : (
         <>
@@ -262,7 +275,7 @@ export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string
         open={s.assignPosModalOpen}
         onClose={() => s.setAssignPosModalOpen(false)}
         teacher={assignTargetTeacher}
-        positionsList={s.positionsList}
+        positionsList={assignablePositions}
         selectedPosIdToAssign={s.selectedPosIdToAssign}
         setSelectedPosIdToAssign={s.setSelectedPosIdToAssign}
         onConfirm={actions.handleConfirmAssignPosition}
@@ -297,7 +310,7 @@ export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string
         open={s.emergencyOverrideModalOpen}
         onClose={() => s.setEmergencyOverrideModalOpen(false)}
         teacher={overrideTargetTeacher}
-        positionsList={s.positionsList}
+        positionsList={assignablePositions}
         selectedPosForOverride={s.selectedPosForOverride}
         setSelectedPosForOverride={s.setSelectedPosForOverride}
         overrideAuthCode={s.overrideAuthCode}
@@ -321,7 +334,6 @@ export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string
           s.assignSubjectsAndClasses(conflictTeacherId, newSubjects, newClasses)
         }}
         onSave={actions.handleSaveWorkload}
-        onNavigateClasses={onNavigate ? () => onNavigate('students:classes') : undefined}
       />
 
       {/* STAFF RELIEVE / TERMINATION MODAL */}
