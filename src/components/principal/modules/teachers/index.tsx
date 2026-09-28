@@ -41,7 +41,7 @@ const TABS = [
   { id: 'logs', label: 'Audit Logs', icon: FileSpreadsheet } as const,
 ]
 
-export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string) => void }) {
+export function TeachersModule() {
   const s = useTeachersState()
   const actions = useTeachersActions(s)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -126,7 +126,6 @@ export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string
           onOpenTermination={() => actions.handleOpenTerminationModal(liveSelectedTeacher!)}
           onManageWorkload={actions.handleManageWorkload}
           onManageResponsibilities={actions.handleManageResponsibilities}
-          onManageClassTeacher={onNavigate ? () => onNavigate('students:classes') : undefined}
         />
       ) : (
         <>

@@ -186,9 +186,7 @@ export function PrincipalPanel() {
       ) : active === 'dashboard' ? (
         <PrincipalDashboard onNavigate={setActive} />
       ) : active === 'teachers' ? (
-        // Teachers receives cross-module navigation so the allocation modal's
-        // class-teacher pointer can deep-link to the canonical Classes module.
-        <TeachersModule onNavigate={setActive} />
+        <TeachersModule />
       ) : active === 'fees' ? (
         // Fees receives cross-module navigation so the Fee Structure editor
         // can deep-link to the Examination module ("Go to Examinations" —

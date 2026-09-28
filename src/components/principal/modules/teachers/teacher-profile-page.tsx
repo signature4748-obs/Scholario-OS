@@ -56,14 +56,12 @@ interface Props {
   onManageWorkload: (t: TeacherRecord) => void
   /** Opens the module's AssignPositionModal pre-targeted at this teacher. */
   onManageResponsibilities: (t: TeacherRecord) => void
-  /** Deep-links to Students & Classes → Classes (canonical class-teacher appointments). */
-  onManageClassTeacher?: () => void
 }
 
 export function TeacherProfilePage({
   teacher, positionsList, onBack,
   onOpenAppointment, onOpenJoiningLetter, onResetPassword, onToggleLock, onOpenTermination,
-  onManageWorkload, onManageResponsibilities, onManageClassTeacher,
+  onManageWorkload, onManageResponsibilities,
 }: Props) {
   return (
     <div className="space-y-5">
@@ -145,7 +143,6 @@ export function TeacherProfilePage({
             positionsList={positionsList}
             onManageWorkload={onManageWorkload}
             onManageResponsibilities={onManageResponsibilities}
-            onManageClassTeacher={onManageClassTeacher}
           />
         </TabsContent>
         <TabsContent value="profile" className="mt-4">

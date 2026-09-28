@@ -1,17 +1,24 @@
 'use client'
 
 /**
- * Positions & Allocation tab (Wave 2.3 §2–§4 + W2.3B + W2.3C).
+ * Positions & Allocation tab (Wave 2.3 §2–§4 + W2.3B + W2.3C + final
+ * architecture correction).
  *
  * Visual benchmark: the Teacher Profile page — calm, scannable
  * label/value rows, generous whitespace, no pill walls, no helper
- * paragraphs. Concepts stay strictly separate (Designation ≠
- * Responsibility ≠ Teaching assignment ≠ Class Teacher ≠ Permission):
+ * paragraphs. The profile is a SUMMARY / SOURCE-OF-TRUTH VIEW:
+ * assignments are managed from their actual modules, never duplicated
+ * here.
  *
  *   EMPLOYMENT          designation facts                    [Edit]
- *   TEACHING ALLOCATION subjects · classes · class teacher   [Manage]
- *   RESPONSIBILITIES    administrative duties, one per row   [Manage]
- *   PERMISSIONS         derived from active responsibilities
+ *   TEACHING ALLOCATION subjects · classes                   [Manage]
+ *   CLASS TEACHER       canonical Class/Section appointment —
+ *                       READ-ONLY (assigned in Students & Classes
+ *                       → Classes; the profile only reflects it)
+ *   RESPONSIBILITIES    ongoing administrative roles, one per row [Manage]
+ *   EXAMINATION DUTIES  specific invigilation assignments —
+ *                       READ-ONLY (assigned in Examinations)
+ *   PERMISSIONS         derived automatically, grouped by source
  *
  * Management is discoverable but quiet: destructive actions live behind
  * each responsibility row's overflow menu, never permanently on the row.
@@ -19,7 +26,7 @@
 
 import { useState } from 'react'
 import {
-  GraduationCap, Briefcase, ShieldCheck, KeyRound,
+  GraduationCap, Briefcase, ShieldCheck, KeyRound, ClipboardCheck,
   Pencil, Settings2, Trash2, MoreHorizontal, Eye, Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -32,13 +39,15 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  getTeacherActivePermissions,
   type TeacherRecord,
   type PositionAssignment,
   type PositionDefinition,
 } from '@/lib/store/teachers-store'
 import { getPermissionLabels } from './permission-labels'
 import { useClassTeacherRoster, classesOfTeacher } from './use-class-teacher-roster'
+import {
+  useTeacherExamDuties, sortExamDutiesForDisplay, type TeacherExamDutyStatus,
+} from './use-teacher-exam-duties'
 import {
   EmploymentEditDialog, RemoveResponsibilityDialog,
 } from './profile-edit-dialogs'
@@ -97,6 +106,19 @@ function StatusText({ tone, children }: { tone: 'active' | 'pending'; children: 
   )
 }
 
+/** Quiet duty status text — same rhythm, four statuses. */
+function DutyStatusText({ status }: { status: TeacherExamDutyStatus }) {
+  const tone =
+    status === 'In Progress' ? 'text-emerald-600 dark:text-emerald-400'
+    : status === 'Upcoming' ? 'text-amber-600 dark:text-amber-400'
+    : 'text-muted-foreground'
+  return (
+    <span className={cn('text-[10px] font-semibold uppercase tracking-wider shrink-0', tone)}>
+      {status}
+    </span>
+  )
+}
+
 /* ---------- the tab ---------- */
 
 export function PositionsAllocationTab({
@@ -104,22 +126,23 @@ export function PositionsAllocationTab({
   positionsList,
   onManageWorkload,
   onManageResponsibilities,
-  onManageClassTeacher,
 }: {
   teacher: TeacherRecord
   positionsList: PositionDefinition[]
   onManageWorkload: (t: TeacherRecord) => void
   onManageResponsibilities: (t: TeacherRecord) => void
-  /** Deep-links to Students & Classes → Classes (canonical class-teacher appointments). */
-  onManageClassTeacher?: () => void
 }) {
   const rosterState = useClassTeacherRoster()
+  const dutiesState = useTeacherExamDuties(teacher.name)
   const [employmentEditOpen, setEmploymentEditOpen] = useState(false)
   const [removingAssignment, setRemovingAssignment] = useState<PositionAssignment | null>(null)
   const [viewingAssignment, setViewingAssignment] = useState<PositionAssignment | null>(null)
 
-  // Class Teacher assignment — from the SERVER roster (canonical source),
-  // matched by the teacher's email; never inferred from the designation.
+  // Class Teacher assignment — READ-ONLY display from the SERVER roster
+  // (canonical source), matched by the teacher's email. It is appointed
+  // in Students & Classes → Classes → Class Teacher and this profile
+  // only reflects the result — there is deliberately NO manage action
+  // here (no duplicate assignment path).
   const serverClasses =
     rosterState.status === 'ready' ? classesOfTeacher(rosterState.roster, teacher.email) : []
   const classTeacherValue =
@@ -128,40 +151,110 @@ export function PositionsAllocationTab({
     : serverClasses.length > 0 ? serverClasses.map((c) => c.label).join(', ')
     : null
 
-  // Administrative / co-curricular responsibilities: every position
-  // assignment that is not a base teaching role. Class Teacher is never
-  // listed here — it is a canonical appointment shown in Teaching
-  // Allocation above.
+  // Administrative / co-curricular responsibilities: every ONGOING
+  // position assignment that is not a base teaching role. Class Teacher
+  // is never listed here (canonical appointment, shown read-only in
+  // Teaching Allocation) and event-specific examination duties are never
+  // listed here either (canonical ExamScheduleItems, shown read-only in
+  // Examination Duties below).
   const isClassTeacherAssignment = (p: PositionAssignment) =>
     p.positionId === 'pos-class-teacher' || /class\s*teacher/i.test(p.positionTitle)
+  const isSubjectTeacherAssignment = (p: PositionAssignment) =>
+    p.positionId === 'pos-subject-teacher' || /subject\s*teacher/i.test(p.positionTitle)
   const responsibilities = teacher.positions.filter(
     (p) =>
       p.status === 'Active' &&
-      !['Subject Teacher'].includes(p.positionTitle) &&
+      !isSubjectTeacherAssignment(p) &&
       !isClassTeacherAssignment(p),
   )
   const pendingResponsibilities = teacher.positions.filter(
-    (p) => p.status === 'Pending Acceptance' && !isClassTeacherAssignment(p),
+    (p) =>
+      p.status === 'Pending Acceptance' &&
+      !isSubjectTeacherAssignment(p) &&
+      !isClassTeacherAssignment(p),
   )
-  const hasResponsibilities =
-    responsibilities.length > 0 || pendingResponsibilities.length > 0 || teacher.examResponsibilities.length > 0
+  const hasResponsibilities = responsibilities.length > 0 || pendingResponsibilities.length > 0
 
-  // PERMISSIONS derive from (a) the teacher's actual responsibilities —
-  // excluding any legacy Class Teacher position assignment so no duplicate
-  // state influences them — plus (b) the canonical Class Teacher permission
-  // set when the server roster (Students & Classes → Classes) actually
-  // appoints this teacher. Changing or removing the canonical appointment
-  // therefore updates the derived permissions automatically.
+  // Examination duties — READ-ONLY display from the canonical duty
+  // roster (Examinations module assigns them); sorted live-first.
+  const examDuties =
+    dutiesState.status === 'ready' ? sortExamDutiesForDisplay(dutiesState.duties, new Date()) : []
+
+  /* ---------- PERMISSIONS — derived, grouped by source ---------- */
+
+  const subjectTeacherDef = positionsList.find(
+    (p) => p.id === 'pos-subject-teacher' || /subject\s*teacher/i.test(p.title),
+  )
   const classTeacherDefinition = positionsList.find(
     (p) => p.id === 'pos-class-teacher' || /class\s*teacher/i.test(p.title),
   )
-  const activePermissions = Array.from(new Set([
-    ...getTeacherActivePermissions(
-      { ...teacher, positions: teacher.positions.filter((p) => !isClassTeacherAssignment(p)) },
-      positionsList,
-    ),
-    ...(serverClasses.length > 0 && classTeacherDefinition ? classTeacherDefinition.permissions : []),
-  ]))
+
+  // Each group states WHERE its access comes from; a permission is never
+  // repeated across groups.
+  const seen = new Set<string>()
+  const permissionGroups: Array<{
+    id: string
+    label: string
+    context: string | null
+    permissions: string[]
+    source: string
+  }> = []
+
+  // 1) TEACHING ACCESS — derives from the actual teaching allocation.
+  if ((teacher.subjects.length > 0 || teacher.classes.length > 0) && subjectTeacherDef) {
+    const context = [
+      teacher.subjects.length > 0 ? teacher.subjects.join(', ') : null,
+      teacher.classes.length > 0 ? teacher.classes.join(', ') : null,
+    ].filter(Boolean).join(' · ')
+    const tokens = subjectTeacherDef.permissions
+    tokens.forEach((t) => seen.add(t))
+    permissionGroups.push({
+      id: 'teaching',
+      label: 'Teaching Access',
+      context,
+      permissions: getPermissionLabels(tokens),
+      source: 'Teaching Allocation',
+    })
+  }
+
+  // 2) CLASS TEACHER ACCESS — derives from the canonical appointment
+  //    (Students & Classes → Classes → Class Teacher). Removing the
+  //    appointment removes this group automatically.
+  if (serverClasses.length > 0 && classTeacherDefinition && subjectTeacherDef) {
+    const tokens = classTeacherDefinition.permissions.filter(
+      (t) => !subjectTeacherDef.permissions.includes(t) && !seen.has(t),
+    )
+    tokens.forEach((t) => seen.add(t))
+    permissionGroups.push({
+      id: 'class-teacher',
+      label: 'Class Teacher Access',
+      context: serverClasses.map((c) => c.label).join(', '),
+      permissions: getPermissionLabels(tokens),
+      source: 'Class Teacher Appointment',
+    })
+  }
+
+  // 3) RESPONSIBILITY ACCESS — derives from ACTIVE responsibilities only
+  //    (pending-acceptance assignments grant nothing until accepted).
+  const activeResponsibilities = responsibilities.filter((p) => p.status === 'Active')
+  if (activeResponsibilities.length > 0) {
+    const tokens = new Set<string>()
+    activeResponsibilities.forEach((r) => {
+      const def = positionsList.find((p) => p.id === r.positionId)
+      def?.permissions.forEach((perm) => {
+        if (!seen.has(perm)) tokens.add(perm)
+      })
+    })
+    if (tokens.size > 0) {
+      permissionGroups.push({
+        id: 'responsibility',
+        label: 'Responsibility Access',
+        context: activeResponsibilities.map((r) => r.positionTitle).join(', '),
+        permissions: getPermissionLabels(Array.from(tokens)),
+        source: 'Active Responsibilities',
+      })
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -210,29 +303,14 @@ export function PositionsAllocationTab({
             value={teacher.classes.length > 0 ? teacher.classes.join(', ') : 'No class assignments'}
             muted={teacher.classes.length === 0}
           />
-          {/* Class Teacher — canonical appointment (server roster) with its
-              own quiet Manage link to Students & Classes → Classes. */}
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">Class Teacher</p>
-            <div className="flex items-start gap-1.5 mt-0.5 min-w-0">
-              <p
-                className={cn(
-                  'text-sm font-medium break-words',
-                  classTeacherValue && classTeacherValue !== 'Loading…' && classTeacherValue !== 'Unavailable'
-                    ? 'text-foreground'
-                    : 'text-muted-foreground italic font-normal',
-                )}
-              >
-                {classTeacherValue ?? 'No class-teacher appointment'}
-              </p>
-              {onManageClassTeacher && (
-                <SectionAction
-                  icon={Settings2} label="Manage" onClick={onManageClassTeacher}
-                  ariaLabel={`Manage class-teacher appointments for ${teacher.name} in Students and Classes`}
-                />
-              )}
-            </div>
-          </div>
+          {/* Class Teacher — canonical Class/Section appointment, shown
+              READ-ONLY. It is assigned in Students & Classes → Classes →
+              Class Teacher and this profile only reflects the result. */}
+          <Field
+            label="Class Teacher"
+            value={classTeacherValue ?? 'No class-teacher appointment'}
+            muted={!classTeacherValue || classTeacherValue === 'Unavailable'}
+          />
         </div>
       </section>
 
@@ -288,32 +366,65 @@ export function PositionsAllocationTab({
                 </div>
               </div>
             ))}
-            {teacher.examResponsibilities.map((e) => (
-              <div key={e} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{e}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Examination</p>
-                </div>
-                <StatusText tone="active">Active</StatusText>
-              </div>
-            ))}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground italic">No additional responsibilities</p>
         )}
       </section>
 
-      {/* ---------- PERMISSIONS ---------- */}
+      {/* ---------- EXAMINATION DUTIES (canonical, read-only) ---------- */}
+      <section aria-label="Examination duties" className="pt-4 border-t border-border">
+        <SectionLabel icon={ClipboardCheck}>Examination Duties</SectionLabel>
+        {dutiesState.status === 'error' ? (
+          <p className="text-sm text-muted-foreground italic">Unavailable</p>
+        ) : dutiesState.status === 'loading' ? (
+          <p className="text-sm text-muted-foreground italic">Loading…</p>
+        ) : examDuties.length > 0 ? (
+          <div className="divide-y divide-border">
+            {examDuties.map((d) => (
+              <div key={d.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{d.examName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    Invigilator · {d.subjectName} · {d.className} · {formatDate(d.date)}
+                  </p>
+                </div>
+                <DutyStatusText status={d.status} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">No examination duties assigned</p>
+        )}
+      </section>
+
+      {/* ---------- PERMISSIONS (derived, grouped by source) ---------- */}
       <section aria-label="Permissions" className="pt-4 border-t border-border">
         <SectionLabel icon={KeyRound}>Permissions</SectionLabel>
-        <p className="text-[10px] text-muted-foreground mb-2.5">Derived from active responsibilities.</p>
-        {activePermissions.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 max-w-2xl">
-            {getPermissionLabels(activePermissions).map((label) => (
-              <p key={label} className="flex items-center gap-2 text-xs text-foreground">
-                <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span className="truncate">{label}</span>
-              </p>
+        <p className="text-xs text-muted-foreground mb-3.5 max-w-xl">
+          Effective access is derived automatically from this teacher&apos;s active teaching
+          assignments, Class Teacher appointments and responsibilities.
+        </p>
+        {permissionGroups.length > 0 ? (
+          <div className="space-y-4">
+            {permissionGroups.map((group) => (
+              <div key={group.id}>
+                <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
+                  {group.label}
+                </p>
+                {group.context && (
+                  <p className="text-xs font-medium text-foreground mt-0.5 break-words">{group.context}</p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 mt-1.5 max-w-2xl">
+                  {group.permissions.map((label) => (
+                    <p key={label} className="flex items-center gap-2 text-xs text-foreground">
+                      <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </p>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">Source: {group.source}</p>
+              </div>
             ))}
           </div>
         ) : (
