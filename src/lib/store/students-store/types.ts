@@ -251,6 +251,10 @@ export interface StudentsState {
   updateSectionTeacher: (classId: string, sectionId: string, teacherId: string | null) => void
   /** Replace a section's Assistant Class Teacher. Pass null/undefined to clear. */
   updateSectionAssistantTeacher: (classId: string, sectionId: string, teacherId: string | null) => void
+  /** §5 room registry — assign a section's room (registry room name; null clears). */
+  updateSectionRoom: (classId: string, sectionId: string, room: string | null) => void
+  /** §5 room registry — rename a room across every class/section using it. */
+  renameRoomEverywhere: (from: string, to: string) => void
   /**
    * Add an EXISTING canonical subject to a class (Spec §8). No-op if the
    * class already has the subject id. Does NOT create a new canonical

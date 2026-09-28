@@ -1,16 +1,21 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Award, Calendar, Cake, Crown, Droplet, FileText, IdCard, User } from 'lucide-react'
+import { Award, Cake, Crown, Droplet, FileText, GraduationCap, IdCard, Mail, MapPin, User, Users } from 'lucide-react'
 import { formatINR, formatDate } from '@/lib/format'
 import { useStudentsStore, type StudentRecord } from '@/lib/store/students-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
 import { Section, InfoRow } from './shared'
+import type { StudentProfileRealData } from './profile-real-data'
 
-type Props = { student: StudentRecord }
+type Props = { student: StudentRecord; real?: StudentProfileRealData }
 
-export function OverviewTab({ student }: Props) {
+function notRecorded(v: string | null | undefined): boolean {
+  return !v || v.trim() === '' || v === '—'
+}
+
+export function OverviewTab({ student, real }: Props) {
   // Active class responsibilities (Class Captain / Monitor …) in the LIVE
   // academic session — derived through the canonical session-scoped resolver,
   // never hardcoded (spec §24, RB-1). Raw array + useMemo (zustand v5
@@ -21,6 +26,7 @@ export function OverviewTab({ student }: Props) {
     () => filterActivePositions(allPositions, student.id, sessionId),
     [allPositions, student.id, sessionId],
   )
+
   return (
     <div className="space-y-4">
       {activePositions.length > 0 && (
@@ -37,22 +43,36 @@ export function OverviewTab({ student }: Props) {
         </Section>
       )}
       <Section title="Personal Information">
-        <div className="grid grid-cols-2 gap-2">
-          <InfoRow icon={<Cake className="h-3.5 w-3.5" />} label="DOB" value={formatDate(student.dob)} />
-          <InfoRow icon={<User className="h-3.5 w-3.5" />} label="Gender" value={student.gender} />
-          <InfoRow icon={<Droplet className="h-3.5 w-3.5" />} label="Blood" value={student.bloodGroup} />
-          <InfoRow icon={<Calendar className="h-3.5 w-3.5" />} label="Admitted" value={formatDate(student.admissionDate)} />
-          <InfoRow icon={<FileText className="h-3.5 w-3.5" />} label="Prev School" value={student.previousSchool} />
-          <InfoRow icon={<IdCard className="h-3.5 w-3.5" />} label="Category" value={student.category} />
-        </div>
+        {real ? (
+          // Role-aware grid (§8/§9): only the fields the server actually
+          // sent for this role — unknown values render "Not recorded",
+          // nothing is invented.
+          <div className="grid grid-cols-2 gap-2">
+            <InfoRow icon={<Cake className="h-3.5 w-3.5" />} label="DOB" value={notRecorded(real.dob) ? 'Not recorded' : formatDate(real.dob as string)} />
+            <InfoRow icon={<User className="h-3.5 w-3.5" />} label="Gender" value={notRecorded(real.gender) ? 'Not recorded' : real.gender === 'MALE' ? 'Male' : real.gender === 'FEMALE' ? 'Female' : (real.gender as string)} />
+            <InfoRow icon={<Droplet className="h-3.5 w-3.5" />} label="Blood" value={notRecorded(real.bloodGroup) ? 'Not recorded' : (real.bloodGroup as string)} />
+            <InfoRow icon={<GraduationCap className="h-3.5 w-3.5" />} label="Class" value={student.section ? `${student.className} · Sec ${student.section}` : student.className} />
+            <InfoRow icon={<Mail className="h-3.5 w-3.5" />} label="School Email" value={notRecorded(real.email) ? 'Not recorded' : (real.email as string)} />
+            <InfoRow icon={<MapPin className="h-3.5 w-3.5" />} label="Address" value={notRecorded(real.address) ? 'Not recorded' : (real.address as string)} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <InfoRow icon={<Cake className="h-3.5 w-3.5" />} label="DOB" value={formatDate(student.dob)} />
+            <InfoRow icon={<User className="h-3.5 w-3.5" />} label="Gender" value={student.gender} />
+            <InfoRow icon={<Droplet className="h-3.5 w-3.5" />} label="Blood" value={student.bloodGroup} />
+            <InfoRow icon={<FileText className="h-3.5 w-3.5" />} label="Admitted" value={formatDate(student.admissionDate)} />
+            <InfoRow icon={<FileText className="h-3.5 w-3.5" />} label="Prev School" value={student.previousSchool} />
+            <InfoRow icon={<IdCard className="h-3.5 w-3.5" />} label="Category" value={student.category} />
+          </div>
+        )}
       </Section>
-      {student.scholarship > 0 && (
+      {!real && student.scholarship > 0 && (
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 flex items-center gap-3">
           <Award className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
           <div><p className="text-sm font-medium">Scholarship Awarded</p><p className="text-xs text-muted-foreground">{formatINR(student.scholarship)} concession</p></div>
         </div>
       )}
-      {student.achievements.length > 0 && (
+      {!real && student.achievements.length > 0 && (
         <Section title="Achievements">
           {student.achievements.map((ach, i) => (
             <div key={i} className="flex items-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
@@ -60,6 +80,11 @@ export function OverviewTab({ student }: Props) {
               <div className="flex-1 min-w-0"><p className="text-sm font-medium">{ach.title}</p><p className="text-[11px] text-muted-foreground">{ach.level} · {formatDate(ach.date)}</p></div>
             </div>
           ))}
+        </Section>
+      )}
+      {real && (
+        <Section title="Guardian">
+          <InfoRow icon={<Users className="h-3.5 w-3.5" />} label="Guardian" value={notRecorded(student.guardianName) ? 'Not recorded' : student.guardianName} />
         </Section>
       )}
     </div>

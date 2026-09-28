@@ -17,11 +17,16 @@
  * (assignStudentPosition / endStudentPosition) and the class-responsibility
  * store — the same persisted permission state the STUDENT side derives its
  * capabilities from.
+ *
+ * Visual (production pass §2 — leadership density reduction): flat section
+ * header with NO intro card; the scope explanation lives behind the header's
+ * info tooltip. Per-section rows drop the per-row icon box for low-density
+ * scanning. All handlers, dialogs and the review surface are unchanged.
  */
 import { useMemo, useState } from 'react'
 import {
-  Crown, ShieldCheck, Plus, X, Search, CheckCircle2, XCircle, Megaphone,
-  AlertTriangle, CalendarClock, ListTodo, UserCheck, Clock, ChevronRight,
+  Crown, Info, Plus, X, Search, CheckCircle2, XCircle, Megaphone,
+  AlertTriangle, CalendarClock, ListTodo, UserCheck, Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -36,6 +41,23 @@ import { formatDate, formatRelativeTime } from '@/lib/format'
 import { toast } from 'sonner'
 
 const PRINCIPAL = { id: 'PRINCIPAL', name: 'Dr. Ananya Iyer' }
+
+/** Row one-liners for the dense per-section grid. The canonical
+ * descriptions in POSITION_DEFS (src/lib/student-positions.ts) are the
+ * shared vocabulary used for capability derivation elsewhere and stay
+ * untouched — this local map only shortens what the rows display,
+ * falling back to the canonical description for unknown keys. */
+const ROW_DESCRIPTIONS: Partial<Record<StudentPositionKey, string>> = {
+  'class-captain': 'Leads the class and coordinates with the class teacher.',
+  'class-vice-captain': 'Supports the class captain.',
+  'class-monitor': 'Helps maintain day-to-day class coordination.',
+  'sports-captain': 'Coordinates sports activities.',
+  'eco-monitor': 'Looks after classroom sustainability.',
+  'library-monitor': 'Helps with class library periods and book returns.',
+}
+
+const rowDescription = (key: StudentPositionKey) =>
+  ROW_DESCRIPTIONS[key] ?? POSITION_DEFS[key].description
 
 export function ClassLeadership({ cls }: { cls: ClassRecord }) {
   const students = useStudentsStore((s) => s.students)
@@ -91,20 +113,24 @@ export function ClassLeadership({ cls }: { cls: ClassRecord }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-card/60 p-3.5 sm:p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
-            <Crown className="h-4.5 w-4.5" />
+      {/* Minimal section header (§2) — flat on the page background, no card
+          wrapper; the philosophy paragraph moved behind the info tooltip. */}
+      <div className="pt-1">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
+            <Crown className="h-3.5 w-3.5" />
           </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">Class Leadership & Responsibilities</h3>
-            <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-              Class Captains, Monitors and other student responsibilities are scoped positions — the student stays a
-              normal student and only gains tightly-scoped capabilities (class updates, issue reporting, activity
-              coordination) in their own section. Ending a position removes those capabilities immediately.
-            </p>
-          </div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Class Leadership</h3>
+          <button
+            type="button"
+            title="Class Captains and Monitors are scoped positions — the student keeps only tightly-scoped capabilities in their own section. Ending a position removes them immediately."
+            aria-label="How class leadership works"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
         </div>
+        <p className="text-xs text-muted-foreground mt-1.5">Assign student responsibilities for each section.</p>
       </div>
 
       {cls.sections.map((sec) => {
@@ -123,27 +149,22 @@ export function ClassLeadership({ cls }: { cls: ClassRecord }) {
                 const pos = activeFor(sec.name, key)
                 const h = holder(pos)
                 return (
-                  <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className={cn(
-                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border mt-0.5',
-                        pos ? 'bg-primary/10 text-primary border-primary/20' : 'bg-muted/60 text-muted-foreground border-border',
-                      )}>
-                        <ShieldCheck className="h-4 w-4" />
+                  <div
+                    key={key}
+                    className="flex flex-col gap-2 px-4 py-2.5 hover:bg-muted/20 transition-colors sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-sm font-semibold">{def.title}</p>
+                        {pos ? (
+                          <Badge className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/10">Active</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground">Vacant</Badge>
+                        )}
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold">{def.title}</p>
-                          {pos ? (
-                            <Badge className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/10">Active</Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground">Vacant</Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">{def.description}</p>
-                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{rowDescription(key)}</p>
                     </div>
-                    <div className="flex items-center gap-2 sm:justify-end flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
                       {pos && h ? (
                         <>
                           <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-background px-2.5 py-1.5 min-w-0">

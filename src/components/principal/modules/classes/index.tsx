@@ -1,10 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
-import { Layers, Users, AlertTriangle, Plus, MapPin, ChevronRight, UserCheck } from 'lucide-react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { Layers, Users, AlertTriangle, Plus, MapPin, ChevronRight, UserCheck, DoorOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
 import { useStudentsStore, getVirtualOccupied } from '@/lib/store/students-store'
 import type { ClassRecord } from '@/lib/store/students-store'
@@ -12,10 +12,12 @@ import { getTeacherById } from '@/lib/mock/teachers'
 import { classStreamBadge } from './class-display'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { SearchFilterBar, type FilterConfig } from '../shared/search-filter-bar'
+import { RoomsDialog } from './rooms-dialog'
 
 export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: ClassRecord) => void; onAddClass: () => void }) {
   const [search, setSearch] = useState('')
   const [levelFilter, setLevelFilter] = useState('all')
+  const [roomsOpen, setRoomsOpen] = useState(false)
   const store = useStudentsStore()
   const classes = store.classes.filter((c) => c.status === 'Active')
 
@@ -48,10 +50,22 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
       </SummaryCardGrid>
 
       <SearchFilterBar search={search} onSearchChange={setSearch} placeholder="Search class, section, or room…" filters={[filterConfig]}
-        actions={<Button size="sm" onClick={onAddClass} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 h-9"><Plus className="h-3.5 w-3.5" /> Add Class</Button>}
+        actions={
+          <>
+            <Button size="sm" variant="outline" onClick={() => setRoomsOpen(true)} className="h-9 text-xs gap-1.5">
+              <DoorOpen className="h-3.5 w-3.5" /> Rooms
+            </Button>
+            <Button size="sm" onClick={onAddClass} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 h-9"><Plus className="h-3.5 w-3.5" /> Add Class</Button>
+          </>
+        }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <RoomsDialog open={roomsOpen} onOpenChange={setRoomsOpen} />
+
+      {/* Class grid — the student grids' rhythm (auto-fill, min 300px card)
+          so the 3-column metric band never drops below the benchmark's
+          label-fit width, at any viewport or sidebar state. */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-3 sm:gap-4">
         {filtered.map((cls, i) => <ClassCard key={cls.id} cls={cls} index={i} onClick={() => onOpenClass(cls)} />)}
       </div>
       {filtered.length === 0 && <div className="py-10 text-center"><p className="text-sm text-muted-foreground">No classes found matching your search.</p></div>}
@@ -60,9 +74,16 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
 }
 
 /* ============================================================
-   ClassCard — premium class identity + operational snapshot
+   ClassCard — the class entity card in the ONE shared three-band
+   design language (benchmark: shared/student-directory/
+   student-card.tsx): identity band → metric band → footer band,
+   with class-specific content — class-code gradient avatar, name
+   + stream badge, level · sections + room lines, READ-ONLY class
+   -teacher line, section occupancy chips, CAPACITY/ENROLLED/
+   AVAILABLE hairline metrics and an occupancy-progress footer.
    ============================================================ */
 function ClassCard({ cls, index, onClick }: { cls: ClassRecord; index: number; onClick: () => void }) {
+  const reduce = useReducedMotion()
   const cap = cls.capacity * cls.sections.length
   const enr = cls.sections.reduce((a, s) => a + getVirtualOccupied(s.id, s.capacity), 0)
   const vacant = Math.max(0, cap - enr)
@@ -74,71 +95,108 @@ function ClassCard({ cls, index, onClick }: { cls: ClassRecord; index: number; o
   const streamBadge = classStreamBadge(cls)
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * 0.03, 0.2) }} onClick={onClick}
-      className="rounded-lg border border-border/60 bg-card p-4 hover:border-emerald-500/40 hover:shadow-sm transition-all cursor-pointer group">
-      {/* Identity row */}
-      <div className="flex items-start justify-between gap-2 mb-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-semibold text-xs">{avatarText}</div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors truncate">{cls.name}</p>
-              {streamBadge && (
-                <Badge variant="outline" className="text-[9px] font-mono px-1 py-0 border-primary/40 bg-primary/5 text-primary shrink-0">{streamBadge}</Badge>
-              )}
-            </div>
-            <p className="text-[10px] text-muted-foreground">{cls.level} · {cls.sections.length} sections</p>
-          </div>
+    <motion.button
+      type="button"
+      initial={reduce ? false : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.03, 0.24), duration: 0.3 }}
+      whileHover={reduce ? undefined : { y: -2 }}
+      onClick={onClick}
+      aria-label={`View ${cls.name}${streamBadge ? ` (${streamBadge})` : ''}`}
+      className="group flex flex-col rounded-xl border border-border bg-card/60 p-4 text-left transition-all hover:border-primary/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:p-5"
+    >
+      {/* ── identity band — class-code avatar, name + stream, level/room ── */}
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-base font-semibold text-white">
+          {avatarText}
         </div>
-        <Badge variant="secondary" className="text-[9px] gap-0.5 shrink-0 text-muted-foreground"><MapPin className="h-2.5 w-2.5" /> {cls.room}</Badge>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug transition-colors group-hover:text-primary">
+              {cls.name}
+            </p>
+            {streamBadge && (
+              <StatusBadge
+                status={streamBadge}
+                variant="primary"
+                className="shrink-0 px-2 py-0.5 text-[10px] leading-4"
+              />
+            )}
+          </div>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+            {cls.level} · {cls.sections.length} section{cls.sections.length === 1 ? '' : 's'}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+            <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+            Room {cls.room}
+          </p>
+        </div>
       </div>
 
       {/* Class teacher — small READ-ONLY derived summary. The appointment
           itself lives in exactly one place: this class → Teachers tab. */}
-      <div className="flex items-center gap-1.5 mb-3 min-w-0">
+      <div className="mt-2.5 flex min-w-0 items-center gap-1.5">
         <UserCheck className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
         {teacher ? (
-          <p className="text-[10px] text-muted-foreground truncate">
+          <p className="truncate text-[11px] text-muted-foreground">
             Class Teacher: <span className="font-medium text-foreground">{teacher.name}</span>
           </p>
         ) : (
-          <p className="text-[10px] text-amber-600 dark:text-amber-400">No class teacher appointed</p>
+          <p className="truncate text-[11px] text-amber-600 dark:text-amber-400">No class teacher appointed</p>
         )}
       </div>
 
-      {/* Section occupancy — compact */}
-      <div className="flex items-center gap-1.5 flex-wrap mb-3">
+      {/* Section occupancy chips (over → rose, ≥90% → amber) + subjects */}
+      <div className="mt-2 flex flex-wrap items-center gap-1">
         {cls.sections.map((s) => {
           const count = getVirtualOccupied(s.id, s.capacity)
           const over = count > s.capacity
           const sFull = !over && count / s.capacity >= 0.9
           return (
-            <span key={s.id} className={cn('inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium',
-              over ? 'bg-rose-500/10 text-rose-600' : sFull ? 'bg-amber-500/10 text-amber-600' : 'bg-muted text-muted-foreground')}>
+            <span key={s.id} className={cn('inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium leading-4',
+              over ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : sFull ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-muted text-muted-foreground')}>
               {s.name} {count}/{s.capacity}
             </span>
           )
         })}
-        <span className="text-[9px] text-muted-foreground ml-0.5">· {cls.subjects.length} subjects</span>
+        <span className="ml-0.5 text-[10px] text-muted-foreground">· {cls.subjects.length} subjects</span>
       </div>
 
-      {/* Capacity stats — compact aligned */}
-      <div className="grid grid-cols-3 gap-1 pt-2.5 border-t border-border/40">
-        <div><p className="text-[8px] text-muted-foreground uppercase tracking-wide">Capacity</p><p className="text-sm font-bold text-foreground tabular-nums">{cap}</p></div>
-        <div><p className="text-[8px] text-muted-foreground uppercase tracking-wide">Enrolled</p><p className="text-sm font-bold text-foreground tabular-nums">{enr}</p></div>
-        <div><p className="text-[8px] text-muted-foreground uppercase tracking-wide">Available</p><p className={cn('text-sm font-bold tabular-nums', tight ? 'text-amber-600' : 'text-emerald-600')}>{vacant}</p></div>
+      {/* ── metric band — capacity / enrolled / available ── */}
+      <div className="mt-4 grid grid-cols-3 divide-x divide-border border-t border-border pt-3.5">
+        <div className="min-w-0 [&:not(:first-child)]:pl-3">
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Capacity</p>
+          <div className="mt-1 flex min-h-[26px] min-w-0 items-center">
+            <span className="font-display text-lg font-bold leading-none tabular-nums text-foreground">{cap}</span>
+          </div>
+        </div>
+        <div className="min-w-0 [&:not(:first-child)]:pl-3">
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Enrolled</p>
+          <div className="mt-1 flex min-h-[26px] min-w-0 items-center">
+            <span className="font-display text-lg font-bold leading-none tabular-nums text-foreground">{enr}</span>
+          </div>
+        </div>
+        <div className="min-w-0 [&:not(:first-child)]:pl-3">
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Available</p>
+          <div className="mt-1 flex min-h-[26px] min-w-0 items-center">
+            <span className={cn('font-display text-lg font-bold leading-none tabular-nums', tight ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{vacant}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Bottom: capacity bar + teacher + view */}
-      <div className="flex items-center justify-between gap-2 mt-2.5">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden max-w-[80px]">
+      {/* ── footer band — occupancy progress + view affordance ── */}
+      <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-border pt-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="h-1 max-w-[96px] flex-1 overflow-hidden rounded-full bg-muted">
             <div className={cn('h-full rounded-full', tight ? 'bg-amber-500' : 'bg-emerald-500')} style={{ width: `${Math.min(100, pct)}%` }} />
           </div>
-          <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">{pct}%</span>
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
         </div>
-        <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 font-medium shrink-0">View <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" /></span>
+        <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-primary">
+          View
+          <ChevronRight className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
+        </span>
       </div>
-    </motion.div>
+    </motion.button>
   )
 }

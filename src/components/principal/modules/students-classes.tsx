@@ -93,17 +93,77 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
     (a, c) => a + c.sections.reduce((sa, s) => sa + getVirtualOccupied(s.id, s.capacity), 0), 0,
   )
 
+  // Archive / Transfer dialogs — mounted in EVERY branch. The profile
+  // view's Archive/Transfer buttons set the same state; mounting only in
+  // the main return left the dialogs unrendered whenever a profile was
+  // open, silently dead-clicking the buttons (production pass §20 fix).
+  const workflowDialogs = (
+    <>
+      {/* Archive Dialog */}
+      <Dialog open={!!archiveTarget} onOpenChange={(o) => !o && setArchiveTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-semibold">Archive Student</DialogTitle>
+            <DialogDescription className="text-xs">{archiveTarget?.name} will be moved to Archived. All records preserved.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label className="text-xs font-medium mb-1.5 block">Reason</Label>
+            <Select value={archiveReason} onValueChange={setArchiveReason}>
+              <SelectTrigger className="w-full text-xs h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Graduation">Graduation</SelectItem>
+                <SelectItem value="School Transfer">School Transfer</SelectItem>
+                <SelectItem value="Relocation">Family Relocation</SelectItem>
+                <SelectItem value="Withdrawal">Withdrawal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setArchiveTarget(null)}>Cancel</Button>
+            <Button variant="destructive" size="sm" onClick={confirmArchive}>Archive Student</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Dialog */}
+      <Dialog open={!!transferTarget} onOpenChange={(o) => !o && setTransferTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-semibold">Transfer Student</DialogTitle>
+            <DialogDescription className="text-xs">Move {transferTarget?.name} to a different class.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label className="text-xs font-medium mb-1.5 block">Target Class</Label>
+            <Select value={transferToClass} onValueChange={setTransferToClass}>
+              <SelectTrigger className="w-full text-xs h-9"><SelectValue placeholder="Select class…" /></SelectTrigger>
+              <SelectContent className="max-h-72">
+                {store.classes.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setTransferTarget(null)}>Cancel</Button>
+            <Button size="sm" onClick={confirmTransfer}>Confirm Transfer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+
   // Full-screen Student Profile
   if (profileStudent) {
     return (
-      <StudentProfilePage
-        student={profileStudent}
-        onBack={closeProfile}
-        onArchive={(st) => { setArchiveTarget(st); setArchiveReason('Graduation') }}
-        onRestore={handleRestore}
-        onTransfer={(st) => { setTransferTarget(st); setTransferToClass('') }}
-        backLabel={profileBackLabel}
-      />
+      <>
+        <StudentProfilePage
+          student={profileStudent}
+          onBack={closeProfile}
+          onArchive={(st) => { setArchiveTarget(st); setArchiveReason('Graduation') }}
+          onRestore={handleRestore}
+          onTransfer={(st) => { setTransferTarget(st); setTransferToClass('') }}
+          backLabel={profileBackLabel}
+        />
+        {workflowDialogs}
+      </>
     )
   }
 
@@ -163,54 +223,7 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
         />
       )}
 
-      {/* Archive Dialog */}
-      <Dialog open={!!archiveTarget} onOpenChange={(o) => !o && setArchiveTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm font-semibold">Archive Student</DialogTitle>
-            <DialogDescription className="text-xs">{archiveTarget?.name} will be moved to Archived. All records preserved.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Label className="text-xs font-medium mb-1.5 block">Reason</Label>
-            <Select value={archiveReason} onValueChange={setArchiveReason}>
-              <SelectTrigger className="w-full text-xs h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Graduation">Graduation</SelectItem>
-                <SelectItem value="School Transfer">School Transfer</SelectItem>
-                <SelectItem value="Relocation">Family Relocation</SelectItem>
-                <SelectItem value="Withdrawal">Withdrawal</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setArchiveTarget(null)}>Cancel</Button>
-            <Button variant="destructive" size="sm" onClick={confirmArchive}>Archive Student</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Transfer Dialog */}
-      <Dialog open={!!transferTarget} onOpenChange={(o) => !o && setTransferTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm font-semibold">Transfer Student</DialogTitle>
-            <DialogDescription className="text-xs">Move {transferTarget?.name} to a different class.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Label className="text-xs font-medium mb-1.5 block">Target Class</Label>
-            <Select value={transferToClass} onValueChange={setTransferToClass}>
-              <SelectTrigger className="w-full text-xs h-9"><SelectValue placeholder="Select class…" /></SelectTrigger>
-              <SelectContent className="max-h-72">
-                {store.classes.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setTransferTarget(null)}>Cancel</Button>
-            <Button size="sm" onClick={confirmTransfer}>Confirm Transfer</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {workflowDialogs}
     </PageTransition>
   )
 }

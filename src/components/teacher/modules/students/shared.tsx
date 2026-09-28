@@ -11,7 +11,7 @@
  * (`@/components/shared/student-directory/student-card`) so the teacher
  * roster and the principal directory render with the exact same rules.
  * This file re-exports them (existing consumers — student-card,
- * students-grid, student-profile-sheet, index — keep their imports) and
+ * students-grid, profile-adapter, index — keep their imports) and
  * keeps only the TEACHER-ROSTER-SPECIFIC logic: the directory filters,
  * the DirectoryStudent-based status derivation and the InfoRow /
  * SectionLabel primitives.

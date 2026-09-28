@@ -35,7 +35,8 @@ import { FEE_STATUS_META } from './shared'
 import { useStudentDirectory } from './hooks'
 import { QuickStats } from './quick-stats'
 import { StudentsGrid } from './students-grid'
-import { StudentProfileSheet } from './student-profile-sheet'
+import { directoryStudentToProfile } from './profile-adapter'
+import { StudentProfilePage } from '@/components/principal/modules/students/student-profile-page'
 import type { DirectoryStudent } from './types'
 
 export function StudentsModule() {
@@ -78,6 +79,22 @@ export function StudentsModule() {
   }
 
   // ── module-level states (the hook above always runs) ────────────────
+
+  // §7–§9 — the ONE canonical Student Profile: the same page the
+  // Principal opens, rendered with the server-authorized (role-scoped)
+  // payload for this teacher. No separate teacher-only profile page.
+  if (selected) {
+    const model = directoryStudentToProfile(selected)
+    return (
+      <StudentProfilePage
+        student={model.student}
+        detail={model.real}
+        visibleTabs={model.visibleTabs}
+        onBack={() => setSelected(null)}
+        backLabel="Student Directory"
+      />
+    )
+  }
 
   if (error) {
     return (
@@ -155,9 +172,6 @@ export function StudentsModule() {
         onClassChange={setClassId}
         onSelect={setSelected}
       />
-
-      {/* Student profile sheet */}
-      <StudentProfileSheet student={selected} onClose={() => setSelected(null)} />
     </PageTransition>
   )
 }

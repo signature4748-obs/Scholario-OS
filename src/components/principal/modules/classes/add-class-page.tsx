@@ -13,6 +13,7 @@ import { useTeachersStore } from '@/lib/store/teachers-store'
 import { useStudentsStore } from '@/lib/store/students-store'
 import { toast } from 'sonner'
 import { StepHeader } from '../admission/components/StepShared'
+import { RoomSelect } from './room-select'
 
 interface SectionEntry {
   name: string
@@ -27,7 +28,7 @@ export function AddClassPage({ onBack, onCreated }: { onBack: () => void; onCrea
 
   const [form, setForm] = useState({
     name: '', academicYear: '2025-2026', medium: 'English',
-    room: '', building: 'Main', floor: '', capacity: 40,
+    room: '', capacity: 40,
   })
   const [sections, setSections] = useState<SectionEntry[]>([
     { name: 'A', capacity: 40, room: '' },
@@ -96,7 +97,7 @@ export function AddClassPage({ onBack, onCreated }: { onBack: () => void; onCrea
         room: s.room || form.room,
       })),
       capacity: form.capacity,
-      room: [form.building, form.floor, form.room].filter(Boolean).join(' · '),
+      room: form.room,
       classTeacherId: classTeacherId || undefined,
       assistantTeacherId: assistantTeacherId || undefined,
     })
@@ -155,16 +156,14 @@ export function AddClassPage({ onBack, onCreated }: { onBack: () => void; onCrea
               </Select>
             </div>
             <div>
-              <Label className="text-xs font-semibold">Room Number</Label>
-              <Input value={form.room} onChange={(e) => setF('room', e.target.value)} placeholder="e.g. F2-09" className="mt-1.5 h-9" />
+              <Label className="text-xs font-semibold">Room <span className="text-muted-foreground font-normal">(default for sections)</span></Label>
+              <div className="mt-1.5">
+                <RoomSelect value={form.room} onChange={(v) => setF('room', v)} placeholder="Choose a room…" />
+              </div>
             </div>
             <div>
-              <Label className="text-xs font-semibold">Building</Label>
-              <Input value={form.building} onChange={(e) => setF('building', e.target.value)} placeholder="e.g. Main" className="mt-1.5 h-9" />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold">Floor</Label>
-              <Input value={form.floor} onChange={(e) => setF('floor', e.target.value)} placeholder="e.g. 2" className="mt-1.5 h-9" />
+              <Label className="text-xs font-semibold">Seats / Section</Label>
+              <Input type="number" min={1} value={form.capacity} onChange={(e) => setF('capacity', parseInt(e.target.value) || 0)} placeholder="40" className="mt-1.5 h-9" />
             </div>
           </div>
         </div>
@@ -186,7 +185,9 @@ export function AddClassPage({ onBack, onCreated }: { onBack: () => void; onCrea
                 </div>
                 <div className="flex-1">
                   <Label className="text-xs font-semibold">Room</Label>
-                  <Input value={sec.room} onChange={(e) => updateSection(i, 'room', e.target.value)} placeholder="e.g. F2-09" className="mt-1.5 h-9" />
+                  <div className="mt-1.5">
+                    <RoomSelect value={sec.room || form.room} onChange={(v) => updateSection(i, 'room', v)} />
+                  </div>
                 </div>
                 {sections.length > 1 && (
                   <Button variant="ghost" size="sm" onClick={() => removeSection(i)} className="h-9 px-2 text-rose-600 hover:text-rose-700">

@@ -31,6 +31,37 @@ function syncSubjectNames(
   return { ...cls, subjects }
 }
 
+/**
+ * Spec §3 (Students & Classes production pass) — no orphan leadership
+ * assignments. Ends every LIVE position of a student that fails the `keep`
+ * predicate (history preserved: active→false + endedOn/endedByName). Used
+ * when a student leaves a class/section (transfer/promotion) or is archived
+ * — a position is only ever valid inside the class · section it was awarded
+ * in. Returns the next positions array (same reference when nothing
+ * changed) plus how many were ended, so callers can add an honest timeline
+ * note without extra scans.
+ */
+function endOrphanPositions(
+  positions: StudentPosition[],
+  studentId: string,
+  keep: (p: StudentPosition) => boolean,
+  byName: string,
+  now = new Date().toISOString(),
+): { positions: StudentPosition[]; ended: StudentPosition[] } {
+  const sessionId = getActiveAcademicSessionId()
+  const ended: StudentPosition[] = []
+  let changed = false
+  const next = positions.map((p) => {
+    // A position from an earlier session is already history (RB-1) — only
+    // live-session records of THIS student can become orphans.
+    if (p.studentId !== studentId || !p.active || p.sessionId !== sessionId || keep(p)) return p
+    changed = true
+    ended.push(p)
+    return { ...p, active: false, endedOn: now, endedByName: byName }
+  })
+  return { positions: changed ? next : positions, ended }
+}
+
 export const useStudentsStore = create<StudentsState>()(
   persist(
     (set, get) => ({
@@ -51,9 +82,12 @@ export const useStudentsStore = create<StudentsState>()(
     {
       id: 'POS-SEED-1',
       studentId: 'STU-27',
-      studentName: 'Diya Verma',
+      studentName: 'Myra Patel',
       sessionId: ACTIVE_SESSION_ID,
-      classId: 'C10',
+      // STU-27 is enrolled in Class 9 (C12) · A — the classId must match
+      // the canonical class record so the Class 9 Leadership tab sees the
+      // assignment (§3 — no invisible authority).
+      classId: 'C12',
       className: 'Class 9',
       section: 'A',
       key: 'class-monitor',
@@ -87,8 +121,20 @@ export const useStudentsStore = create<StudentsState>()(
   archiveStudent: (id, reason, by) => {
     const s = get().students.find((x) => x.id === id)
     if (!s) return
+    const now = new Date().toISOString()
+    // Spec §3 — an archived student can not hold live class responsibilities:
+    // end every active position (history preserved) so the Leadership tab
+    // and the student-side capability derivation never see an orphan holder.
+    const { positions: nextPositions, ended } = endOrphanPositions(
+      get().studentPositions,
+      id,
+      () => false,
+      by,
+      now,
+    )
     set((state) => ({
-      students: state.students.map((x) => x.id === id ? { ...x, status: 'Archived' as StudentStatus, archiveReason: reason, archiveDate: new Date().toISOString(), timeline: [{ id: `tl-${Date.now()}`, type: 'archive' as const, title: 'Student Archived', description: reason, date: new Date().toISOString(), by }, ...x.timeline] } : x),
+      students: state.students.map((x) => x.id === id ? { ...x, status: 'Archived' as StudentStatus, archiveReason: reason, archiveDate: now, timeline: [{ id: `tl-${Date.now()}`, type: 'archive' as const, title: 'Student Archived', description: ended.length > 0 ? `${reason} · ${ended.length} class responsibilit${ended.length === 1 ? 'y' : 'ies'} ended automatically` : reason, date: now, by }, ...x.timeline] } : x),
+      studentPositions: nextPositions,
     }))
   },
   restoreStudent: (id, by) => {
@@ -102,9 +148,24 @@ export const useStudentsStore = create<StudentsState>()(
     const nc = get().classes.find((c) => c.name === toClass)
     const fc = `${s.className}-${s.section}`
     const tc = nc ? nc.name : toClass
+    const now = new Date().toISOString()
+    const newSection = nc ? (nc.sections[0]?.name ?? s.section) : s.section
+    // Spec §3 — leadership is scoped to the awarding class · section. When
+    // the student moves, positions from the old class/section end (history
+    // preserved); only positions matching the NEW placement survive.
+    const { positions: nextPositions, ended } = nc
+      ? endOrphanPositions(
+          get().studentPositions,
+          id,
+          (p) => p.classId === nc.id && p.section === newSection,
+          by,
+          now,
+        )
+      : { positions: get().studentPositions, ended: [] }
     set((state) => ({
-      students: state.students.map((x) => x.id === id && nc ? { ...x, classId: nc.id, className: nc.name, section: nc.sections[0]?.name ?? x.section, rollNo: '01', timeline: [{ id: `tl-${Date.now()}`, type: 'transfer' as const, title: type, description: `${fc} → ${tc}`, date: new Date().toISOString(), by }, ...x.timeline] } : x),
-      transfers: [{ id: `tr-${Date.now()}`, studentId: id, studentName: s.name, type, fromClass: fc, toClass: tc, reason, status: 'Completed' as const, date: new Date().toISOString() }, ...state.transfers],
+      students: state.students.map((x) => x.id === id && nc ? { ...x, classId: nc.id, className: nc.name, section: newSection, rollNo: '01', timeline: [{ id: `tl-${Date.now()}`, type: 'transfer' as const, title: type, description: ended.length > 0 ? `${fc} → ${tc} · ${ended.length} class responsibilit${ended.length === 1 ? 'y' : 'ies'} ended automatically` : `${fc} → ${tc}`, date: now, by }, ...x.timeline] } : x),
+      studentPositions: nextPositions,
+      transfers: [{ id: `tr-${Date.now()}`, studentId: id, studentName: s.name, type, fromClass: fc, toClass: tc, reason, status: 'Completed' as const, date: now }, ...state.transfers],
     }))
   },
   assignHouse: (id, houseId, by) => {
@@ -127,8 +188,22 @@ export const useStudentsStore = create<StudentsState>()(
     const p = get().promotions.find((x) => x.id === id)
     if (!p) return
     const nc = get().classes.find((c) => c.name === p.toClass)
+    const now = new Date().toISOString()
+    const newSection = nc ? (nc.sections[0]?.name ?? '') : ''
+    // Spec §3 — promotion is a class move: live positions from the old
+    // class/section end automatically (history preserved).
+    const { positions: nextPositions } = nc
+      ? endOrphanPositions(
+          get().studentPositions,
+          p.studentId,
+          (pos) => pos.classId === nc.id && pos.section === newSection,
+          by,
+          now,
+        )
+      : { positions: get().studentPositions }
     set((state) => ({
-      students: state.students.map((x) => x.id === p.studentId && nc ? { ...x, classId: nc.id, className: nc.name, section: nc.sections[0]?.name ?? x.section, rollNo: '01', timeline: [{ id: `tl-${Date.now()}`, type: 'promotion' as const, title: `Promoted to ${p.toClass}`, description: `Academic Year ${p.academicYear}`, date: new Date().toISOString(), by }, ...x.timeline] } : x),
+      students: state.students.map((x) => x.id === p.studentId && nc ? { ...x, classId: nc.id, className: nc.name, section: nc.sections[0]?.name ?? x.section, rollNo: '01', timeline: [{ id: `tl-${Date.now()}`, type: 'promotion' as const, title: `Promoted to ${p.toClass}`, description: `Academic Year ${p.academicYear}`, date: now, by }, ...x.timeline] } : x),
+      studentPositions: nextPositions,
       promotions: state.promotions.map((pp) => pp.id === id ? { ...pp, status: 'Completed' as const } : pp),
     }))
   },
@@ -265,6 +340,37 @@ export const useStudentsStore = create<StudentsState>()(
           ? { ...c, sections: c.sections.map((s) => s.id === sectionId ? { ...s, assistantTeacherId: teacherId ?? undefined } : s) }
           : c
       ),
+    }))
+  },
+  /** §5 room registry — assign a section's room (room NAME from the
+   *  registry; null clears the assignment). */
+  updateSectionRoom: (classId, sectionId, room) => {
+    set((state) => ({
+      classes: state.classes.map((c) =>
+        c.id === classId
+          ? { ...c, sections: c.sections.map((s) => s.id === sectionId ? { ...s, room: room ?? '' } : s) }
+          : c
+      ),
+    }))
+  },
+  /** §5 room registry — a room RENAME must reach every class/section that
+   *  references it by name (the name is the join key). */
+  renameRoomEverywhere: (from, to) => {
+    const key = from.trim().toLowerCase()
+    if (!key) return
+    set((state) => ({
+      classes: state.classes.map((c) => {
+        const classRoom = c.room.trim().toLowerCase() === key ? to : c.room
+        const sectionHits = c.sections.some((s) => s.room.trim().toLowerCase() === key)
+        if (classRoom === c.room && !sectionHits) return c
+        return {
+          ...c,
+          room: classRoom,
+          sections: sectionHits
+            ? c.sections.map((s) => (s.room.trim().toLowerCase() === key ? { ...s, room: to } : s))
+            : c.sections,
+        }
+      }),
     }))
   },
   addClassSubject: (classId, subjectId) => {
@@ -540,9 +646,28 @@ export const useStudentsStore = create<StudentsState>()(
       // session when an older persisted state predates it. The migration
       // runs ONCE per browser; afterwards awarding/ending positions persists
       // normally (spec §38 E2E stays intact).
-      version: 3,
+      version: 5,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<StudentsState>
+        if (version < 5) {
+          // v4/v5 — POS-SEED-1 data healing (production pass §3/§17): the
+          // seed carried classId 'C10' (a class id that does not exist — the
+          // ids skip C02/C04/C06/C08/C10) and a stale holder name, making
+          // the Class 9-A Class Monitor assignment invisible in the Class 9
+          // Leadership tab while the capabilities still derived
+          // student-side. Heal ONLY the untouched seed record to the real
+          // class (C12 = Class 9) and the roster's actual holder name;
+          // user-awarded positions are never touched (id signature).
+          state.studentPositions = (state.studentPositions ?? []).map((p) => {
+            if (p.id !== 'POS-SEED-1') return p
+            const holder = (state.students ?? []).find((s) => s.id === p.studentId)
+            return {
+              ...p,
+              classId: p.classId === 'C10' ? 'C12' : p.classId,
+              studentName: p.studentName === 'Diya Verma' ? (holder?.name ?? 'Myra Patel') : p.studentName,
+            }
+          })
+        }
         if (version < 3) {
           const positions = (state.studentPositions ?? []).map((p) =>
             p.sessionId ? p : { ...p, sessionId: ACTIVE_SESSION_ID },
