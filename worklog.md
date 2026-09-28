@@ -2386,3 +2386,23 @@ Stage Summary:
 - Class Teacher is a single-source canonical concept: assignable ONLY from Students & Classes → Classes; Teacher module READS the roster (display + derived permissions); no duplicate assignment path exists in the responsibility flows.
 - Account Slip reads as an official institutional credential document with masked-by-default passcode and working copy.
 - Honest residuals: Add Teacher wizard still records a local "Class Teacher Role" hint (inert on the profile — filtered from Responsibilities + permissions; wizard explicitly out of scope per do-not-change list); teacher-store persists loginCredentials at store level (pre-existing architecture, deliberately preserved per "preserve existing backend architecture" instruction).
+
+---
+Task ID: G1
+Agent: Z.ai Code (main orchestrator)
+Task: Push current workspace version to GitHub repository signature4748-obs/Scholario-OS
+
+Work Log:
+- Verified working tree clean (all Final Polish Pass work committed at e0d9d2b).
+- Inspected remote: repository already contained a divergent main (42c331a "wave2: admissions polish..."); local and remote shared merge-base 02cd80eb but had diverged (local 15 commits ahead of base, remote 40 commits ahead of base, 600 files differed — remote state was older than the current workspace).
+- Preserved the remote's pre-existing history non-destructively: pushed 42c331a to new remote branch archive/previous-main.
+- Force-pushed local main (with --force-with-lease) to remote main: 42c331a → e0d9d2b (forced update).
+- Configured local remote `origin` → https://github.com/signature4748-obs/Scholario-OS.git (clean URL — token NOT persisted in .git/config) and set main's upstream to origin/main.
+- Verified via ls-remote: remote HEAD/main = e0d9d2b2e095589b14687a7f13382b6f261acd57 (matches local), archive/previous-main = 42c331a.
+- Created recurring 15-min webDevReview cron job (id 420641) per project workflow.
+
+Stage Summary:
+- GitHub repository https://github.com/signature4748-obs/Scholario-OS now serves the exact current workspace version (Teachers module Final Polish Pass state, incl. shared DatePicker formatStr + native-date CSS layer fix, Class Teacher canonical separation, Account Slip credential document redesign).
+- Old divergent remote history safely preserved under archive/previous-main branch (nothing lost).
+- Local repo now tracks origin/main; status in sync (## main...origin/main, no ahead/behind).
+- Token was used transiently for push only (passed via one-off URL, never stored in config); no secrets written to the repo.
