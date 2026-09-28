@@ -2406,3 +2406,23 @@ Stage Summary:
 - Old divergent remote history safely preserved under archive/previous-main branch (nothing lost).
 - Local repo now tracks origin/main; status in sync (## main...origin/main, no ahead/behind).
 - Token was used transiently for push only (passed via one-off URL, never stored in config); no secrets written to the repo.
+
+---
+Task ID: G2
+Agent: Z.ai Code (main orchestrator)
+Task: Restore workspace to latest version from GitHub (sandbox had rolled back to old snapshot; user reported "older version showing in preview")
+
+Work Log:
+- DIAGNOSIS: sandbox workspace had been rolled back to a 2026-09-28 12:30 snapshot on the OLD lineage (30c81c2 UUID commit atop 42c331a "wave2: admissions polish") — the Teachers Final Polish commits (ad5477c/e0d9d2b/d994350) did not exist in the local object store at all. GitHub main still held the latest (d994350).
+- PRESERVED the old snapshot durably: pushed 30c81c2 to GitHub branch archive/snapshot-20260928-pre-restore (224 files of lineage-A work beyond 42c331a); deleted the redundant archive/previous-main (42c331a is an ancestor of the new archive branch).
+- Fixed origin remote auth (embedded token had gone stale; reset URL to the working token from the user).
+- RESTORED: git reset --hard origin/main → d994350. Verified Final-Polish markers on disk (date-picker.tsx formatStr ×3, account-modals "Teacher Portal Credentials").
+- bun install (tesseract.js 6.0.1 pin synced); bunx prisma generate (schema differs 406 lines between lineages; DB file restored with the reset); clean dev-server restart (killed stale chain, respawned via bun spawn-detached.mjs). Ports verified: :3000 Next dev, :3003 event-stream, :3777 lazy-compilation backend. Removed stale pre-restore screenshot dir references none.
+- BROWSER QA (agent-browser, live at :3000): landing page → Login Portal → Principal one-tap sign-in → dashboard full sidebar (v2.4 Live). Teachers module: 20 faculty, KPIs (19 active / 1 on leave / 96% att / ₹14.33 L payroll), Directory/Appointment Letters/Audit Logs tabs. Rohan Mehta (EMP-014) profile: TEACHING ALLOCATION shows canonical "CLASS TEACHER / Grade 9 - A" with its own [Manage] deep-link button; RESPONSIBILITIES contains NO Class Teacher (Examination Incharge + Invigilator only); Edit Employment dialog: Joining date renders as compact popover DatePicker "1 Jun 2015" (native date input replaced), calendar popover opens with month navigation. Zero runtime errors in dev.log; all requests 200. Screenshot: qa-shots/restore-verification-profile.png.
+- Known tooling note: agent-browser refs shift when the notifications badge polling re-renders the sidebar — clicking a stale ref lands on Dashboard; re-snapshotting and clicking fresh refs works (app-side no bug).
+
+Stage Summary:
+- Workspace == GitHub main == d994350 (Teachers Final Polish state); preview now serves the latest version. User-visible problem resolved.
+- Old lineage preserved at archive/snapshot-20260928-pre-restore (nothing lost).
+- Dev stack healthy: Next dev (webpack, lazyCompilation) + event-stream mini-service (:3003) + fresh Prisma client + synced node_modules.
+- Residual risk: sandbox rollbacks can recur (this is the second lineage fork; first was recovered 2026-09-27 per commit abb4a8c). Mitigation: worklog + GitHub are the recovery source of truth; cron webDevReview job (id 420641) keeps QA running.
