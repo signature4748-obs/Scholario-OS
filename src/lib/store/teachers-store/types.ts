@@ -63,13 +63,15 @@ export interface AppointmentLetterData {
 }
 
 /** A stored media record (photo / signature) for a teacher — the file
- *  lives server-side (db/uploads/teachers, magic-byte validated); the
- *  dataUrl is the wizard's local preview copy. */
+ *  lives server-side (db/uploads/teachers, magic-byte validated) and is
+ *  served from /api/teachers/upload/<fileId>. The base64 `dataUrl` is a
+ *  TRANSIENT in-session preview copy (wizard form state) and is never
+ *  persisted — the server file is the canonical media (W2.3B). */
 export interface TeacherMediaRecord {
   fileId: string
   fileName: string
   uploadedAt: string
-  dataUrl: string
+  dataUrl?: string
 }
 
 export interface AuditLogItem {

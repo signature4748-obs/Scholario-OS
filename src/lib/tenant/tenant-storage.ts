@@ -67,8 +67,12 @@ export function migrateLegacyScopedStore(baseName: string, defaultTenantId: stri
  * Build a tenant-scoped JSON storage for a zustand persist store.
  * Pass `baseName` and call `migrateLegacyScopedStore(baseName, DEFAULT_TENANT_ID)`
  * right before store creation.
+ *
+ * The generic types WHAT the caller expects the stored JSON to deserialize
+ * into (the store's PersistedState). At runtime this is plain JSON.parse
+ * output — callers that need shape guarantees provide a `migrate` fn.
  */
-export function createTenantScopedStorage(baseName: string) {
+export function createTenantScopedStorage<T = unknown>(baseName: string) {
   return createJSONStorage((): StateStorage => ({
     getItem: (name: string) => {
       if (typeof window === 'undefined') return null
@@ -94,5 +98,5 @@ export function createTenantScopedStorage(baseName: string) {
         // Ignore.
       }
     },
-  }))
+  })) as ReturnType<typeof createJSONStorage<T>>
 }

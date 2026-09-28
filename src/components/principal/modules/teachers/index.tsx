@@ -106,6 +106,8 @@ export function TeachersModule() {
           onResetPassword={() => actions.handleResetPassword(liveSelectedTeacher!)}
           onToggleLock={() => actions.handleOpenLockModal(liveSelectedTeacher!)}
           onOpenTermination={() => actions.handleOpenTerminationModal(liveSelectedTeacher!)}
+          onManageWorkload={actions.handleManageWorkload}
+          onManageResponsibilities={actions.handleManageResponsibilities}
         />
       ) : (
         <>
@@ -248,7 +250,8 @@ export function TeachersModule() {
         credentials={s.currentCredentials}
       />
 
-      {/* ASSIGN POSITION MODAL */}
+      {/* ASSIGN POSITION MODAL — the responsibilities hub (profile
+          “Manage responsibilities” pre-targets the teacher) */}
       <AssignPositionModal
         open={s.assignPosModalOpen}
         onClose={() => s.setAssignPosModalOpen(false)}
@@ -259,6 +262,14 @@ export function TeachersModule() {
         selectedPosIdToAssign={s.selectedPosIdToAssign}
         setSelectedPosIdToAssign={s.setSelectedPosIdToAssign}
         onConfirm={actions.handleConfirmAssignPosition}
+        onCreateCustomPosition={() => s.setCustomPosModalOpen(true)}
+        onEmergencyOverride={() => {
+          // Carry the hub's current selection into the override modal.
+          s.setOverrideTeacherId(s.targetTeacherIdForPos)
+          s.setSelectedPosForOverride(s.selectedPosIdToAssign)
+          s.setAssignPosModalOpen(false)
+          s.setEmergencyOverrideModalOpen(true)
+        }}
       />
 
       {/* CREATE CUSTOM POSITION MODAL */}
@@ -272,10 +283,17 @@ export function TeachersModule() {
         }}
       />
 
-      {/* EMERGENCY OVERRIDE MODAL */}
+      {/* EMERGENCY OVERRIDE MODAL — instant activation with Principal
+          authorization code + mandatory audit reason */}
       <EmergencyOverrideModal
         open={s.emergencyOverrideModalOpen}
         onClose={() => s.setEmergencyOverrideModalOpen(false)}
+        teachers={s.teachers}
+        positionsList={s.positionsList}
+        overrideTeacherId={s.overrideTeacherId}
+        setOverrideTeacherId={s.setOverrideTeacherId}
+        selectedPosForOverride={s.selectedPosForOverride}
+        setSelectedPosForOverride={s.setSelectedPosForOverride}
         overrideAuthCode={s.overrideAuthCode}
         setOverrideAuthCode={s.setOverrideAuthCode}
         overrideReason={s.overrideReason}

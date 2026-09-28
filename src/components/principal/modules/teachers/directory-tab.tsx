@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import type { TeacherRecord } from '@/lib/store/teachers-store'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { gradientFor } from './shared'
+import { teacherMediaSrc } from './teacher-media'
 
 interface Props {
   teachers: TeacherRecord[]
@@ -101,10 +102,11 @@ export function DirectoryTab({
             >
               <div className="flex items-start gap-3">
                 <div className="relative shrink-0">
-                  {t.photo?.dataUrl ? (
+                  {t.photo ? (
                     <img
-                      src={t.photo.dataUrl}
+                      src={teacherMediaSrc(t.photo)}
                       alt={t.name}
+                      loading="lazy"
                       className="h-11 w-11 rounded-xl object-cover border border-border"
                     />
                   ) : (

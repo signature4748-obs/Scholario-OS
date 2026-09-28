@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import type { TeacherRecord } from '@/lib/store/teachers-store'
 import { formatDate } from '@/lib/format'
 import { gradientFor } from './shared'
+import { teacherMediaSrc } from './teacher-media'
 
 interface Props {
   teachers: TeacherRecord[]
@@ -33,8 +34,8 @@ export function AppointmentLettersTab({ teachers, onViewLetter, onIssueNew }: Pr
           >
             {/* Teacher identity — avatar + name + meta */}
             <div className="flex items-center gap-3 min-w-0">
-              {t.photo?.dataUrl ? (
-                <img src={t.photo.dataUrl} alt={t.name} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+              {t.photo ? (
+                <img src={teacherMediaSrc(t.photo)} alt={t.name} loading="lazy" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
               ) : (
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${gradientFor(t.id)} font-semibold text-white text-sm`}>
                   {t.avatar}

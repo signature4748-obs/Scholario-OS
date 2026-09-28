@@ -68,6 +68,17 @@ if (process.env.NODE_ENV !== "production" && lazyBackend) {
         backend: lazyBackend,
       },
     };
+    // W2.3B — never watch the runtime SQLite database (db/*.db, journals,
+    // uploads). Every prisma write touched custom.db, and the default
+    // watcher (which does NOT honor .gitignore in webpack mode) answered
+    // with a full Fast-Refresh rebuild — up to 8s of dev-server CPU per
+    // write, HMR reconnects and stale-chunk overlays in live browsers.
+    // (Replaces the default RegExp list with equivalent string globs —
+    // webpack schema-validates mixed arrays strictly.)
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ["**/node_modules/**", "**/.git/**", "**/db/**"],
+    };
     console.log("[memory-fix] lazyCompilation enabled (gateway-aware custom backend, port 3777)");
     return config;
   };

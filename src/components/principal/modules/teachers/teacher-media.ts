@@ -151,3 +151,15 @@ export function deleteTeacherMediaFile(fileId: string): void {
 export function teacherMediaUrl(record: TeacherMediaRecord): string {
   return `/api/teachers/upload/${encodeURIComponent(record.fileId)}`
 }
+
+/**
+ * Best available render source for a stored media record (W2.3B): the
+ * transient in-session dataUrl when present (just-uploaded preview, avoids
+ * a flash), otherwise the canonical server URL (browser-cached,
+ * Cache-Control: private, max-age=3600). Persisted records carry no
+ * dataUrl, so renders after a reload stream from the API instead of
+ * inlining multi-MB base64 strings.
+ */
+export function teacherMediaSrc(record: TeacherMediaRecord): string {
+  return record.dataUrl ?? teacherMediaUrl(record)
+}

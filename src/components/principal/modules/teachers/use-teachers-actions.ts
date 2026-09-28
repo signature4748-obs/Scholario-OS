@@ -114,14 +114,19 @@ export function useTeachersActions(s: TeachersState) {
       toast.error('Reason Required', { description: 'Specify reason for emergency override.' })
       return
     }
-    if (!s.selectedTeacher || !s.selectedPosForOverride) return
+    if (!s.overrideTeacherId || !s.selectedPosForOverride) {
+      toast.error('Select a teacher and a position', { description: 'The override activates a specific position for a specific teacher.' })
+      return
+    }
+    const target = s.teachers.find((t) => t.id === s.overrideTeacherId)
+    if (!target) return
 
-    s.emergencyOverridePosition(s.selectedTeacher.id, s.selectedPosForOverride, s.overrideReason, s.overrideAuthCode)
+    s.emergencyOverridePosition(s.overrideTeacherId, s.selectedPosForOverride, s.overrideReason, s.overrideAuthCode)
     s.setEmergencyOverrideModalOpen(false)
     s.setOverrideAuthCode('')
     s.setOverrideReason('')
     toast.success('EMERGENCY OVERRIDE ACTIVATED', {
-      description: `Permissions for position activated instantly for ${s.selectedTeacher.name}. Logged in Audit Trail.`,
+      description: `Permissions for position activated instantly for ${target.name}. Logged in Audit Trail.`,
     })
   }
 
@@ -152,6 +157,23 @@ export function useTeachersActions(s: TeachersState) {
     })
   }
 
+  /** From the teacher profile: open the WorkloadAllocationModal
+   *  pre-targeted at this teacher with the current allocation prefilled. */
+  const handleManageWorkload = (t: TeacherRecord) => {
+    s.setSelectedTeacher(t)
+    s.setSelectedSubjects(t.subjects)
+    s.setSelectedClasses(t.classes)
+    s.setWorkloadModalOpen(true)
+  }
+
+  /** From the teacher profile: open the AssignPositionModal pre-targeted
+   *  at this teacher (responsibilities hub). */
+  const handleManageResponsibilities = (t: TeacherRecord) => {
+    s.setTargetTeacherIdForPos(t.id)
+    s.setSelectedPosIdToAssign('')
+    s.setAssignPosModalOpen(true)
+  }
+
   return {
     openTeacherProfile,
     handleLoginAsTeacher,
@@ -167,6 +189,8 @@ export function useTeachersActions(s: TeachersState) {
     handleOpenLockModal,
     handleConfirmLockToggle,
     handleSaveWorkload,
+    handleManageWorkload,
+    handleManageResponsibilities,
   }
 }
 

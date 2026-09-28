@@ -66,6 +66,7 @@ export function useTeachersState() {
   const [assignPosModalOpen, setAssignPosModalOpen] = useState(false)
   const [customPosModalOpen, setCustomPosModalOpen] = useState(false)
   const [emergencyOverrideModalOpen, setEmergencyOverrideModalOpen] = useState(false)
+  const [overrideTeacherId, setOverrideTeacherId] = useState('')
   const [selectedPosForOverride, setSelectedPosForOverride] = useState<string>('')
   const [overrideAuthCode, setOverrideAuthCode] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
@@ -153,6 +154,7 @@ export function useTeachersState() {
     customPosModalOpen, setCustomPosModalOpen,
     // emergency override modal
     emergencyOverrideModalOpen, setEmergencyOverrideModalOpen,
+    overrideTeacherId, setOverrideTeacherId,
     selectedPosForOverride, setSelectedPosForOverride,
     overrideAuthCode, setOverrideAuthCode,
     overrideReason, setOverrideReason,

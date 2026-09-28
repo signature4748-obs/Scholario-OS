@@ -54,6 +54,14 @@ server.log
 /skills/
 # RB-1 — study material uploads (server-authorized; never commit user bytes)
 db/uploads/
+# W2.3B — runtime SQLite files: the dev watcher honors .gitignore, and every
+# runtime DB write (sessions, read-receipts, prisma writes) was triggering a
+# webpack Fast-Refresh rebuild loop (stale chunks + sluggish navigation).
+# Ignored here so the watcher stops tracking live database mutations.
+db/*.db
+db/*.db-journal
+db/*.db-shm
+db/*.db-wal
 tool-results/
 
 # scratch dirs (Turbopack watcher must ignore these)

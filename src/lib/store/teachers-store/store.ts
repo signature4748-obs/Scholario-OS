@@ -14,11 +14,18 @@ import { createPayrollSlice } from './slices/payroll-slice'
 // SaaS-STAGE-2A — tenant-scoped persistence (per-school staff dataset).
 import { migrateLegacyScopedStore, createTenantScopedStorage, TENANT_SCOPED_BASES } from '@/lib/tenant/tenant-storage'
 import { DEFAULT_TENANT_ID } from '@/lib/tenant/schools'
+// W2.3B — real persisted-state migration chain + persistence shaping.
+import {
+  migrateTeachersStore,
+  teachersStorePartialize,
+  CURRENT_TEACHERS_STORE_VERSION,
+  type TeachersPersistedState,
+} from './migrate'
 
 migrateLegacyScopedStore(TENANT_SCOPED_BASES.teachers, DEFAULT_TENANT_ID)
 
 export const useTeachersStore = create<TeachersStoreState>()(
-  persist(
+  persist<TeachersStoreState, [], [], TeachersPersistedState>(
     (...a) => ({
       teachers: SEED_TEACHERS,
       positionsList: DEFAULT_POSITIONS,
@@ -31,16 +38,22 @@ export const useTeachersStore = create<TeachersStoreState>()(
     }),
     {
       name: TENANT_SCOPED_BASES.teachers,
-      storage: createTenantScopedStorage(TENANT_SCOPED_BASES.teachers),
-      // v2 — faculty list now derives the full 20-member canonical roster
-      // (was 2 detailed records). Version bump discards the stale 2-teacher
-      // persisted state once and re-seeds the full faculty.
-      // v3 — pending Examination Incharge assignment re-dated to the
-      // 2026–27 session (was a stale 2025 date on a 2026 screen).
-      // v4 — appointment letters drop the fake QR verification id and
-      // snapshot the teacher's address at issue time (Wave 2.3 §9);
-      // teacher photo/signature become stored media records.
-      version: 4,
+      storage: createTenantScopedStorage<TeachersPersistedState>(TENANT_SCOPED_BASES.teachers),
+      // Version history & the migration chain live in ./migrate.ts.
+      //   v2 — faculty list derives the full 20-member canonical roster
+      //        (was 2 detailed records; bump discarded the stale mock state
+      //        once and re-seeded).
+      //   v3 — pending Examination Incharge assignment re-dated to the
+      //        2026–27 session (seed-data fix only).
+      //   v4 — appointment letters drop the fake QR verification id and
+      //        snapshot the teacher's address at issue time; photo/signature
+      //        become stored media records (Wave 2.3).
+      //   v5 — media records stop persisting the base64 dataUrl preview
+      //        copy (server file is canonical); explicit partialize keeps
+      //        only data slices (W2.3B).
+      version: CURRENT_TEACHERS_STORE_VERSION,
+      migrate: migrateTeachersStore,
+      partialize: teachersStorePartialize,
     }
   )
 )

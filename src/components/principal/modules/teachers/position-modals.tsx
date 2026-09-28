@@ -34,6 +34,10 @@ interface AssignPositionModalProps extends CommonProps {
   selectedPosIdToAssign: string
   setSelectedPosIdToAssign: (v: string) => void
   onConfirm: () => void
+  /** Opens the existing CreateCustomPositionModal (optional link). */
+  onCreateCustomPosition?: () => void
+  /** Opens the existing EmergencyOverrideModal (optional link). */
+  onEmergencyOverride?: () => void
 }
 
 export function AssignPositionModal({
@@ -41,6 +45,7 @@ export function AssignPositionModal({
   targetTeacherIdForPos, setTargetTeacherIdForPos,
   selectedPosIdToAssign, setSelectedPosIdToAssign,
   open, onClose, onConfirm,
+  onCreateCustomPosition, onEmergencyOverride,
 }: AssignPositionModalProps) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -77,10 +82,27 @@ export function AssignPositionModal({
                 ))}
               </SelectContent>
             </Select>
+            {onCreateCustomPosition && (
+              <button
+                type="button"
+                onClick={onCreateCustomPosition}
+                className="text-[11px] text-primary hover:underline mt-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+              >
+                ＋ Can&rsquo;t find it? Create a custom position
+              </button>
+            )}
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-1 sm:gap-1">
+          {onEmergencyOverride && (
+            <Button
+              type="button" variant="ghost" onClick={onEmergencyOverride}
+              className="text-[11px] h-8 mr-auto text-amber-700 hover:text-amber-800 hover:bg-amber-500/10 gap-1"
+            >
+              <ShieldAlert className="h-3 w-3" /> Emergency override
+            </Button>
+          )}
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={onConfirm} className="bg-primary text-primary-foreground">
             Send Position Assignment
@@ -93,6 +115,12 @@ export function AssignPositionModal({
 
 /* ---------- EMERGENCY OVERRIDE MODAL ---------- */
 interface EmergencyOverrideModalProps extends CommonProps {
+  teachers: TeacherRecord[]
+  positionsList: PositionDefinition[]
+  overrideTeacherId: string
+  setOverrideTeacherId: (v: string) => void
+  selectedPosForOverride: string
+  setSelectedPosForOverride: (v: string) => void
   overrideAuthCode: string
   setOverrideAuthCode: (v: string) => void
   overrideReason: string
@@ -101,6 +129,9 @@ interface EmergencyOverrideModalProps extends CommonProps {
 }
 
 export function EmergencyOverrideModal({
+  teachers, positionsList,
+  overrideTeacherId, setOverrideTeacherId,
+  selectedPosForOverride, setSelectedPosForOverride,
   overrideAuthCode, setOverrideAuthCode,
   overrideReason, setOverrideReason,
   open, onClose, onConfirm,
@@ -118,6 +149,31 @@ export function EmergencyOverrideModal({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-semibold">Teacher</Label>
+              <Select value={overrideTeacherId} onValueChange={setOverrideTeacherId}>
+                <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Choose faculty member" /></SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {teachers.filter((t) => t.status !== 'Relieved').map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name} ({t.designation})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Position</Label>
+              <Select value={selectedPosForOverride} onValueChange={setSelectedPosForOverride}>
+                <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Choose position" /></SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {positionsList.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div>
             <Label className="text-xs font-semibold">Authorization Code</Label>
             <Input
