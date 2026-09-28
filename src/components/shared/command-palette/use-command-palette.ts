@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useAuth } from '@/lib/store/auth-store'
 import { useTheme } from '@/lib/store/theme-store'
 import { useFocusStore } from '@/lib/store/focus-store'
 import { signOut } from '@/lib/signout'
@@ -58,7 +57,6 @@ export function useCommandPalette({
   const [recentList, setRecentList] = useState<SearchResultItem[]>([])
   // DB-backed results from /api/search. null = not fetched/failed → mock fallback
   const [remoteResults, setRemoteResults] = useState<SearchResultItem[] | null>(null)
-  const { switchTo } = useAuth()
   const { toggle: toggleTheme } = useTheme()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -135,7 +133,7 @@ export function useCommandPalette({
     return searchResults
   }, [searchResults])
 
-  // System actions (Dark mode, Switch role, Logout) when query matches 'theme', 'switch', 'logout'
+  // System actions (Dark mode, Logout) when query matches 'theme', 'logout'
   const systemActions = useMemo(() => {
     if (!query.trim()) return []
     const q = query.toLowerCase()
@@ -181,29 +179,6 @@ export function useCommandPalette({
       }
     }
 
-    if (role === 'principal' && 'switch login role teacher student demo'.includes(q)) {
-      actions.push({
-        id: 'act-switch-teacher',
-        title: 'Switch to Teacher Portal',
-        subtitle: 'Preview system as senior faculty',
-        category: 'Settings & System',
-        type: 'setting',
-        moduleKey: 'dashboard',
-        iconName: 'BookOpen',
-        badge: 'Role Demo',
-      })
-      actions.push({
-        id: 'act-switch-student',
-        title: 'Switch to Student Portal',
-        subtitle: 'Preview system as student',
-        category: 'Settings & System',
-        type: 'setting',
-        moduleKey: 'dashboard',
-        iconName: 'User',
-        badge: 'Role Demo',
-      })
-    }
-
     if ('logout signout exit session'.includes(q)) {
       actions.push({
         id: 'act-logout',
@@ -225,10 +200,6 @@ export function useCommandPalette({
   const handleSelect = (item: SearchResultItem) => {
     if (item.id === 'act-theme') {
       toggleTheme()
-    } else if (item.id === 'act-switch-teacher') {
-      switchTo('teacher')
-    } else if (item.id === 'act-switch-student') {
-      switchTo('student')
     } else if (item.id === 'act-logout') {
       void signOut()
     } else {

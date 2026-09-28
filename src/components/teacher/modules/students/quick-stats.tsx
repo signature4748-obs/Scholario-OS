@@ -20,7 +20,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { CalendarCheck, GraduationCap, Users, UsersRound, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatINR } from '@/lib/format'
-import type { DirectoryClass, DirectoryStudent } from './types'
+import type { DirectoryClass, DirectoryClassFeeSummary, DirectoryStudent } from './types'
 
 type SummaryTone = 'slate' | 'emerald' | 'violet' | 'sky' | 'amber'
 
@@ -87,7 +87,38 @@ export function QuickStats({
 
   // Fee collection — CLASS TEACHER classes only (the server never sends a
   // feeSummary for a class this teacher merely teaches a subject in).
-  const feeSummary = activeClass?.isClassTeacher ? activeClass.feeSummary : null
+  // A single selected class scopes to its own summary; ALL CLASSES
+  // aggregates every class-teacher summary the teacher has (the tile
+  // renders whenever she is class teacher of at least one class).
+  const ctClasses = classes.filter((c) => c.isClassTeacher)
+  let feeSummary: DirectoryClassFeeSummary | null = null
+  if (activeClass) {
+    feeSummary = activeClass.isClassTeacher ? activeClass.feeSummary : null
+  } else if (ctClasses.length > 0) {
+    feeSummary = ctClasses.reduce<DirectoryClassFeeSummary>(
+      (acc, c) => {
+        const f = c.feeSummary
+        return {
+          totalBilled: acc.totalBilled + (f?.totalBilled ?? 0),
+          totalCollected: acc.totalCollected + (f?.totalCollected ?? 0),
+          outstanding: acc.outstanding + (f?.outstanding ?? 0),
+          studentsWithFees: acc.studentsWithFees + (f?.studentsWithFees ?? 0),
+          fullyPaid: acc.fullyPaid + (f?.fullyPaid ?? 0),
+          pending: acc.pending + (f?.pending ?? 0),
+          overdue: acc.overdue + (f?.overdue ?? 0),
+        }
+      },
+      {
+        totalBilled: 0,
+        totalCollected: 0,
+        outstanding: 0,
+        studentsWithFees: 0,
+        fullyPaid: 0,
+        pending: 0,
+        overdue: 0,
+      },
+    )
+  }
   const collectedPct =
     feeSummary && feeSummary.totalBilled > 0
       ? Math.round((feeSummary.totalCollected / feeSummary.totalBilled) * 100)
@@ -98,7 +129,7 @@ export function QuickStats({
       key: 'students',
       label: 'Students',
       value: String(students.length),
-      context: activeClass ? activeClass.label : '—',
+      context: activeClass ? activeClass.label : 'All authorized classes',
       icon: Users,
       tone: 'slate',
     },
@@ -120,7 +151,9 @@ export function QuickStats({
       context:
         unrecordedGender > 0
           ? `${unrecordedGender} gender unrecorded`
-          : `${students.length} in ${activeClass?.label ?? 'class'}`,
+          : activeClass
+            ? `${students.length} in ${activeClass.label}`
+            : `${students.length} across ${classes.length} classes`,
       icon: UsersRound,
       tone: 'violet',
     },

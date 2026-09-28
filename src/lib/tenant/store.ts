@@ -2,7 +2,7 @@
 
 /**
  * Tenant control store (SaaS-STAGE-2A) — the SINGLE source of truth for
- * the active mock school and every school's configuration.
+ * the active school and every registered school's configuration.
  *
  * Architecture:
  *   - Persisted GLOBALLY (not tenant-scoped): the active-tenant pointer and
@@ -35,7 +35,7 @@ import type {
   TenantId,
   TenantStatus,
 } from './types'
-import { DEFAULT_TENANT_ID, TENANTS } from './schools'
+import { DEFAULT_TENANT_ID, TENANTS, isValidTenantId } from './schools'
 import { ACTIVE_TENANT_STORAGE_KEY } from './active-tenant'
 import { CAPABILITY_CATALOG, MODULE_CATALOG, SUB_FEATURE_CATALOG } from './registry'
 import { getEffectivePermissions, type EffectivePermissions } from '@/lib/permissions'
@@ -216,7 +216,11 @@ export const useTenantStore = create<TenantState>()(
         }
         return {
           ...current,
-          activeTenantId: p.activeTenantId ?? current.activeTenantId,
+          // Stale pointers (e.g. a school removed from the registry) heal
+          // to the default tenant — never an orphaned store namespace.
+          activeTenantId: isValidTenantId(p.activeTenantId)
+            ? p.activeTenantId
+            : current.activeTenantId,
           configs,
           changeLog: p.changeLog ?? current.changeLog,
         }
@@ -228,7 +232,8 @@ export const useTenantStore = create<TenantState>()(
 // ─── Synchronous accessors for non-hook contexts (store actions, seeds) ──
 
 export function getActiveTenantId(): TenantId {
-  return useTenantStore.getState().activeTenantId ?? DEFAULT_TENANT_ID
+  const id = useTenantStore.getState().activeTenantId
+  return isValidTenantId(id) ? id : DEFAULT_TENANT_ID
 }
 
 export function getActiveTenantConfigSync(): TenantConfig {

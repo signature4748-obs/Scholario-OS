@@ -1,10 +1,22 @@
 'use client'
 
 /**
- * Student Directory (Task 2-c) — shared derivation rules + small
- * presentational primitives used across the module's components.
+ * Student Directory — shared derivation rules + small presentational
+ * primitives used across the module's components.
  *
- * ── STATUS THRESHOLDS (the only labels on screen, defined HERE) ────────
+ * ── ONE SOURCE OF TRUTH (Task W3-a) ────────────────────────────────────
+ * The status thresholds, the fee-status palette (FEE_STATUS_META /
+ * feeShortLabel) and the metric tone classes now live in the SHARED
+ * student-directory card module
+ * (`@/components/shared/student-directory/student-card`) so the teacher
+ * roster and the principal directory render with the exact same rules.
+ * This file re-exports them (existing consumers — student-card,
+ * students-grid, student-profile-sheet, index — keep their imports) and
+ * keeps only the TEACHER-ROSTER-SPECIFIC logic: the directory filters,
+ * the DirectoryStudent-based status derivation and the InfoRow /
+ * SectionLabel primitives.
+ *
+ * ── STATUS THRESHOLDS (defined in the shared module) ───────────────────
  *
  *   AT RISK   attendance < 75%  OR  latest exam average < 40%
  *             — each metric only counts when it exists; a student with
@@ -17,14 +29,29 @@
  *
  * These mirror the school-report convention (75% attendance minimum,
  * 40% pass line) and are the same numbers the summary cards and the
- * profile sheet use — change them here only.
+ * profile sheet use — change them in the shared module only.
  */
 
 import type { DirectoryStudent } from './types'
+import {
+  AT_RISK_ATTENDANCE_PCT,
+  AT_RISK_AVERAGE_PCT,
+  TOP_ATTENDANCE_PCT,
+} from '@/components/shared/student-directory/student-card'
 
-export const AT_RISK_ATTENDANCE_PCT = 75
-export const AT_RISK_AVERAGE_PCT = 40
-export const TOP_ATTENDANCE_PCT = 95
+// ── re-exports from the shared card module (single source of truth) ─────
+// The teacher module keeps importing these from './shared'; the values
+// are the exact ones the shared StudentCard renders with.
+export {
+  AT_RISK_ATTENDANCE_PCT,
+  AT_RISK_AVERAGE_PCT,
+  TOP_ATTENDANCE_PCT,
+  FEE_STATUS_META,
+  attendanceToneClass,
+  averageToneClass,
+  feeShortLabel,
+} from '@/components/shared/student-directory/student-card'
+export type { FeeStatusKey } from '@/components/shared/student-directory/student-card'
 
 export type DirectoryFilter = 'all' | 'at-risk' | 'top-attendance'
 
@@ -78,62 +105,6 @@ export function matchesSearch(s: DirectoryStudent, raw: string): boolean {
     (s.rollNo ?? '').toLowerCase().includes(q) ||
     (s.admissionNo ?? '').toLowerCase().includes(q)
   )
-}
-
-/** Tone class for an attendance percentage value. */
-export function attendanceToneClass(pct: number | null): string {
-  if (pct == null) return 'text-muted-foreground'
-  if (pct < AT_RISK_ATTENDANCE_PCT) return 'text-rose-600 dark:text-rose-400'
-  if (pct >= TOP_ATTENDANCE_PCT) return 'text-emerald-600 dark:text-emerald-400'
-  return 'text-foreground'
-}
-
-/** Tone class for a latest-exam average percentage value. */
-export function averageToneClass(avgPct: number | null): string {
-  if (avgPct == null) return 'text-muted-foreground'
-  if (avgPct < AT_RISK_AVERAGE_PCT) return 'text-rose-600 dark:text-rose-400'
-  return 'text-foreground'
-}
-
-// ─── fee status presentation (class-teacher data only) ──────────────────
-
-export type FeeStatusKey = 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE' | 'NONE'
-
-/** Chip classes for one fee status — the single palette used everywhere. */
-export const FEE_STATUS_META: Record<FeeStatusKey, { label: string; chip: string; value: string }> = {
-  PAID: {
-    label: 'Fees clear',
-    chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    value: 'text-emerald-600 dark:text-emerald-400',
-  },
-  PARTIAL: {
-    label: 'Partially paid',
-    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    value: 'text-amber-600 dark:text-amber-400',
-  },
-  UNPAID: {
-    label: 'Unpaid',
-    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    value: 'text-amber-600 dark:text-amber-400',
-  },
-  OVERDUE: {
-    label: 'Overdue',
-    chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-    value: 'text-rose-600 dark:text-rose-400',
-  },
-  NONE: {
-    label: 'No fees',
-    chip: 'bg-muted text-muted-foreground',
-    value: 'text-muted-foreground',
-  },
-}
-
-/** The one-line fee label for a student chip (amount only when owed). */
-export function feeShortLabel(status: FeeStatusKey, outstanding: number): string {
-  if (status === 'PAID') return 'Fees clear'
-  if (status === 'NONE') return 'No fees'
-  if (status === 'OVERDUE') return `Overdue`
-  return `₹${outstanding.toLocaleString('en-IN')} due`
 }
 
 // ─── small presentational primitives ─────────────────────────────────

@@ -113,5 +113,5 @@ export function getEffectivePermissions(
   return out
 }
 
-/** Back-compat default (demo school baseline) — prefer the tenant hook. */
+/** Back-compat default (single-school baseline) — prefer the tenant hook. */
 export const DEFAULT_SCHOOL_PERMISSIONS: SchoolPermissionConfig = {}

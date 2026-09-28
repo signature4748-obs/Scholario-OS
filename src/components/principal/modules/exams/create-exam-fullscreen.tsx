@@ -46,6 +46,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { useTeachersStore } from '@/lib/store/teachers-store'
+import { useSchoolProfile } from '@/lib/school-profile'
 
 import { useCreateExamMock } from '@/lib/exams/use-exams-mock'
 import { TemplateSelection } from './tabs/template-selection'
@@ -232,6 +233,7 @@ interface DedupedSubject extends SubjectInfo {
 }
 
 export function CreateExamFullScreen({ classes, academicYear, onBack, onCreated }: Props) {
+  const schoolProfile = useSchoolProfile()
   const [selectedTemplate, setSelectedTemplate] = useState<ExamTemplate | null>(null)
   const [name, setName] = useState('')
   const [selectedExamClassKeys, setSelectedExamClassKeys] = useState<string[]>([])
@@ -1111,7 +1113,7 @@ export function CreateExamFullScreen({ classes, academicYear, onBack, onCreated 
             {consolidatedTimetable.rows.length > 0 && (
               <OfficialTimetable
                 timetable={consolidatedTimetable}
-                schoolName="Demo School of Scholario"
+                schoolName={schoolProfile.name}
                 examName={name.trim() || selectedTemplate?.label || 'Examination'}
                 examType={selectedTemplate?.label ?? ''}
                 academicSession={academicYear}

@@ -93,7 +93,7 @@ export default function Home() {
     return <PlatformLanding onBackToSchool={() => setViewState('website')} />
   }
 
-  // Default: Public School Website for Demo School of Scholario
+  // Default: Public School Website (the registered school)
   return (
     <PublicWebsite
       onOpenPortal={() => setViewState('portal')}

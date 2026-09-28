@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 import type { ExamDTO, AdmitCardStudent, SchoolContextDTO, AdmitCardConfigDTO } from '@/lib/exams/types'
 import { generateBatchAdmitCardPDF } from '@/lib/exams/pdf'
 import { useSchoolContext } from '@/lib/exams/use-pdf-context'
+import { getSchoolProfile } from '@/lib/school-profile'
 import { useAdmitCardConfig } from '@/lib/exams/use-exam-settings'
 import { useStudentsStore } from '@/lib/store/students-store'
 
@@ -131,9 +132,12 @@ export function AdmitCardsSection({ exam }: Props) {
   // to, so it was a dead action. Generate (Preview + Download) remains.
 
   function fallbackSchool(): SchoolContextDTO {
+    // School identity falls back to the live School Settings snapshot —
+    // never a hardcoded placeholder.
+    const profile = getSchoolProfile()
     return {
-      schoolId: '', schoolName: 'Demo School of Scholario', schoolCode: '',
-      address: null, city: null, phone: null, email: null, logoUrl: null,
+      schoolId: '', schoolName: profile.name, schoolCode: '',
+      address: profile.address, city: null, phone: profile.phone, email: profile.email, logoUrl: null,
       academicYear: exam.session, board: 'CBSE',
     }
   }

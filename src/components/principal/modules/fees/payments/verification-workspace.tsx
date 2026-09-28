@@ -4,7 +4,7 @@
  * VerificationWorkspace — the Principal's STAGE 2 of the two-stage fee
  * collection workflow (MASTER TASK §8, §27, §35): a 100% real-DB island
  * inside the (mock-store) Payments tab — the same pattern as the
- * Classes module's ClassTeacherAppointments and the Exams module's
+ * Classes module's Class → Teachers tab and the Exams module's
  * Invigilation tab.
  *
  *   · Pending queue — every class-teacher collection awaiting the

@@ -213,7 +213,7 @@ function LeftPane({ onBackToWebsite }: { onBackToWebsite?: () => void }) {
           {school.shortName}
         </h1>
         <p className="text-[10px] font-bold text-emerald-200 tracking-[0.3em] uppercase mt-2">
-          Of Scholario
+          Powered by Scholario
         </p>
       </motion.div>
 
@@ -324,7 +324,7 @@ function RightPane({
           </div>
           <h1 className="font-display text-xl font-bold text-foreground">{school.shortName}</h1>
           <p className="text-[10px] font-bold text-emerald-600 tracking-[0.3em] uppercase mt-1">
-            Of Scholario
+            Powered by Scholario
           </p>
         </div>
 
@@ -627,7 +627,7 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@demoschool.edu"
+                placeholder="you@greenwood.edu.in"
                 className="w-full px-4 py-3 rounded-xl border border-border bg-card/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all"
               />
               <div className="flex gap-3">

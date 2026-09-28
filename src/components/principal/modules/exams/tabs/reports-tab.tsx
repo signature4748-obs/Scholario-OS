@@ -28,6 +28,7 @@ import { InlineLoading } from '../inline-loading'
 import { CollapsibleSection } from '../collapsible-section'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { getSchoolProfile } from '@/lib/school-profile'
 import {
   type ExamDTO, type AdmitCardStudent, type SchoolContextDTO,
   type StudentResult, type StudentDTO, type AdmitCardConfigDTO, type ReportCardConfigDTO,
@@ -321,9 +322,12 @@ export function ReportsTab({ exams }: Props) {
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 function fallbackSchool(exam: ExamDTO): SchoolContextDTO {
+  // School identity falls back to the live School Settings snapshot —
+  // never a hardcoded placeholder.
+  const profile = getSchoolProfile()
   return {
-    schoolId: '', schoolName: 'Demo School of Scholario', schoolCode: '',
-    address: null, city: null, phone: null, email: null, logoUrl: null,
+    schoolId: '', schoolName: profile.name, schoolCode: '',
+    address: profile.address, city: null, phone: profile.phone, email: profile.email, logoUrl: null,
     academicYear: exam.session, board: 'CBSE',
   }
 }

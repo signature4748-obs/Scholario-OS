@@ -9,6 +9,13 @@
  * rendered value comes from the server payload; search/filter views are
  * derived in the grid, never fabricated here.
  *
+ * CLASS SELECTION (Task W3-a): `classId` selects one authorized class,
+ * or `null` means ALL CLASSES — the roster is then every authorized
+ * class's students concatenated and sorted by class label, then roll
+ * number. The initial default stays the class-teacher class (else the
+ * first assigned class); the grid's class dropdown offers "All Classes"
+ * on top of the single classes.
+ *
  * Fetch discipline mirrors the house pattern (communication/marks):
  * `{ cache: 'no-store', credentials: 'same-origin' }`, a `{ ok, data }`
  * envelope, and a 401 that routes through the shared signOut() exactly
@@ -91,10 +98,24 @@ export function useStudentDirectory() {
     () => data?.classes.find((c) => c.id === classId) ?? null,
     [data, classId],
   )
-  const students = useMemo(
-    () => (classId ? data?.studentsByClass[classId] ?? [] : []),
-    [data, classId],
-  )
+
+  // classId === null ⇒ ALL CLASSES: every authorized class's roster,
+  // concatenated in class order and sorted by class label, then roll
+  // number (numeric-aware — "10" after "9", "3" before "12").
+  const students = useMemo(() => {
+    if (!data) return []
+    if (classId) return data.studentsByClass[classId] ?? []
+    return data.classes
+      .flatMap((c) => data.studentsByClass[c.id] ?? [])
+      .sort((a, b) => {
+        const byClass = a.classLabel.localeCompare(b.classLabel, undefined, { numeric: true })
+        if (byClass !== 0) return byClass
+        const ar = Number.parseInt(a.rollNo ?? '', 10)
+        const br = Number.parseInt(b.rollNo ?? '', 10)
+        if (!Number.isNaN(ar) && !Number.isNaN(br) && ar !== br) return ar - br
+        return (a.rollNo ?? '').localeCompare(b.rollNo ?? '', undefined, { numeric: true })
+      })
+  }, [data, classId])
 
   return {
     data,

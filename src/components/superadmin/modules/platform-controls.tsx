@@ -1,13 +1,14 @@
 'use client'
 
 /**
- * Platform Controls (mock control plane · SaaS-STAGE-2A).
+ * Platform Controls (control plane · SaaS-STAGE-2A).
  *
  * Honest infrastructure surface — NO fake metrics:
  *   1. Adapter registry — the four clean seams (Mock → production target)
  *   2. Platform policies — archive retention + platform-reserved delete
  *   3. Mock email outbox — proof the email adapter seam is REAL and consumed
- *   4. Active mock tenant — which school's context the panels are running in
+ *   4. Active school context — the school the panels are running in (a
+ *      switcher renders only when the registry carries multiple schools)
  */
 
 import { useEffect, useState } from 'react'
@@ -165,8 +166,10 @@ export function PlatformControlsModule() {
         </p>
       </Panel>
 
-      {/* Active mock tenant */}
-      <Panel title="Active mock tenant" subtitle="The school context the panels are currently running in" bodyClassName="p-4">
+      {/* Active school context — one registered school, no switcher.
+          The switch row only exists when the registry genuinely carries
+          multiple schools (real memberships), never for demo variety. */}
+      <Panel title="Active school context" subtitle="The school context the panels are currently running in" bodyClassName="p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-56">
             <TenantInitialsTile initials={activeTenant.initials} />
@@ -175,27 +178,31 @@ export function PlatformControlsModule() {
               <p className="text-[10px] text-muted-foreground font-mono truncate">{activeTenant.code} · {activeTenant.city}</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Switch mock tenant">
-            <MonitorSmartphone className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-            {TENANTS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => switchTenant(t.id)}
-                disabled={t.id === activeTenant.id}
-                className={cn(
-                  'h-7 px-2 rounded-md text-[11px] font-medium transition-colors',
-                  t.id === activeTenant.id
-                    ? 'bg-primary/10 text-primary ring-1 ring-primary/30 cursor-default'
-                    : 'text-muted-foreground hover:bg-muted',
-                )}
-              >
-                {t.shortName}
-              </button>
-            ))}
-          </div>
+          {TENANTS.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Switch school context">
+              <MonitorSmartphone className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+              {TENANTS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => switchTenant(t.id)}
+                  disabled={t.id === activeTenant.id}
+                  className={cn(
+                    'h-7 px-2 rounded-md text-[11px] font-medium transition-colors',
+                    t.id === activeTenant.id
+                      ? 'bg-primary/10 text-primary ring-1 ring-primary/30 cursor-default'
+                      : 'text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  {t.shortName}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <p className="text-[10px] text-muted-foreground mt-2.5">
-          Switching reloads the app so every school-scoped store re-hydrates from that school's own data namespace.
+          {TENANTS.length > 1
+            ? 'Switching reloads the app so every school-scoped store re-hydrates from that school\u2019s own data namespace.'
+            : 'One school is registered on this platform. School users always operate in their own school\u2019s context.'}
         </p>
       </Panel>
     </div>

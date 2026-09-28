@@ -43,7 +43,7 @@ const subscriptionStore: Record<string, StudentSubscriptionRecord> = {
   'STU-58': {
     studentId: 'STU-58',
     studentName: 'Aarav Sharma',
-    schoolName: 'Demo School of Scholario',
+    schoolName: 'Greenwood Public School',
     isActive: true,
     planName: 'Scholario Annual Student Platform License',
     amountPaid: 300,
@@ -77,7 +77,7 @@ export const getStudentSubscription = (studentId: string): StudentSubscriptionRe
   return {
     studentId,
     studentName: 'New Enrolled Student',
-    schoolName: 'Demo School of Scholario',
+    schoolName: 'Greenwood Public School',
     isActive: false, // Default inactive to trigger activation workflow
     planName: 'Scholario Annual Student Platform License',
     amountPaid: globalPlatformConfig.payableAmount,
@@ -97,7 +97,7 @@ export const activateStudentSubscription = (
   const record: StudentSubscriptionRecord = {
     studentId,
     studentName,
-    schoolName: 'Demo School of Scholario',
+    schoolName: 'Greenwood Public School',
     isActive: true,
     planName: 'Scholario Annual Student Platform License',
     amountPaid: globalPlatformConfig.payableAmount,

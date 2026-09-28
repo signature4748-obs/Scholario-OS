@@ -13,6 +13,7 @@ import { Download, Pencil, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { generateSchedulePDF } from '@/lib/exams/schedule-pdf'
+import { useSchoolProfile } from '@/lib/school-profile'
 import { buildTimetableFromExam, buildConsolidatedTimetableFromExam } from '@/lib/exams/schedule/exam-timetable'
 import type { ScheduleTimetable } from '@/lib/exams/schedule/schedule-types'
 import { useScheduleState } from '@/lib/exams/schedule/use-schedule-state'
@@ -23,6 +24,7 @@ import { useRoleGate } from '@/lib/exams/use-role-gate'
 import type { ExamDTO } from '@/lib/exams/types'
 
 export function ScheduleSection({ exam }: { exam: ExamDTO; onReload?: () => void }) {
+  const schoolProfile = useSchoolProfile()
   const gate = useRoleGate()
   const [editMode, setEditMode] = useState(false)
 
@@ -91,7 +93,7 @@ export function ScheduleSection({ exam }: { exam: ExamDTO; onReload?: () => void
         ) : (
           <OfficialTimetable
             timetable={consolidated}
-            schoolName="Demo School of Scholario"
+            schoolName={schoolProfile.name}
             examName={exam.name}
             examType={examType}
             academicSession={exam.session ?? '2025-2026'}

@@ -28,9 +28,28 @@ import { useTeachersMockStore } from '@/lib/store/teachers-mock-store'
 import { useSchoolContext } from '@/lib/exams/use-pdf-context'
 import { useAdmitCardConfig } from '@/lib/exams/use-exam-settings'
 import { formatDateLong } from '@/lib/exams/format-helpers'
+import { getSchoolProfile } from '@/lib/school-profile'
 
 interface Props {
   exam: ExamDTO
+}
+
+/** Fallback school context when the API is unavailable — the live School
+ *  Settings snapshot, never a hardcoded placeholder. */
+function fallbackSchoolContext() {
+  const profile = getSchoolProfile()
+  return {
+    schoolId: '',
+    schoolName: profile.name,
+    schoolCode: '',
+    address: profile.address,
+    city: null,
+    phone: profile.phone,
+    email: profile.email,
+    logoUrl: null,
+    academicYear: profile.academicYear,
+    board: 'CBSE' as const,
+  }
 }
 
 export function SeatingSection({ exam }: Props) {
@@ -155,18 +174,7 @@ export function SeatingSection({ exam }: Props) {
   const handleDownload = () => {
     if (!plan) { toast.error('No seating plan to export'); return }
     try {
-      generateSeatingPlanPDF(exam, plan as unknown as any[], schoolCtxData ?? {
-        schoolId: 'demo-school',
-        schoolName: 'Demo School of Scholario',
-        schoolCode: 'DEMO',
-        address: '123 Education Street',
-        city: 'Demo City',
-        phone: '+91 124 4567 800',
-        email: 'office@demoschool.edu',
-        logoUrl: null,
-        academicYear: '2025-2026',
-        board: 'CBSE' as const,
-      })
+      generateSeatingPlanPDF(exam, plan as unknown as any[], schoolCtxData ?? fallbackSchoolContext())
       toast.success('Seating plan PDF downloaded')
     } catch (e: any) { toast.error('Export failed', { description: e.message }) }
   }
@@ -183,19 +191,9 @@ export function SeatingSection({ exam }: Props) {
     }
     setAdmitLoading(true)
     try {
-      // Fallback school context if API is unavailable (mock mode).
-      const school = schoolCtxData ?? {
-        schoolId: 'demo-school',
-        schoolName: 'Demo School of Scholario',
-        schoolCode: 'DEMO',
-        address: '123 Education Street',
-        city: 'Demo City',
-        phone: '+91 124 4567 800',
-        email: 'office@demoschool.edu',
-        logoUrl: null,
-        academicYear: '2025-2026',
-        board: 'CBSE' as const,
-      }
+      // Fallback school context if API is unavailable — the live School
+      // Settings snapshot, never a hardcoded placeholder.
+      const school = schoolCtxData ?? fallbackSchoolContext()
       const config = admitConfigData ?? {
         showPhoto: false,
         showRollNumber: true,

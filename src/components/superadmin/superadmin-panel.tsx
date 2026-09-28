@@ -10,7 +10,7 @@
  *   Platform Controls → adapter seams, platform policies, mock email outbox
  *
  * All data comes from the real tenant foundation (src/lib/tenant) — the
- * three demo tenants, their live configs and the platform change log.
+ * registered schools, their live configs and the platform change log.
  */
 
 import { useState } from 'react'

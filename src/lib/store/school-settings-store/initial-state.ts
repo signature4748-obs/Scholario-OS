@@ -1,29 +1,26 @@
 import type { SchoolSettingsState } from './types'
-// SaaS-STAGE-2A — the settings profile is TENANT-AWARE: every school seeds
-// its own identity (name, principal, city…) from the active tenant. The
-// demo tenant reproduces the historical values verbatim.
+// The settings profile is TENANT-AWARE: the school seeds its identity
+// (name, principal, city…) from the active tenant — the identity IS the data.
 import { getActiveTenantSync } from '@/lib/tenant/active-tenant'
-import { DEFAULT_TENANT_ID } from '@/lib/tenant/schools'
 
 const activeTenant = getActiveTenantSync()
-const isDemoTenant = activeTenant.id === DEFAULT_TENANT_ID
 
-// Per-tenant `general` seed — composed from the tenant identity (no
+// The school's `general` seed — composed from the tenant identity (no
 // scattered school conditionals; the identity IS the data).
 const tenantGeneral = {
   schoolName: activeTenant.name,
   shortName: activeTenant.shortName,
-  tagline: isDemoTenant ? 'Excellence in Education & Innovation' : 'Rooted in tradition, rising in excellence',
-  affiliation: isDemoTenant ? 'CBSE — Affiliation No. 1730456' : `CBSE — Affiliation No. ${activeTenant.code}`,
-  address: isDemoTenant ? '100 Knowledge Parkway, Sector 47, Gurugram, Haryana 122003' : `Education Board Road, ${activeTenant.city}`,
-  phone: isDemoTenant ? '9876543210' : '9810045678',
-  email: isDemoTenant ? 'info@demoschool.edu' : `info@${activeTenant.code.toLowerCase()}.edu.in`,
-  website: isDemoTenant ? 'www.demoschool.edu' : `www.${activeTenant.code.toLowerCase()}.edu.in`,
+  tagline: 'Excellence in Education & Innovation',
+  affiliation: 'CBSE — Affiliation No. 1730456',
+  address: '100 Knowledge Parkway, Sector 47, Gurugram, Haryana 122003',
+  phone: '9876543210',
+  email: 'info@greenwood.edu.in',
+  website: 'www.greenwood.edu.in',
   principalName: activeTenant.principalName,
   vicePrincipalName: activeTenant.vicePrincipalName,
   established: activeTenant.established,
   logoText: activeTenant.initials,
-  brandColor: isDemoTenant ? 'oklch(0.55 0.14 162)' : "oklch(0.55 0.14 262)",
+  brandColor: 'oklch(0.55 0.14 162)',
 }
 
 type StateShape = Omit<SchoolSettingsState, keyof SchoolSettingsActions>

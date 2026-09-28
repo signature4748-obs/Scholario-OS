@@ -204,5 +204,5 @@ export const useMockExamsStore = create<MockExamsState>()((set, get) => ({
   getExam: (id) => get().exams.find((e) => e.id === id),
 }))
 
-/** Academic year for the mock school. */
+/** Academic year for the seeded exam dataset. */
 export const MOCK_ACADEMIC_YEAR = '2025-2026'

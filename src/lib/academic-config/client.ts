@@ -124,7 +124,7 @@ export function useAcademicConfig() {
 /**
  * Links a mock Students & Classes card to its server class.
  *
- * Rule (demo school mapping):
+ * Rule (school mapping):
  *   · mock grade 6–10 → the unique server class of that grade
  *     ("Class 9" → "Grade 9 - A");
  *   · mock grade 11/12 streams → PCM → section A, PCB → section B;

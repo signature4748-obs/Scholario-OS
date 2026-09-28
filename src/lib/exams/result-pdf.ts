@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { ExamDTO } from '@/lib/exams/types'
 import { formatDateLong } from '@/lib/exams/format-helpers'
+import { getSchoolProfile } from '@/lib/school-profile'
 
 interface StudentResult {
   studentId: string
@@ -26,9 +27,9 @@ export function generateClassResultPDF(exam: ExamDTO, className: string, results
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const pageW = doc.internal.pageSize.getWidth()
 
-  // Header
+  // Header (the school identity from School Settings)
   doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-  doc.text('Demo School of Scholario', pageW / 2, 15, { align: 'center' })
+  doc.text(getSchoolProfile().name, pageW / 2, 15, { align: 'center' })
   doc.setFontSize(10)
   doc.text(exam.name, pageW / 2, 21, { align: 'center' })
   doc.setFontSize(8); doc.setFont('helvetica', 'normal')
@@ -75,7 +76,7 @@ export function generateStudentResultPDF(exam: ExamDTO, result: StudentResult): 
 
   // Header
   doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-  doc.text('Demo School of Scholario', pageW / 2, 20, { align: 'center' })
+  doc.text(getSchoolProfile().name, pageW / 2, 20, { align: 'center' })
   doc.setFontSize(10)
   doc.text(exam.name, pageW / 2, 27, { align: 'center' })
   doc.setFontSize(8); doc.setFont('helvetica', 'normal')

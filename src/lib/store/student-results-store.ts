@@ -19,7 +19,7 @@
  * card. No UI component carries its own marks.
  *
  * Academic coherence (§37/§49): all seeded assessments belong to the
- * demo school's ACTIVE session — AY 2026–2027 (Apr 2026 – Mar 2027),
+ * school's ACTIVE session — AY 2026–2027 (Apr 2026 – Mar 2027),
  * anchored around the real clock. The latest published assessment is
  * the Mid Term Examination (published 11 Sep 2026).
  *

@@ -935,7 +935,7 @@ export async function notifyEligibleStudents(app: SchoolApplication): Promise<vo
 
 // ─── Store ─────────────────────────────────────────────────────────────
 
-/** Legacy (un-scoped) data migrates once into the demo school's namespace. */
+/** Legacy (un-scoped) data migrates once into the school's tenant namespace. */
 migrateLegacyScopedStore(TENANT_SCOPED_BASES.applications, DEFAULT_TENANT_ID)
 
 /** Session year used by the seed data — declared BEFORE the store so the

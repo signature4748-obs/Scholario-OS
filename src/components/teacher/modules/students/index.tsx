@@ -11,13 +11,12 @@
  *   · quiet context line — the authorized classes + their real student
  *     counts ("Grade 9 - A · 11 students · Grade 10 - A · 8 students"),
  *     with the CSV export action;
- *   · class tabs — the real authorized class list; classes the teacher
- *     is class teacher of carry an explicit "Class Teacher" chip (never
- *     shown for subject-only classes);
  *   · summary cards (./quick-stats) — Students, Avg Attendance,
  *     Girls · Boys, Classes, all from the roster payload;
- *   · the roster grid (./students-grid) — search, documented status
- *     filters, student cards, "View profile" sheet.
+ *   · the roster grid (./students-grid) — class dropdown (single class
+ *     or All Classes), search, documented status filters, student
+ *     cards, "View profile" sheet. The class selection lives in the
+ *     roster's toolbar (Task W3-a) — no separate chip row.
  *
  * Everything is fed by ONE GET /api/teacher/students call (hook in
  * ./hooks) — real, tenant-scoped data only.
@@ -31,7 +30,6 @@ import { GlassCard, PageTransition } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { toCsv } from '@/lib/csv'
 import { downloadCSVFile } from '@/lib/download-file'
-import { cn } from '@/lib/utils'
 import { HubEmptyState, HubModuleSkeleton } from '../shared/hub-stat-cards'
 import { FEE_STATUS_META } from './shared'
 import { useStudentDirectory } from './hooks'
@@ -45,14 +43,15 @@ export function StudentsModule() {
   const { data, error, reload, classId, setClassId, activeClass, students } = useStudentDirectory()
 
   const handleExport = () => {
-    if (!activeClass || students.length === 0) return
-    // Fee columns exist only for the class teacher's own class — the same
-    // data boundary the roster carries (subject teachers export identity +
-    // academics only).
-    const isCt = activeClass.isClassTeacher
+    if (students.length === 0) return
+    // Fee columns follow the roster's own data boundary: they are
+    // included when ANY student on screen carries fee records (class-
+    // teacher classes), with per-student blanks where the server sends
+    // none — subject teachers export identity + academics only.
+    const includeFees = students.some((s) => s.fees != null)
     const header = [
       'Roll No', 'Admission No', 'Name', 'Class', 'Gender', 'Guardian', 'Guardian Phone', 'Attendance %', 'Latest Exam Avg %',
-      ...(isCt ? ['Fee Status', 'Outstanding (INR)'] : []),
+      ...(includeFees ? ['Fee Status', 'Outstanding (INR)'] : []),
     ]
     const csv = toCsv(
       header,
@@ -66,15 +65,15 @@ export function StudentsModule() {
         s.guardianPhone ?? '',
         s.attendance.pct != null ? `${s.attendance.pct}%` : 'No records',
         s.latestExam != null ? `${s.latestExam.averagePct}%` : 'No marks',
-        ...(isCt
+        ...(includeFees
           ? [s.fees ? FEE_STATUS_META[s.fees.status].label : '', s.fees ? String(s.fees.outstanding) : '']
           : []),
       ]),
     )
-    const safeLabel = activeClass.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+    const safeLabel = (activeClass?.label ?? 'all-classes').replace(/[^a-z0-9]+/gi, '-').toLowerCase()
     downloadCSVFile(csv, `${safeLabel}-student-list.csv`)
     toast.success('Export ready', {
-      description: `${activeClass.label} student list · ${students.length} students · CSV`,
+      description: `${activeClass?.label ?? 'All Classes'} student list · ${students.length} students · CSV`,
     })
   }
 
@@ -143,73 +142,17 @@ export function StudentsModule() {
         }
       />
 
-      {/* Class selector — the real authorized classes. The two views are
-          explicit: an emerald “Class Teacher” chip for the appointed
-          class, a muted “Teaches …” chip for subject-only classes. */}
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Select a class">
-        {data.classes.map((c) => {
-          const isActive = classId === c.id
-          const subjectChip =
-            c.subjects.length > 0
-              ? `Teaches ${c.subjects[0]}${c.subjects.length > 1 ? ` +${c.subjects.length - 1}` : ''}`
-              : null
-          return (
-            <button
-              key={c.id}
-              aria-pressed={isActive}
-              onClick={() => setClassId(c.id)}
-              className={cn(
-                'flex min-h-[40px] items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium transition-all',
-                isActive
-                  ? 'bg-primary text-primary-foreground shadow-xs'
-                  : 'border border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground',
-              )}
-            >
-              {c.label}
-              <span
-                className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[9px] font-bold tabular-nums',
-                  isActive ? 'bg-primary-foreground/20' : 'bg-muted',
-                )}
-              >
-                {c.studentCount}
-              </span>
-              {c.isClassTeacher ? (
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 py-0.5 text-[9px] font-bold',
-                    isActive ? 'bg-primary-foreground/20' : 'bg-primary/10 text-primary',
-                  )}
-                >
-                  Class Teacher
-                </span>
-              ) : (
-                subjectChip && (
-                  <span
-                    className={cn(
-                      'max-w-[150px] truncate rounded-full px-1.5 py-0.5 text-[9px] font-semibold',
-                      isActive ? 'bg-primary-foreground/20' : 'bg-muted',
-                    )}
-                    title={c.subjects.join(', ')}
-                  >
-                    {subjectChip}
-                  </span>
-                )
-              )}
-            </button>
-          )
-        })}
-      </div>
-
       {/* Summary cards — real counts and honest em-dashes only */}
       <QuickStats students={students} activeClass={activeClass} classes={data.classes} />
 
-      {/* Roster: search + documented filters + student cards (fee data
-          included only when this class is the teacher's own) */}
+      {/* Roster: class dropdown + search + documented filters + student
+          cards (fee data included only where the teacher is class
+          teacher) — the class selection lives in the roster toolbar */}
       <StudentsGrid
         students={students}
-        classLabel={activeClass?.label ?? 'Class'}
-        isClassTeacher={!!activeClass?.isClassTeacher}
+        classes={data.classes}
+        classId={classId}
+        onClassChange={setClassId}
         onSelect={setSelected}
       />
 

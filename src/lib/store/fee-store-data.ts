@@ -430,7 +430,7 @@ export interface EntryFeePolicy {
   rules: EntryFeeRule[]
 }
 
-/** The demo school's policy: admission fee for boys; registration at the
+/** The school's default policy: admission fee for boys; registration at the
  *  Class 9 / Class 11 entry points (both streams). */
 export const DEFAULT_ENTRY_FEE_POLICY: EntryFeePolicy = {
   enabled: true,

@@ -11,14 +11,15 @@ import autoTable from 'jspdf-autotable'
 import type { ExamDTO } from '@/lib/exams/types'
 import type { ConsolidatedTimetable } from '@/lib/exams/schedule/consolidate'
 import { formatDateLong } from '@/lib/exams/format-helpers'
+import { getSchoolProfile } from '@/lib/school-profile'
 
 export function generateSchedulePDF(exam: ExamDTO, timetable?: ConsolidatedTimetable): void {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   const pageW = doc.internal.pageSize.getWidth()
 
-  // Header — centered
+  // Header — centered (the school identity from School Settings)
   doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-  doc.text('Demo School of Scholario', pageW / 2, 14, { align: 'center' })
+  doc.text(getSchoolProfile().name, pageW / 2, 14, { align: 'center' })
   doc.setFontSize(11)
   doc.text(exam.name, pageW / 2, 20, { align: 'center' })
   doc.setFontSize(9); doc.setFont('helvetica', 'normal')

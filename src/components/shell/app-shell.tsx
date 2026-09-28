@@ -12,7 +12,7 @@ import { useLiveFeedStore } from '@/lib/store/live-feed-store'
 import { signOut } from '@/lib/signout'
 import { school } from '@/lib/mock/school'
 // SaaS-STAGE-2A — the shell footer reflects the ACTIVE TENANT's school
-// identity (falls back to the demo school profile for platform surfaces).
+// identity (falls back to the school profile for platform surfaces).
 import { useActiveTenant } from '@/lib/tenant/store'
 import { cn } from '@/lib/utils'
 import { formatINR } from '@/lib/format'
@@ -73,7 +73,7 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
   const [notifSource, setNotifSource] = useState<'live' | 'demo'>('demo')
   // Real-time event stream status (socket.io mini-service :3003 via gateway)
   const [streamLive, setStreamLive] = useState(false)
-  const { user, switchTo } = useAuth()
+  const { user } = useAuth()
   void roleLabel
   // SS-1 — server identity (avatar / session context) for the shell + all
   // account surfaces. One fetch per mount; settings refreshes it after
@@ -444,7 +444,6 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
                 user={user}
                 role={role}
                 onNavigateSettings={() => { onNavigate('settings'); setProfileOpen(false) }}
-                onSwitchToStudent={() => { switchTo('student'); setProfileOpen(false) }}
                 // SaaS-STAGE-2A — super admins jump straight back to the control plane.
                 onOpenPlatform={role === 'superadmin' ? () => onNavigate('overview') : undefined}
                 onLogout={() => { setProfileOpen(false); void signOut() }}
@@ -453,11 +452,13 @@ export function AppShell({ groups, activeKey, onNavigate, role, roleLabel, child
           </div>
         </header>
 
-        {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar">
+        {/* Page Content — flex column so the footer pins to the bottom of
+            the viewport on short pages (mt-auto) and is pushed down
+            naturally when content is taller than one screen. */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar flex flex-col [&>*]:min-w-0">
           {children}
           {/* Sticky footer */}
-          <footer className="mt-8 pt-6 border-t border-border text-center text-[11px] text-muted-foreground/80 font-medium tracking-wide">
+          <footer className="mt-auto pt-6 border-t border-border text-center text-[11px] text-muted-foreground/80 font-medium tracking-wide">
             <p>
               &copy; {new Date().getFullYear()} SCHOLARIO-OS &middot; Enterprise School ERP &middot;
               <span className="text-primary/80 ml-1"><FooterSchoolName fallback={school.name} /></span>

@@ -899,7 +899,7 @@ interface SalaryState {
   archiveSession: (sessionId: string, actor?: string) => SessionPayrollArchive
 }
 
-// SaaS-STAGE-2A — one-time legacy copy into the demo school's namespace
+// One-time legacy copy into the school's tenant namespace
 // (before store creation / hydration).
 migrateLegacyScopedStore(TENANT_SCOPED_BASES.salary, DEFAULT_TENANT_ID)
 

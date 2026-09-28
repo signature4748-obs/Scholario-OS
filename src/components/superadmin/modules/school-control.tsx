@@ -16,7 +16,7 @@
 import { useState } from 'react'
 import {
   ArrowLeft, Building2, CalendarRange, GraduationCap, History, Lock,
-  RotateCcw, School as SchoolIcon, Users, MonitorSmartphone,
+  RotateCcw, School as SchoolIcon, Users,
 } from 'lucide-react'
 import { useTenantStore } from '@/lib/tenant/store'
 import { getTenantById } from '@/lib/tenant/schools'
@@ -26,8 +26,6 @@ import {
 } from '@/lib/tenant/registry'
 import type { FeatureKey, TenantId } from '@/lib/tenant/types'
 import { getEmailAdapter } from '@/lib/platform/adapters'
-import { switchTenant } from '@/lib/tenant/store'
-import { useAuth } from '@/lib/store/auth-store'
 import { Panel } from '@/components/principal/modules/shared/panel'
 import { cn } from '@/lib/utils'
 import {
@@ -76,13 +74,6 @@ export function SchoolControlCenter({ tenantId, onBack }: SchoolControlCenterPro
     setModuleFeature(tenantId, key, enabled)
     notify(`module:${key}`, enabled)
     void label
-  }
-
-  const openPrincipalView = () => {
-    // Mock flow: sign in as this school's principal, make it the active
-    // tenant, then reload so every tenant-scoped store re-hydrates.
-    useAuth.getState().login('principal')
-    switchTenant(tenantId)
   }
 
   const onSubFeatureToggle = (key: FeatureKey, enabled: boolean) => {
@@ -138,12 +129,6 @@ export function SchoolControlCenter({ tenantId, onBack }: SchoolControlCenterPro
             </div>
           </div>
           <div className="flex flex-col items-stretch gap-1.5 min-w-[190px]">
-            <button
-              onClick={openPrincipalView}
-              className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
-            >
-              <MonitorSmartphone className="h-3.5 w-3.5" aria-hidden /> Open Principal View
-            </button>
             <div className="flex items-center gap-1.5">
               <label className="sr-only" htmlFor="tenant-status">School status</label>
               <select

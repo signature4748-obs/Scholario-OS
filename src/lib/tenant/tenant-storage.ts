@@ -11,8 +11,7 @@
  *   feeStore(tenantId) semantics — without cloning a single store.
  *
  *   School A → scholario-fee-store-v1::t:t-dsg-gur-01
- *   School B → scholario-fee-store-v1::t:t-sps-del-02
- *   School C → scholario-fee-store-v1::t:t-sxa-mum-03
+ *   another school → scholario-fee-store-v1::t:<its-tenant-id>
  *
  * Tenant switching ALWAYS reloads the app (switchTenant in tenant/store.ts),
  * so every store re-hydrates from its new namespace with seed state as the
@@ -22,7 +21,7 @@
  *
  * LEGACY MIGRATION: data persisted before this stage lives under the
  * un-scoped key. On first boot we copy it into the DEFAULT tenant's
- * namespace (the demo school) once, then remove the legacy key — the user's
+ * namespace (the default school) once, then remove the legacy key — the user's
  * existing demo data survives the upgrade, and the copy is idempotent.
  */
 
@@ -59,7 +58,7 @@ export function migrateLegacyScopedStore(baseName: string, defaultTenantId: stri
     }
     window.localStorage.removeItem(baseName)
   } catch {
-    // Non-fatal: worst case the demo school starts from fresh seed data.
+    // Non-fatal: worst case the school starts from fresh seed data.
   }
 }
 

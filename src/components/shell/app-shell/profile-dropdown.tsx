@@ -1,11 +1,11 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogOut, Settings, User, Sparkles, ChevronDown, Building2, ShieldCheck } from 'lucide-react'
-// SaaS-STAGE-2A — mock tenant context: school users see + switch the demo
-// school they are browsing; super admins return to the control plane.
-import { useActiveTenant, switchTenant } from '@/lib/tenant/store'
-import { TENANTS } from '@/lib/tenant/schools'
+import { LogOut, Settings, ShieldCheck, Building2, ChevronDown } from 'lucide-react'
+// The school context line renders the authenticated user's actual school
+// (the active tenant) — never a switcher. Multi-school switching only
+// exists when the session carries real, authorized memberships.
+import { useActiveTenant } from '@/lib/tenant/store'
 // SS-1 — server identity: renders the user's real profile photo when set.
 import { useCurrentUser } from '@/lib/store/current-user-store'
 
@@ -20,9 +20,8 @@ interface ProfileDropdownProps {
   user: ProfileUser | null
   role: ShellRole
   onNavigateSettings: () => void
-  onSwitchToStudent: () => void
   onLogout: () => void
-  /** SaaS-STAGE-2A — navigate to the platform control plane (super admin). */
+  /** Navigate to the platform control plane (super admin). */
   onOpenPlatform?: () => void
 }
 
@@ -67,7 +66,6 @@ export function ProfileDropdown({
   user,
   role,
   onNavigateSettings,
-  onSwitchToStudent,
   onLogout,
   onOpenPlatform,
 }: ProfileDropdownProps) {
@@ -87,30 +85,19 @@ export function ProfileDropdown({
             <div className="p-3 border-b border-border bg-muted/40 rounded-lg mb-1">
               <p className="font-bold text-xs text-foreground">{user?.name || 'Dr. Ramesh Varma'}</p>
               <p className="text-[11px] text-muted-foreground truncate">{user?.email || 'principal@scholario.edu'}</p>
-              <span className="inline-block mt-1.5 text-[9px] font-extrabold px-2 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider">
-                {role}
-              </span>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className="inline-block text-[9px] font-extrabold px-2 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider">
+                  {role}
+                </span>
+                {role !== 'superadmin' && (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground" title={activeTenant.name}>
+                    <Building2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{activeTenant.name}</span>
+                  </span>
+                )}
+              </div>
             </div>
 
-            {role === 'principal' && (
-              <div className="py-1 border-b border-border space-y-0.5">
-                <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-amber-500" /> Switch Role View
-                </p>
-                <button
-                  onClick={onSwitchToStudent}
-                  className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-foreground hover:bg-muted rounded-md transition-colors text-left"
-                >
-                  <User className="h-3.5 w-3.5 text-violet-500" />
-                  Login as Student
-                </button>
-              </div>
-            )}
-
-            {/* SaaS-STAGE-2A — MOCK TENANT CONTEXT (demo isolation switcher).
-                School users: switch between the three demo schools (reloads
-                the app so every school-scoped store re-hydrates). Super
-                admins get a direct link back to the control plane. */}
             {role === 'superadmin' && onOpenPlatform && (
               <div className="py-1 border-b border-border space-y-0.5">
                 <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
@@ -123,26 +110,6 @@ export function ProfileDropdown({
                   <ShieldCheck className="h-3.5 w-3.5 text-primary" />
                   Go to Control Plane
                 </button>
-              </div>
-            )}
-            {role !== 'superadmin' && (
-              <div className="py-1 border-b border-border space-y-0.5">
-                <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                  <Building2 className="h-3 w-3 text-sky-500" /> Mock school · {activeTenant.code}
-                </p>
-                <p className="px-2.5 pb-1 text-[10px] text-muted-foreground truncate" title={activeTenant.name}>
-                  {activeTenant.name}
-                </p>
-                {TENANTS.filter((t) => t.id !== activeTenant.id).map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => switchTenant(t.id)}
-                    className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted rounded-md transition-colors text-left"
-                  >
-                    <Building2 className="h-3.5 w-3.5 opacity-60" />
-                    <span className="truncate">Switch to {t.shortName}</span>
-                  </button>
-                ))}
               </div>
             )}
 

@@ -1,15 +1,17 @@
-// Demo School profile & academic structure
+// School profile & academic structure — the FALLBACK identity snapshot.
+// The live source of truth is School Settings (school-settings-store →
+// General tab) surfaced through useSchoolProfile()/getSchoolProfile().
 
 export const school = {
-  name: "Demo School of Scholario",
-  shortName: "Demo School",
+  name: "Greenwood Public School",
+  shortName: "Greenwood",
   tagline: "Excellence in Education & Innovation",
   affiliation: "CBSE — Affiliation No. 1730456",
   code: "1730456",
   address: "100 Knowledge Parkway, Sector 47, Gurugram, Haryana 122003",
   phone: "+91 124 4567 800",
-  email: "info@demoschool.edu",
-  website: "www.demoschool.edu",
+  email: "info@greenwood.edu.in",
+  website: "www.greenwood.edu.in",
   // Signatory matches the tenant record + School Settings (Dr. Ananya Iyer) —
   // certificates, letters and comms all render the same principal.
   principal: "Dr. Ananya Iyer",
@@ -23,8 +25,7 @@ export const school = {
   totalStaff: 124,
   classes: 2,
   campusArea: "10 acres",
-  logo: "D",
-  isDemo: true,
+  logo: "G",
   streams: [
     'PCM (Physics, Chemistry, Mathematics)',
     'PCB (Physics, Chemistry, Biology)',

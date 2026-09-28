@@ -1489,7 +1489,7 @@ function genReceiptNo(prefix: string, counter: number): string {
 
 // SaaS-STAGE-2A — ONE-TIME legacy migration: data persisted before tenant
 // scoping lived under the un-scoped key; copy it into the DEFAULT tenant's
-// namespace (the demo school) so the verified demo experience survives the
+// namespace so the verified experience survives the
 // upgrade, then remove the legacy key. Runs once, at module eval, BEFORE
 // the store (and its persist hydration) is created.
 migrateLegacyScopedStore(TENANT_SCOPED_BASES.fee, DEFAULT_TENANT_ID)

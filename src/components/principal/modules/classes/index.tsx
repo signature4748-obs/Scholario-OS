@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Layers, Users, AlertTriangle, Plus, MapPin, ChevronRight } from 'lucide-react'
+import { Layers, Users, AlertTriangle, Plus, MapPin, ChevronRight, UserCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -12,7 +12,6 @@ import { getTeacherById } from '@/lib/mock/teachers'
 import { classStreamBadge } from './class-display'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { SearchFilterBar, type FilterConfig } from '../shared/search-filter-bar'
-import { ClassTeacherAppointments } from './details/class-teacher-appointments'
 
 export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: ClassRecord) => void; onAddClass: () => void }) {
   const [search, setSearch] = useState('')
@@ -41,11 +40,6 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
 
   return (
     <div className="space-y-4">
-      {/* Official class-teacher appointments — the REAL record that gates
-          each teacher's Class Teacher Hub (100% server data, like the
-          Exams module's Invigilation tab). */}
-      <ClassTeacherAppointments />
-
       <SummaryCardGrid columns={4}>
         <SummaryCard label="Total Classes" value={stats.totalClasses} sub={`${stats.totalSections} sections`} tone="amber" icon={<Layers className="h-4 w-4" />} delay={0} />
         <SummaryCard label="Total Students" value={stats.totalEnrolled} tone="emerald" icon={<Users className="h-4 w-4" />} delay={0.04} />
@@ -65,8 +59,6 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
   )
 }
 
-import { useState } from 'react'
-
 /* ============================================================
    ClassCard — premium class identity + operational snapshot
    ============================================================ */
@@ -85,7 +77,7 @@ function ClassCard({ cls, index, onClick }: { cls: ClassRecord; index: number; o
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * 0.03, 0.2) }} onClick={onClick}
       className="rounded-lg border border-border/60 bg-card p-4 hover:border-emerald-500/40 hover:shadow-sm transition-all cursor-pointer group">
       {/* Identity row */}
-      <div className="flex items-start justify-between gap-2 mb-3">
+      <div className="flex items-start justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-2.5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-semibold text-xs">{avatarText}</div>
           <div className="min-w-0">
@@ -99,6 +91,19 @@ function ClassCard({ cls, index, onClick }: { cls: ClassRecord; index: number; o
           </div>
         </div>
         <Badge variant="secondary" className="text-[9px] gap-0.5 shrink-0 text-muted-foreground"><MapPin className="h-2.5 w-2.5" /> {cls.room}</Badge>
+      </div>
+
+      {/* Class teacher — small READ-ONLY derived summary. The appointment
+          itself lives in exactly one place: this class → Teachers tab. */}
+      <div className="flex items-center gap-1.5 mb-3 min-w-0">
+        <UserCheck className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+        {teacher ? (
+          <p className="text-[10px] text-muted-foreground truncate">
+            Class Teacher: <span className="font-medium text-foreground">{teacher.name}</span>
+          </p>
+        ) : (
+          <p className="text-[10px] text-amber-600 dark:text-amber-400">No class teacher appointed</p>
+        )}
       </div>
 
       {/* Section occupancy — compact */}

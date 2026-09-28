@@ -6,9 +6,9 @@ import { createProfileSlice } from './slices/profile-slice'
 import { createInventorySlice } from './slices/inventory-slice'
 import { createAcademicConfigSlice } from './slices/academic-config-slice'
 import { createAdmissionSlice } from './slices/admission-slice'
-// SaaS-STAGE-2A — tenant-scoped persistence: every school gets its OWN
-// settings namespace (profile, sessions, fee-head catalogue, admission
-// config) + a one-time legacy copy into the demo school's namespace.
+// Tenant-scoped persistence: the school gets its OWN settings namespace
+// (profile, sessions, fee-head catalogue, admission config) + a one-time
+// legacy copy from the original un-scoped key.
 import { migrateLegacyScopedStore, createTenantScopedStorage, TENANT_SCOPED_BASES } from '@/lib/tenant/tenant-storage'
 import { DEFAULT_TENANT_ID } from '@/lib/tenant/schools'
 
@@ -36,8 +36,29 @@ export const useSchoolSettingsStore = create<SchoolSettingsState>()(
       // entries and patches the existing ones' names/types to match
       // the new seed WITHOUT losing any user-edited catalogue entries
       // they may have added on top.
-      version: 8,
+      version: 9,
       migrate: (persistedState: any, fromVersion: number) => {
+        // ─── v9 — SCHOOL IDENTITY RENAME (demo-school cleanup) ──────────
+        // The registered school's identity changed from the placeholder
+        // "Demo School of Scholario" to the real school (Greenwood Public
+        // School). Patch the persisted `general` identity ONLY where it
+        // still carries the untouched old seed — user-edited values are
+        // preserved verbatim (same policy as the v6 description patches).
+        if (persistedState?.general) {
+          const legacyIdentity: Record<string, string> = {
+            schoolName: 'Demo School of Scholario',
+            shortName: 'Demo School',
+            email: 'info@demoschool.edu',
+            website: 'www.demoschool.edu',
+            logoText: 'DS',
+          }
+          const fresh = initialState.general as Record<string, unknown>
+          for (const [key, legacyValue] of Object.entries(legacyIdentity)) {
+            if (persistedState.general[key] === legacyValue && fresh[key] !== undefined) {
+              persistedState.general[key] = fresh[key]
+            }
+          }
+        }
         // ─── v8 — RESULTS / GRADING CONFIGURATION (Student Results) ────
         // Appends the school-configured grading scale + result-privacy
         // policy + report-card composition to persisted profiles that

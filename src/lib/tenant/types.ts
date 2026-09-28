@@ -8,7 +8,7 @@
  * EACH SCHOOL HAS ITS OWN
  *   data · users · config · features · permissions
  *
- * This module defines the canonical types. The three demo tenants live in
+ * This module defines the canonical types. The registered school tenants live in
  * `schools.ts`; the live runtime state (active tenant + per-tenant config
  * overrides + change log) lives in `store.ts`. Per-tenant DATA isolation is
  * provided by `tenant-storage.ts`, which namespaces the persisted zustand
@@ -128,7 +128,7 @@ export interface TenantConfig {
   archiveRetentionDays: number
 }
 
-/** Static identity for a demo tenant (display + seeding). */
+/** Static identity for a registered school tenant (display + seeding). */
 export interface TenantIdentity {
   id: TenantId
   code: string

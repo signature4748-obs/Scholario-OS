@@ -1,16 +1,14 @@
 /**
- * Demo TENANTS (SaaS-STAGE-2A) — three clearly different mock schools.
+ * School tenants — the platform's school registry.
  *
- * Each tenant is FULLY ISOLATED: its own id, identity, config, exam pattern,
- * fee profile and (via tenant-scoped persistence) its own data. The demo
- * school ("Demo School of Scholario") is the DEFAULT tenant so the existing
- * verified Principal experience is untouched on first login.
+ * The authenticated user's school is the single registered tenant; the
+ * tenant record carries the school's identity and platform configuration
+ * (module/feature/capability flags). There is no school switcher in the
+ * product UI — a switcher only becomes relevant when a user's session
+ * carries multiple REAL, authorized school memberships.
  *
- * Configurations are intentionally different (isolation test matrix):
- *
- *   SCHOOL A  Demo School of Scholario      → everything ON, Pattern A exams
- *   SCHOOL B  Scholario Public School       → structures read-only, no gateway, Pattern B exams
- *   SCHOOL C  St. Xavier's Academy          → editing ON, catalogue restricted, no gateway, payroll ON, trial
+ * NOTE: tenant IDs are STABLE storage keys (every tenant-scoped store
+ * namespace is keyed by them) — never rename an id, only its identity.
  */
 
 import type {
@@ -58,103 +56,34 @@ function baseConfig(): TenantConfig {
   }
 }
 
-/** Produce a config by applying partial overrides to the full-on baseline. */
-function configWith(overrides: {
-  features?: Partial<Record<ModuleKey, boolean>>
-  subFeatures?: Partial<Record<FeatureKey, boolean>>
-  capabilities?: Partial<Record<string, boolean>>
-  status?: TenantConfig['status']
-  plan?: TenantConfig['plan']
-  examTemplateId?: TenantConfig['examTemplateId']
-}): TenantConfig {
-  const base = baseConfig()
-  return {
-    ...base,
-    status: overrides.status ?? base.status,
-    plan: overrides.plan ?? base.plan,
-    features: { ...base.features, ...(overrides.features ?? {}) },
-    subFeatures: { ...base.subFeatures, ...(overrides.subFeatures ?? {}) },
-    capabilities: { ...base.capabilities, ...(overrides.capabilities ?? {}) },
-    examTemplateId: overrides.examTemplateId ?? base.examTemplateId,
-  }
-}
-
-// ─── The three demo tenants ─────────────────────────────────────────────
+// ─── The registered school ──────────────────────────────────────────────
 
 export const TENANTS: SchoolTenant[] = [
   {
     id: DEFAULT_TENANT_ID,
-    code: 'DSG-001',
-    name: 'Demo School of Scholario',
-    shortName: 'Demo School',
+    code: 'GWS-001',
+    name: 'Greenwood Public School',
+    shortName: 'Greenwood',
     city: 'Gurugram, NCR',
-    initials: 'DS',
+    initials: 'GW',
     session: '2026-2027',
     principalName: 'Dr. Ananya Iyer',
-    principalEmail: 'principal@demoschool.edu',
+    principalEmail: 'principal@greenwood.edu.in',
     established: 2020,
     vicePrincipalName: 'Mr. Suresh Nair',
     stats: { students: 1842, teachers: 96, classes: 12, users: 2010 },
     feeProfile: { scale: 1, examTemplateId: 'ut4-hy-annual' },
-    config: configWith({ plan: 'enterprise' }),
-  },
-  {
-    id: 't-sps-del-02',
-    code: 'SPS-002',
-    name: 'Scholario Public School',
-    shortName: 'SPS Delhi',
-    city: 'Delhi',
-    initials: 'SP',
-    session: '2026-2027',
-    principalName: 'Mrs. Kavitha Raghavan',
-    principalEmail: 'principal@spsdelhi.edu',
-    established: 1998,
-    vicePrincipalName: 'Mr. Harpreet Singh',
-    stats: { students: 2264, teachers: 118, classes: 14, users: 2452 },
-    feeProfile: { scale: 1.12, examTemplateId: 'quarterly-hy-annual' },
-    config: configWith({
-      // §24 School B — Fee Management ON, editing/publishing OFF (read-only
-      // structures), online payments OFF, examinations ON with Pattern B.
-      // One-time entry fee policy is also platform-restricted here: the
-      // Principal SEES the policy but cannot change it (permission model
-      // demo out of the box).
-      capabilities: {
-        fee_structure_edit: false,
-        fee_structure_publish: false,
-        fee_structure_archive: false,
-        fee_entry_policy_manage: false,
-      },
-      subFeatures: { fee_online_payments: false },
-      examTemplateId: 'quarterly-hy-annual',
-      plan: 'growth',
-    }),
-  },
-  {
-    id: 't-sxa-mum-03',
-    code: 'SXA-003',
-    name: "St. Xavier's Academy",
-    shortName: "St. Xavier's",
-    city: 'Mumbai',
-    initials: 'SX',
-    session: '2026-2027',
-    principalName: 'Fr. Jerome D Souza',
-    principalEmail: 'principal@stxavier.edu',
-    established: 1962,
-    vicePrincipalName: 'Ms. Anita Fernandes',
-    stats: { students: 1487, teachers: 84, classes: 10, users: 1620 },
-    feeProfile: { scale: 0.92, examTemplateId: 'ut4-hy-annual' },
-    config: configWith({
-      // §24 School C — different combination: editing ON, catalogue
-      // management RESTRICTED, online payments OFF, payroll ON, exams ON;
-      // transport + inventory disabled at module level; on trial plan.
-      capabilities: { fee_catalogue_manage: false },
-      subFeatures: { fee_online_payments: false },
-      features: { transport: false, inventory: false },
-      status: 'trial',
-      plan: 'starter',
-    }),
+    config: { ...baseConfig(), plan: 'enterprise' },
   },
 ]
+
+/** All valid tenant ids — used to normalize persisted active-tenant pointers. */
+const TENANT_IDS = new Set(TENANTS.map((t) => t.id))
+
+/** True when the id belongs to a registered tenant (stale ids self-heal). */
+export function isValidTenantId(id: string | null | undefined): id is string {
+  return typeof id === 'string' && TENANT_IDS.has(id)
+}
 
 export function getTenantById(id: string | null | undefined): SchoolTenant {
   return TENANTS.find((t) => t.id === id) ?? TENANTS[0]

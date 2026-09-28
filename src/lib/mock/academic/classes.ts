@@ -50,7 +50,7 @@ export interface AcademicClassDef {
 }
 
 /**
- * Default academic class catalog. Matches the existing demo school's class
+ * Default academic class catalog. Matches the registered school's class
  * list (Pre-Nursery, KG, Class 2, 4, 6, 8, 9, 10, 11, 12) — Class 11/12
  * are split into Science-PCM and Science-PCB stream offerings.
  *

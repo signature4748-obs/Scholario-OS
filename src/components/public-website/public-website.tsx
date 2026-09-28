@@ -132,10 +132,10 @@ export function PublicWebsite({ onOpenPortal, onOpenPlatform }: {
   const [scrolled, setScrolled] = useState(false)
 
   // school-derived strings
-  const schoolName = schoolData?.name || 'Demo School of Scholario'
+  const schoolName = schoolData?.name || 'Greenwood Public School'
   const city = schoolData?.city || 'Gurugram'
   const phone = schoolData?.phone || '+91 124 4567 800'
-  const email = schoolData?.email || 'office@demoschool.edu'
+  const email = schoolData?.email || 'info@greenwood.edu.in'
   const address = schoolData?.address || '100 Knowledge Parkway, Sector 47, Gurugram'
 
   useEffect(() => {
@@ -249,7 +249,7 @@ function Header({
           <div className="leading-tight">
             <h1 className="font-display font-bold text-foreground text-base">{shortName}</h1>
             <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 tracking-widest uppercase">
-              Of Scholario
+              Powered by Scholario
             </p>
           </div>
         </a>
@@ -1026,7 +1026,7 @@ function Footer({
             <div>
               <h2 className="font-display font-bold text-foreground leading-tight">{shortName}</h2>
               <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 tracking-widest uppercase">
-                Of Scholario
+                Powered by Scholario
               </p>
             </div>
           </div>

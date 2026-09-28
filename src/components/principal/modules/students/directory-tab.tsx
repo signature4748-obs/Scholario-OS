@@ -1,10 +1,35 @@
 'use client'
 
+/**
+ * principal/students/directory-tab — the school-wide student directory.
+ *
+ * SHARED CARD (Task W3-a): the grid renders the ONE shared directory
+ * card (`@components/shared/student-directory/student-card`) — the same
+ * three-band design as the Teacher roster. The principal store's
+ * `StudentRecord` maps onto the role-agnostic `StudentCardData`:
+ *   · attendance   the store percentage (no record count on file ⇒ no
+ *                  supporting line, `records: null`)
+ *   · latestAvg    null — this store has no exam data, so the metric
+ *                  band honestly shows Attendance + Fees
+ *   · fees         always present (principal is fee-authorized);
+ *                  'Pending' maps to OVERDUE per the fee display rules
+ *   · status       attendance < 75% ⇒ "At Risk" (the shared threshold);
+ *                  the old warning-badge row is replaced by the card's
+ *                  single status badge — the fee signal is already the
+ *                  fee chip
+ *
+ * The list view, SearchFilterBar (search + class filter + fee filter),
+ * the "X of Y students" line and the slice caps stay as they were.
+ */
+
 import { useState, useMemo } from 'react'
-import { motion } from 'framer-motion'
 import { Search, LayoutGrid, List, ChevronRight } from 'lucide-react'
 import { GradientAvatar } from '@/components/shared/ui'
-import { Badge } from '@/components/ui/badge'
+import {
+  StudentCard as SharedStudentCard,
+  AT_RISK_ATTENDANCE_PCT,
+  type StudentCardData,
+} from '@/components/shared/student-directory/student-card'
 import { cn } from '@/lib/utils'
 import type { StudentRecord, ClassRecord } from '@/lib/store/students-store'
 import { formatINR } from '@/lib/format'
@@ -17,29 +42,34 @@ function getFeeDisplay(s: StudentRecord) {
   return { text: `${formatINR(due, true)} due`, color: 'text-amber-600 dark:text-amber-400' }
 }
 
-export function StudentCard({ student, onClick }: { student: StudentRecord; onClick: () => void }) {
-  const fee = getFeeDisplay(student)
-  const warningBadges: React.ReactNode[] = []
-  if (student.attendance < 75) warningBadges.push(<Badge key="att" variant="secondary" className="text-[9px] bg-rose-500/10 text-rose-700 dark:text-rose-300">Low Attendance</Badge>)
-  if (student.feeStatus === 'Pending') warningBadges.push(<Badge key="fee" variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-700 dark:text-amber-300">Fee Pending</Badge>)
+/** Store fee status → the shared card's fee vocabulary. 'Pending' is a
+ *  due beyond the cycle ⇒ OVERDUE (same rule as getFeeDisplay). */
+const FEE_STATUS_MAP = { Paid: 'PAID', Partial: 'PARTIAL', Pending: 'OVERDUE' } as const
 
-  return (
-    <div className="rounded-lg border border-border/60 bg-card p-3.5 cursor-pointer hover:border-emerald-500/40 hover:shadow-sm transition-all group" onClick={onClick}>
-      <div className="flex items-start gap-3">
-        <GradientAvatar name={student.name} initials={student.avatar} size="md" />
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-xs sm:text-sm truncate group-hover:text-primary transition-colors">{student.name}</h3>
-          <p className="text-[10px] text-muted-foreground font-mono">{student.admissionNo}</p>
-          <p className="text-[10px] text-muted-foreground">{student.className} · Sec {student.section} · Roll {student.rollNo}</p>
-        </div>
-      </div>
-      <div className="flex items-center justify-between mt-2.5">
-        <span className={cn('text-xs font-semibold', student.attendance >= 90 ? 'text-emerald-600 dark:text-emerald-400' : student.attendance >= 75 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400')}>{student.attendance}% att</span>
-        <span className={cn('text-xs font-semibold', fee.color)}>{fee.text}</span>
-      </div>
-      {warningBadges.length > 0 && <div className="flex items-center gap-1 mt-2 flex-wrap">{warningBadges}</div>}
-    </div>
-  )
+/**
+ * StudentRecord → the shared directory card DTO. `classLabel` adapts per
+ * surface (the directory shows "Class · Sec X"; a single class's tab
+ * shows just the section). Exported — the class-details Students tab
+ * reuses the exact same mapping.
+ */
+export function studentRecordToCardData(s: StudentRecord, classLabel = `${s.className} · Sec ${s.section}`): StudentCardData {
+  return {
+    id: s.id,
+    name: s.name,
+    initials: s.avatar,
+    classLabel,
+    rollNo: s.rollNo,
+    admissionNo: s.admissionNo,
+    attendance: { pct: s.attendance, records: null },
+    latestAvg: null,
+    fees: {
+      status: FEE_STATUS_MAP[s.feeStatus],
+      outstanding: Math.max(s.feeTotal - s.feePaid, 0),
+      itemCount: 1,
+    },
+    guardianName: s.guardianName || s.fatherName || null,
+    status: s.attendance < AT_RISK_ATTENDANCE_PCT ? { key: 'at-risk', label: 'At Risk' } : null,
+  }
 }
 
 export function DirectoryTab({ students, classes, onStudentClick }: { students: StudentRecord[]; classes: ClassRecord[]; onStudentClick: (s: StudentRecord) => void }) {
@@ -72,11 +102,17 @@ export function DirectoryTab({ students, classes, onStudentClick }: { students: 
       {filtered.length === 0 ? (
         <div className="py-12 text-center"><Search className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm text-muted-foreground">No students found. Try adjusting your search.</p></div>
       ) : view === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        /* content-aware columns — as many whole 300px cards as fit (the
+           same grid as the teacher roster), single full-width column on
+           phones; the shared card carries its own motion + stagger */
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-3 sm:gap-4">
           {filtered.slice(0, 60).map((s, i) => (
-            <motion.div key={s.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.4) }}>
-              <StudentCard student={s} onClick={() => onStudentClick(s)} />
-            </motion.div>
+            <SharedStudentCard
+              key={s.id}
+              student={studentRecordToCardData(s)}
+              index={i}
+              onSelect={() => onStudentClick(s)}
+            />
           ))}
         </div>
       ) : (

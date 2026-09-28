@@ -257,11 +257,11 @@ export async function POST(req: NextRequest) {
       const bankRef = settlement?.utr || null
 
       const schoolId = notes?.schoolId || null
-      // Find the school if we don't have one from notes — pick the demo school as fallback.
+      // Find the school if we don't have one from notes — pick the registered school as fallback.
       let resolvedSchoolId = schoolId
       if (!resolvedSchoolId) {
         const demoSchool = await db.school.findFirst({ where: { slug: 'demo-school' } })
-        if (!demoSchool) throw new Error('Cannot resolve school for settlement (no schoolId in notes + no demo school)')
+        if (!demoSchool) throw new Error('Cannot resolve school for settlement (no schoolId in notes + no registered school)')
         resolvedSchoolId = demoSchool.id
       }
 

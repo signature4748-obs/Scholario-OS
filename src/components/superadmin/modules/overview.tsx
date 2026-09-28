@@ -2,7 +2,7 @@
 
 /**
  * Platform Overview (mock control plane · Task 7-a) — derived ONLY from the
- * tenant store + demo tenant identities. No fake analytics, no MRR, no
+ * tenant store + school identities. No fake analytics, no MRR, no
  * charts: counts of schools, enabled modules, users and exam patterns plus
  * a per-school status strip and the cross-tenant platform change log.
  */
@@ -67,7 +67,7 @@ export function PlatformOverviewModule({ onOpenSchool }: PlatformOverviewModuleP
       <div className="mb-1">
         <h1 className="font-display text-2xl font-bold tracking-tight">Platform Overview</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Mock control plane — derived live from the tenant store ({TENANTS.length} demo tenants)
+          Control plane — derived live from the tenant store ({TENANTS.length} registered {TENANTS.length === 1 ? 'school' : 'schools'})
         </p>
       </div>
 
@@ -92,7 +92,7 @@ export function PlatformOverviewModule({ onOpenSchool }: PlatformOverviewModuleP
         <SummaryCard
           label="Active users"
           value={activeUsers}
-          sub="demo tenants"
+          sub="registered schools"
           icon={<Users className="h-4 w-4" />}
           tone="emerald"
           delay={0.1}

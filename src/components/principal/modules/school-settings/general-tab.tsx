@@ -33,7 +33,7 @@ export function GeneralTab() {
             <Input
               value={store.general.schoolName}
               onChange={(e) => store.updateGeneral({ schoolName: e.target.value })}
-              placeholder="Demo School of Scholario"
+              placeholder="Greenwood Public School"
             />
           </div>
 
@@ -74,7 +74,7 @@ export function GeneralTab() {
             <Input
               value={store.general.email}
               onChange={(e) => store.updateGeneral({ email: e.target.value })}
-              placeholder="info@demoschool.edu"
+              placeholder="info@greenwood.edu.in"
             />
           </div>
 
@@ -83,7 +83,7 @@ export function GeneralTab() {
             <Input
               value={store.general.website}
               onChange={(e) => store.updateGeneral({ website: e.target.value })}
-              placeholder="www.demoschool.edu"
+              placeholder="www.greenwood.edu.in"
             />
           </div>
 

@@ -64,7 +64,7 @@ export function SchoolsModule({ selectedTenantId, onSelectTenant }: SchoolsModul
       <div className="mb-1">
         <h1 className="font-display text-2xl font-bold tracking-tight">Schools</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {TENANTS.length} demo tenants — select a school to open its Control Center
+          {TENANTS.length} registered {TENANTS.length === 1 ? 'school' : 'schools'} — select a school to open its Control Center
         </p>
       </div>
 

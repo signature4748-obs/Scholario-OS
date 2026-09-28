@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { ArrowLeft, LayoutGrid, List } from 'lucide-react'
 import { PageTransition, GradientAvatar } from '@/components/shared/ui'
+import { StudentCard as SharedStudentCard } from '@/components/shared/student-directory/student-card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -11,6 +12,7 @@ import type { ClassRecord, StudentRecord } from '@/lib/store/students-store'
 import { useAcademicConfigStore, resolveDbClassFor } from '@/lib/academic-config/client'
 import { formatINR } from '@/lib/format'
 import { classStreamBadge } from './class-display'
+import { studentRecordToCardData } from '../students/directory-tab'
 import { SegmentedTabs } from '../shared/segmented-tabs'
 import { ClassOverview } from './details/class-overview'
 import { ClassSubjects } from './details/class-subjects'
@@ -82,7 +84,11 @@ export function ClassDetailsPage({ cls, onBack, store, onStudentClick }: {
   )
 }
 
-/* ClassStudentsTab — grid/list with section filter, fee amounts */
+/* ClassStudentsTab — grid/list with section filter, fee amounts.
+   GRID (Task W3-a): the ONE shared directory card (same three-band
+   design as the teacher roster / principal directory). Inside a single
+   class the class name is redundant, so the identity line reads
+   "Roll 12 · Sec A". List view + section filter stay as they were. */
 function ClassStudentsTab({ students, cls, onStudentClick }: { students: StudentRecord[]; cls: ClassRecord; onStudentClick?: (s: StudentRecord) => void }) {
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [sectionFilter, setSectionFilter] = useState('all')
@@ -103,13 +109,15 @@ function ClassStudentsTab({ students, cls, onStudentClick }: { students: Student
         </div>
       </div>
       {filtered.length === 0 ? (<div className="py-8 text-center"><p className="text-sm text-muted-foreground">No students enrolled in this class.</p></div>) : view === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filtered.map((s) => { const fee = getFee(s); return (
-            <div key={s.id} className="rounded-lg border border-border/60 bg-card p-3.5 cursor-pointer hover:border-emerald-500/40 hover:shadow-sm transition-all group" onClick={() => onStudentClick?.(s)}>
-              <div className="flex items-start gap-3"><GradientAvatar name={s.name} initials={s.avatar} size="md" /><div className="flex-1 min-w-0"><h3 className="font-semibold text-xs sm:text-sm truncate group-hover:text-primary transition-colors">{s.name}</h3><p className="text-[10px] text-muted-foreground font-mono">{s.admissionNo}</p><p className="text-[10px] text-muted-foreground">Roll {s.rollNo} · Sec {s.section}</p></div></div>
-              <div className="flex items-center justify-between mt-2.5"><span className={cn('text-xs font-semibold', s.attendance >= 90 ? 'text-emerald-600 dark:text-emerald-400' : s.attendance >= 75 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400')}>{s.attendance}% att</span><span className={cn('text-xs font-semibold', fee.color)}>{fee.text}</span></div>
-            </div>
-          )})}
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-3 sm:gap-4">
+          {filtered.map((s, i) => (
+            <SharedStudentCard
+              key={s.id}
+              student={studentRecordToCardData(s, `Sec ${s.section}`)}
+              index={i}
+              onSelect={() => onStudentClick?.(s)}
+            />
+          ))}
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">

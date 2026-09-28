@@ -16,7 +16,7 @@
  * holidays skipped via the canonical school calendar) ending today, with
  * a fixed status pattern — 23 present + 1 late + 1 absent = 96% for the
  * demo student STU-58 (matches students-store `attendance: 96` exactly).
- * Dates are derived from the REAL clock at first load so the demo tenant
+ * Dates are derived from the REAL clock at first load so the tenant
  * always has fresh, current data; after the first write the records
  * persist and age like real institutional data.
  *

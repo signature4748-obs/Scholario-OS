@@ -4,14 +4,14 @@ import { school as schoolMock, classList as classListMock, subjects as subjectsM
 
 export const runtime = 'nodejs'
 
-// GET /api/schools/public?slug=demo-school (or defaults to the demo school)
+// GET /api/schools/public?slug=demo-school (or defaults to the registered school)
 export async function GET(req: NextRequest) {
   try {
     const slug = req.nextUrl.searchParams.get('slug') || 'demo-school'
 
     let school: any = null
     try {
-      // Find school by slug or fallback to first demo school
+      // Find school by slug or fallback to the registered school
       school = await db.school.findUnique({
         where: { slug },
         include: {
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Fallback to mock demo school data
+    // Fallback to the seeded school profile snapshot
     return NextResponse.json({
       success: true,
       data: {
