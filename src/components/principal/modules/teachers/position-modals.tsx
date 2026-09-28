@@ -1,7 +1,28 @@
 'use client'
 
-import { useState } from 'react'
-import { Shield, ShieldAlert } from 'lucide-react'
+/**
+ * Responsibility management modals (Wave 2.3C §6–§9, §16–§18).
+ *
+ * Assign Responsibility — opened from a specific teacher's profile, so the
+ * teacher is the CONTEXT (header subtitle), never a form field. Just:
+ * Responsibility · Effective from · optional Assigned-by source. The
+ * acceptance workflow is real end-to-end (the teacher sees a Pending
+ * Acceptance request and can accept or decline) — the row's status
+ * communicates it, no explanatory paragraph needed.
+ *
+ * Emergency Override — NOT part of the normal flow. Reached only through
+ * "More options" inside the assign modal; keeps its confirmation, the
+ * Principal authorization code, the mandatory reason and the audit trail.
+ *
+ * Create Custom Responsibility — a small focused form; the definition
+ * becomes part of the canonical school positions list (permissions stay
+ * derived from the responsibility definition — never edited ad hoc).
+ */
+
+import { useEffect, useState } from 'react'
+import {
+  Shield, ShieldAlert, Plus, ChevronDown, ChevronUp,
+} from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -25,60 +46,66 @@ interface CommonProps {
   onClose: () => void
 }
 
-/* ---------- ASSIGN POSITION MODAL ---------- */
+const today = () => new Date().toISOString().split('T')[0]
+
+/* ---------- ASSIGN RESPONSIBILITY MODAL ---------- */
 interface AssignPositionModalProps extends CommonProps {
-  teachers: TeacherRecord[]
+  /** The teacher whose profile opened this modal — the assignment target. */
+  teacher: TeacherRecord | null
   positionsList: PositionDefinition[]
-  targetTeacherIdForPos: string
-  setTargetTeacherIdForPos: (v: string) => void
   selectedPosIdToAssign: string
   setSelectedPosIdToAssign: (v: string) => void
-  onConfirm: () => void
-  /** Opens the existing CreateCustomPositionModal (optional link). */
+  onConfirm: (payload: { effectiveDate: string; assignedBy: string }) => void
+  /** Opens the Create Custom Responsibility dialog. */
   onCreateCustomPosition?: () => void
-  /** Opens the existing EmergencyOverrideModal (optional link). */
+  /** Opens the Emergency Override dialog (behind "More options"). */
   onEmergencyOverride?: () => void
 }
 
 export function AssignPositionModal({
-  teachers, positionsList,
-  targetTeacherIdForPos, setTargetTeacherIdForPos,
+  teacher, positionsList,
   selectedPosIdToAssign, setSelectedPosIdToAssign,
   open, onClose, onConfirm,
   onCreateCustomPosition, onEmergencyOverride,
 }: AssignPositionModalProps) {
+  const [effectiveDate, setEffectiveDate] = useState(today())
+  const [assignedBy, setAssignedBy] = useState('')
+  const [moreOpen, setMoreOpen] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setEffectiveDate(today())
+      setAssignedBy('')
+      setMoreOpen(false)
+    }
+  }, [open])
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" /> Assign Position & Responsibility
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+            <Shield className="h-4 w-4 text-primary" /> Assign Responsibility
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            Assign an official responsibility to a teacher. Requires teacher acceptance before permissions activate.
-          </DialogDescription>
+          {teacher && (
+            <DialogDescription className="text-xs">
+              {teacher.name} · {teacher.designation}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-3.5 py-1">
           <div>
-            <Label className="text-xs font-semibold">Select Teacher</Label>
-            <Select value={targetTeacherIdForPos} onValueChange={setTargetTeacherIdForPos}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Choose faculty member" /></SelectTrigger>
-              <SelectContent className="max-h-60">
-                {teachers.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name} ({t.designation} · {t.department})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label className="text-xs font-semibold">Select Position</Label>
+            <Label className="text-xs">Responsibility</Label>
             <Select value={selectedPosIdToAssign} onValueChange={setSelectedPosIdToAssign}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Choose position" /></SelectTrigger>
-              <SelectContent className="max-h-60">
+              <SelectTrigger className="mt-1 h-9 text-xs">
+                <SelectValue placeholder="Choose responsibility" />
+              </SelectTrigger>
+              <SelectContent className="max-h-64">
                 {positionsList.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.title} ({p.category})</SelectItem>
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.title} <span className="text-muted-foreground">· {p.category}</span>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -86,26 +113,72 @@ export function AssignPositionModal({
               <button
                 type="button"
                 onClick={onCreateCustomPosition}
-                className="text-[11px] text-primary hover:underline mt-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
               >
-                ＋ Can&rsquo;t find it? Create a custom position
+                <Plus className="h-3 w-3" /> Create custom responsibility
               </button>
             )}
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Effective from</Label>
+              <Input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                className="mt-1 h-9 text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">
+                Assigned by <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input
+                value={assignedBy}
+                onChange={(e) => setAssignedBy(e.target.value)}
+                placeholder="e.g. Board of Governors"
+                className="mt-1 h-9 text-xs"
+              />
+            </div>
+          </div>
+
+          {onEmergencyOverride && (
+            <div className="pt-0.5">
+              <button
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-expanded={moreOpen}
+                className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground/80 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+              >
+                {moreOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />} More options
+              </button>
+              {moreOpen && (
+                <button
+                  type="button"
+                  onClick={onEmergencyOverride}
+                  className="mt-2 flex w-full items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.04] px-3 py-2 text-left text-[11px] text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    <span className="font-medium">Emergency override</span>
+                    <span className="block text-muted-foreground">
+                      Activate instantly, bypassing acceptance — requires the authorization code.
+                    </span>
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
-        <DialogFooter className="gap-1 sm:gap-1">
-          {onEmergencyOverride && (
-            <Button
-              type="button" variant="ghost" onClick={onEmergencyOverride}
-              className="text-[11px] h-8 mr-auto text-amber-700 hover:text-amber-800 hover:bg-amber-500/10 gap-1"
-            >
-              <ShieldAlert className="h-3 w-3" /> Emergency override
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={onConfirm} className="bg-primary text-primary-foreground">
-            Send Position Assignment
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} className="text-xs h-9">Cancel</Button>
+          <Button
+            onClick={() => onConfirm({ effectiveDate, assignedBy: assignedBy.trim() })}
+            className="text-xs h-9 bg-primary text-primary-foreground"
+          >
+            Assign
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -113,12 +186,11 @@ export function AssignPositionModal({
   )
 }
 
-/* ---------- EMERGENCY OVERRIDE MODAL ---------- */
+/* ---------- EMERGENCY OVERRIDE MODAL (More options only) ---------- */
 interface EmergencyOverrideModalProps extends CommonProps {
-  teachers: TeacherRecord[]
+  /** Pre-targeted teacher — the override never asks to re-pick the target. */
+  teacher: TeacherRecord | null
   positionsList: PositionDefinition[]
-  overrideTeacherId: string
-  setOverrideTeacherId: (v: string) => void
   selectedPosForOverride: string
   setSelectedPosForOverride: (v: string) => void
   overrideAuthCode: string
@@ -129,78 +201,72 @@ interface EmergencyOverrideModalProps extends CommonProps {
 }
 
 export function EmergencyOverrideModal({
-  teachers, positionsList,
-  overrideTeacherId, setOverrideTeacherId,
+  teacher, positionsList,
   selectedPosForOverride, setSelectedPosForOverride,
   overrideAuthCode, setOverrideAuthCode,
   overrideReason, setOverrideReason,
   open, onClose, onConfirm,
 }: EmergencyOverrideModalProps) {
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-rose-600">
-            <ShieldAlert className="h-5 w-5" /> Principal Emergency Override
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold text-rose-600 dark:text-rose-400">
+            <ShieldAlert className="h-4 w-4" /> Emergency Override
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            Bypass normal teacher acceptance workflow and activate permissions instantly. Requires Principal authentication code and mandatory reason for permanent audit trail.
-          </DialogDescription>
+          {teacher && (
+            <DialogDescription className="text-xs">
+              {teacher.name} · {teacher.designation}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
-        <div className="space-y-3 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs font-semibold">Teacher</Label>
-              <Select value={overrideTeacherId} onValueChange={setOverrideTeacherId}>
-                <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Choose faculty member" /></SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {teachers.filter((t) => t.status !== 'Relieved').map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name} ({t.designation})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs font-semibold">Position</Label>
-              <Select value={selectedPosForOverride} onValueChange={setSelectedPosForOverride}>
-                <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Choose position" /></SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {positionsList.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="space-y-3.5 py-1">
+          <div>
+            <Label className="text-xs">Responsibility</Label>
+            <Select value={selectedPosForOverride} onValueChange={setSelectedPosForOverride}>
+              <SelectTrigger className="mt-1 h-9 text-xs">
+                <SelectValue placeholder="Choose responsibility" />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {positionsList.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
-            <Label className="text-xs font-semibold">Authorization Code</Label>
+            <Label className="text-xs">Authorization code</Label>
             <Input
               type="password"
-              placeholder="Enter Principal Auth Code (e.g. OVERRIDE-2025)"
+              placeholder="Principal authorization code"
               value={overrideAuthCode}
               onChange={(e) => setOverrideAuthCode(e.target.value)}
-              className="mt-1 font-mono"
+              className="mt-1 h-9 text-xs font-mono"
             />
-            <p className="text-[10px] text-muted-foreground mt-1">Default security override key: <code className="bg-muted px-1 rounded">OVERRIDE-2025</code></p>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Demo override code: <code className="bg-muted px-1 rounded">OVERRIDE-2025</code>
+            </p>
           </div>
 
           <div>
-            <Label className="text-xs font-semibold">Reason for Emergency Override</Label>
+            <Label className="text-xs">
+              Reason <span className="text-muted-foreground font-normal">(recorded in the audit trail)</span>
+            </Label>
             <Textarea
-              placeholder="e.g. Urgent examination duty assignment due to sudden leave of previous coordinator..."
+              placeholder="e.g. Urgent examination duty — previous coordinator on sudden leave"
               value={overrideReason}
               onChange={(e) => setOverrideReason(e.target.value)}
-              className="mt-1 min-h-[80px]"
+              className="mt-1 text-xs min-h-[72px]"
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={onConfirm}>
-            Confirm Emergency Override
+          <Button variant="outline" onClick={onClose} className="text-xs h-9">Cancel</Button>
+          <Button variant="destructive" onClick={onConfirm} className="text-xs h-9">
+            Confirm Override
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -208,7 +274,7 @@ export function EmergencyOverrideModal({
   )
 }
 
-/* ---------- CREATE CUSTOM POSITION MODAL ---------- */
+/* ---------- CREATE CUSTOM RESPONSIBILITY MODAL ---------- */
 interface CreateCustomPositionModalProps extends CommonProps {
   onCreate: (pos: Omit<PositionDefinition, 'id'>) => void
 }
@@ -221,6 +287,16 @@ export function CreateCustomPositionModal({ open, onClose, onCreate }: CreateCus
     'view_assigned_classes', 'enter_subject_marks', 'take_class_attendance',
   ])
 
+  useEffect(() => {
+    if (open) {
+      setTitle('')
+      setDescription('')
+      setSelectedPermissions([
+        'view_assigned_classes', 'enter_subject_marks', 'take_class_attendance',
+      ])
+    }
+  }, [open])
+
   const handleToggle = (key: string) => {
     setSelectedPermissions((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
@@ -229,7 +305,7 @@ export function CreateCustomPositionModal({ open, onClose, onCreate }: CreateCus
 
   const handleSave = () => {
     if (!title.trim()) {
-      toast.error('Please enter position title')
+      toast.error('Please enter a name for the responsibility')
       return
     }
     onCreate({
@@ -239,47 +315,72 @@ export function CreateCustomPositionModal({ open, onClose, onCreate }: CreateCus
       permissions: selectedPermissions,
       isCustom: true,
     })
-    setTitle('')
-    setDescription('')
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" /> Create Custom School Position
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+            <Shield className="h-4 w-4 text-primary" /> Create Custom Responsibility
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Define a custom responsibility and select permissions to carry into teacher accounts.
+            Added to the school&rsquo;s responsibility list — assignable to any teacher.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-2">
-          <div><Label className="text-xs font-semibold">Position Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Science Fair Convener" className="mt-1" /></div>
-          <div>
-            <Label className="text-xs font-semibold">Category</Label>
-            <Select value={category} onValueChange={(v) => setCategory(v as any)}>
-              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Academic">Academic</SelectItem>
-                <SelectItem value="Administrative">Administrative</SelectItem>
-                <SelectItem value="Co-Curricular">Co-Curricular</SelectItem>
-                <SelectItem value="Management">Management</SelectItem>
-                <SelectItem value="Custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="space-y-3.5 py-1">
+          <div className="grid grid-cols-[1fr_150px] gap-3">
+            <div>
+              <Label className="text-xs">Name</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Science Fair Convener"
+                className="mt-1 h-9 text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Category</Label>
+              <Select value={category} onValueChange={(v) => setCategory(v as typeof category)}>
+                <SelectTrigger className="mt-1 h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Academic">Academic</SelectItem>
+                  <SelectItem value="Administrative">Administrative</SelectItem>
+                  <SelectItem value="Co-Curricular">Co-Curricular</SelectItem>
+                  <SelectItem value="Management">Management</SelectItem>
+                  <SelectItem value="Custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div><Label className="text-xs font-semibold">Description</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Duties and scope of work..." className="mt-1 min-h-[60px]" /></div>
 
           <div>
-            <Label className="text-xs font-semibold mb-2 block">Grant Permissions Matrix</Label>
-            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+            <Label className="text-xs">
+              Description <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Scope of the responsibility"
+              className="mt-1 h-9 text-xs"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs mb-2 block">Permissions granted by this responsibility</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto p-0.5">
               {allPermissions.map((p) => {
                 const checked = selectedPermissions.includes(p.key)
                 return (
-                  <label key={p.key} className={cn('flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer', checked ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card/40')}>
-                    <Checkbox checked={checked} onCheckedChange={() => handleToggle(p.key)} />
+                  <label
+                    key={p.key}
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 rounded-md border text-xs cursor-pointer transition-colors',
+                      checked ? 'border-primary/40 bg-primary/5 text-foreground font-medium' : 'border-border bg-card/40 text-muted-foreground hover:bg-accent',
+                    )}
+                  >
+                    <Checkbox checked={checked} onCheckedChange={() => handleToggle(p.key)} className="h-3.5 w-3.5" />
                     <span className="truncate">{p.label}</span>
                   </label>
                 )
@@ -289,8 +390,8 @@ export function CreateCustomPositionModal({ open, onClose, onCreate }: CreateCus
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} className="bg-primary text-primary-foreground">Create Position</Button>
+          <Button variant="outline" onClick={onClose} className="text-xs h-9">Cancel</Button>
+          <Button onClick={handleSave} className="text-xs h-9 bg-primary text-primary-foreground">Create</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

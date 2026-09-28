@@ -17,13 +17,19 @@ export const createWorkloadSlice: StateCreator<
     | 'setTeacherMedia'
   >
 > = (set, get) => ({
-  assignSubjectsAndClasses: (teacherId, subjects, classes, examResp = []) => {
+  assignSubjectsAndClasses: (teacherId, subjects, classes, examResp) => {
     const teacher = get().teachers.find((t) => t.id === teacherId)
     if (!teacher) return
 
     set((s) => ({
       teachers: s.teachers.map((t) =>
-        t.id === teacherId ? { ...t, subjects, classes, examResponsibilities: examResp } : t
+        // examResp === undefined means "not managing exam duties in this
+        // call" — the teacher's existing exam responsibilities are PRESERVED
+        // (saving a subject/class allocation must never wipe exam duties).
+        // Only an explicitly passed array (including []) overwrites them.
+        t.id === teacherId
+          ? { ...t, subjects, classes, examResponsibilities: examResp ?? t.examResponsibilities }
+          : t
       ),
     }))
 

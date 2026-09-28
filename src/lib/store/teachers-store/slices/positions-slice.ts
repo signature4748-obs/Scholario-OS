@@ -28,9 +28,10 @@ export const createPositionsSlice: StateCreator<
       isCustom: true,
     }
     set((state) => ({ positionsList: [...state.positionsList, newPos] }))
+    return newPos
   },
 
-  assignPositionToTeacher: (teacherId, positionId, assignedBy = 'Dr. Ananya Iyer', classAssigned?: string) => {
+  assignPositionToTeacher: (teacherId, positionId, assignedBy = 'Dr. Ananya Iyer', classAssigned?: string, effectiveDate?: string) => {
     const state = get()
     const targetPos = state.positionsList.find((p) => p.id === positionId)
     if (!targetPos) return
@@ -43,7 +44,7 @@ export const createPositionsSlice: StateCreator<
       assignedDate: new Date().toISOString().split('T')[0],
       assignedBy,
       status: 'Pending Acceptance',
-      effectiveDate: new Date().toISOString().split('T')[0],
+      effectiveDate: effectiveDate || new Date().toISOString().split('T')[0],
     }
 
     const teacher = state.teachers.find((t) => t.id === teacherId)

@@ -40,17 +40,6 @@ export const masterInchargePositions: string[] = [
   'House Master / Mistress',
 ]
 
-export const workloadClassOptions: string[] = [
-  'Nursery-A', 'LKG-A', 'UKG-A', 'Class 1-A', 'Class 2-A', 'Class 3-A',
-  'Class 4-A', 'Class 5-A', 'Class 6-A', 'Class 7-A', 'Class 8-A',
-  'Class 9-A', 'Class 10-A', 'Class 11-Sci-A', 'Class 12-Sci-A',
-]
-
-export const workloadSubjectOptions: string[] = [
-  'Mathematics', 'Physics', 'Chemistry', 'Biology', 'English', 'Hindi',
-  'Computer Science', 'Social Studies', 'Physical Education', 'Art & Craft',
-]
-
 export const allPermissions = [
   { key: 'view_assigned_classes', label: 'View Assigned Classes' },
   { key: 'enter_subject_marks', label: 'Enter Subject Marks' },

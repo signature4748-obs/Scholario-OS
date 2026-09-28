@@ -33,13 +33,14 @@ const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
 
 const PrincipalDashboard = lazy(() => import('./modules/dashboard'), 'PrincipalDashboard')
 const StudentsClassesModule = lazy(() => import('./modules/students-classes'), 'StudentsClassesModule')
+const TeachersModule = lazy(() => import('./modules/teachers'), 'TeachersModule')
 const FeesModule = lazy(() => import('./modules/fees'), 'FeesModule')
 const FinanceDashboardModule = lazy(() => import('./modules/finance-dashboard'), 'FinanceDashboardModule')
 
 const moduleRegistry: Record<string, React.ComponentType<any>> = {
   dashboard: PrincipalDashboard,
   admission: lazy(() => import('./modules/admission'), 'AdmissionModule'),
-  teachers: lazy(() => import('./modules/teachers'), 'TeachersModule'),
+  teachers: TeachersModule,
   students: StudentsClassesModule,
   'students:overview': StudentsClassesModule,
   'students:directory': StudentsClassesModule,
@@ -184,6 +185,10 @@ export function PrincipalPanel() {
         <StudentsClassesModule initialTab={initialTab} />
       ) : active === 'dashboard' ? (
         <PrincipalDashboard onNavigate={setActive} />
+      ) : active === 'teachers' ? (
+        // Teachers receives cross-module navigation so the allocation modal's
+        // class-teacher pointer can deep-link to the canonical Classes module.
+        <TeachersModule onNavigate={setActive} />
       ) : active === 'fees' ? (
         // Fees receives cross-module navigation so the Fee Structure editor
         // can deep-link to the Examination module ("Go to Examinations" —

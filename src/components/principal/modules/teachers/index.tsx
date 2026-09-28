@@ -41,10 +41,16 @@ const TABS = [
   { id: 'logs', label: 'Audit Logs', icon: FileSpreadsheet } as const,
 ]
 
-export function TeachersModule() {
+export function TeachersModule({ onNavigate }: { onNavigate?: (moduleKey: string) => void }) {
   const s = useTeachersState()
   const actions = useTeachersActions(s)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+  // The responsibility-hub / override modals are pre-targeted at a specific
+  // teacher — resolve that teacher for the modal's context header.
+  const assignTargetTeacher = s.teachers.find((t) => t.id === s.targetTeacherIdForPos) ?? null
+  const overrideTargetTeacher =
+    s.teachers.find((t) => t.id === s.overrideTeacherId) ?? assignTargetTeacher
 
   // Live record: the selected teacher is re-resolved from the store on
   // every render so profile edits (positions, workload, media, letters)
@@ -250,15 +256,13 @@ export function TeachersModule() {
         credentials={s.currentCredentials}
       />
 
-      {/* ASSIGN POSITION MODAL — the responsibilities hub (profile
-          “Manage responsibilities” pre-targets the teacher) */}
+      {/* ASSIGN RESPONSIBILITY MODAL — opened from a teacher's profile,
+          pre-targeted at that teacher (context, not a form field) */}
       <AssignPositionModal
         open={s.assignPosModalOpen}
         onClose={() => s.setAssignPosModalOpen(false)}
-        teachers={s.teachers}
+        teacher={assignTargetTeacher}
         positionsList={s.positionsList}
-        targetTeacherIdForPos={s.targetTeacherIdForPos}
-        setTargetTeacherIdForPos={s.setTargetTeacherIdForPos}
         selectedPosIdToAssign={s.selectedPosIdToAssign}
         setSelectedPosIdToAssign={s.setSelectedPosIdToAssign}
         onConfirm={actions.handleConfirmAssignPosition}
@@ -272,26 +276,28 @@ export function TeachersModule() {
         }}
       />
 
-      {/* CREATE CUSTOM POSITION MODAL */}
+      {/* CREATE CUSTOM RESPONSIBILITY MODAL — the definition joins the
+          canonical positions list and is preselected for assignment */}
       <CreateCustomPositionModal
         open={s.customPosModalOpen}
         onClose={() => s.setCustomPosModalOpen(false)}
         onCreate={(pos) => {
-          s.addCustomPosition(pos)
+          const created = s.addCustomPosition(pos)
+          s.setSelectedPosIdToAssign(created.id)
           s.setCustomPosModalOpen(false)
-          toast.success(`Custom Position "${pos.title}" Created`, { description: 'Available for immediate assignment.' })
+          toast.success(`Custom responsibility "${pos.title}" created`, {
+            description: 'Selected in the assign dialog — set the effective date and assign.',
+          })
         }}
       />
 
-      {/* EMERGENCY OVERRIDE MODAL — instant activation with Principal
-          authorization code + mandatory audit reason */}
+      {/* EMERGENCY OVERRIDE MODAL — reached only through "More options";
+          keeps auth code + mandatory reason + audit trail */}
       <EmergencyOverrideModal
         open={s.emergencyOverrideModalOpen}
         onClose={() => s.setEmergencyOverrideModalOpen(false)}
-        teachers={s.teachers}
+        teacher={overrideTargetTeacher}
         positionsList={s.positionsList}
-        overrideTeacherId={s.overrideTeacherId}
-        setOverrideTeacherId={s.setOverrideTeacherId}
         selectedPosForOverride={s.selectedPosForOverride}
         setSelectedPosForOverride={s.setSelectedPosForOverride}
         overrideAuthCode={s.overrideAuthCode}
@@ -301,7 +307,7 @@ export function TeachersModule() {
         onConfirm={actions.handleConfirmEmergencyOverride}
       />
 
-      {/* SUBJECT & CLASS ALLOCATION MODAL */}
+      {/* CLASS & SUBJECT ALLOCATION MODAL — school-config-driven picker */}
       <WorkloadAllocationModal
         open={s.workloadModalOpen}
         onClose={() => s.setWorkloadModalOpen(false)}
@@ -315,6 +321,7 @@ export function TeachersModule() {
           s.assignSubjectsAndClasses(conflictTeacherId, newSubjects, newClasses)
         }}
         onSave={actions.handleSaveWorkload}
+        onNavigateClasses={onNavigate ? () => onNavigate('students:classes') : undefined}
       />
 
       {/* STAFF RELIEVE / TERMINATION MODAL */}

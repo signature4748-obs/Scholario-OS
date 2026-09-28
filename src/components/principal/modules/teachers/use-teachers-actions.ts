@@ -93,29 +93,35 @@ export function useTeachersActions(s: TeachersState) {
     })
   }
 
-  const handleConfirmAssignPosition = () => {
+  const handleConfirmAssignPosition = ({ effectiveDate, assignedBy }: { effectiveDate: string; assignedBy: string }) => {
     if (!s.targetTeacherIdForPos || !s.selectedPosIdToAssign) {
-      toast.error('Please select both a teacher and a position')
+      toast.error('Choose a responsibility to assign')
       return
     }
-    s.assignPositionToTeacher(s.targetTeacherIdForPos, s.selectedPosIdToAssign)
+    s.assignPositionToTeacher(
+      s.targetTeacherIdForPos,
+      s.selectedPosIdToAssign,
+      assignedBy || undefined,
+      undefined,
+      effectiveDate,
+    )
     s.setAssignPosModalOpen(false)
-    toast.success('Position Assigned', {
-      description: 'Notification sent to teacher for approval acceptance.',
+    toast.success('Responsibility assigned', {
+      description: 'Pending acceptance by the teacher.',
     })
   }
 
   const handleConfirmEmergencyOverride = () => {
     if (s.overrideAuthCode !== 'OVERRIDE-2025' && s.overrideAuthCode !== '123456') {
-      toast.error('Invalid Authorization Code', { description: 'Emergency override code incorrect. Use OVERRIDE-2025.' })
+      toast.error('Invalid authorization code', { description: 'Emergency override requires the Principal code.' })
       return
     }
     if (!s.overrideReason.trim()) {
-      toast.error('Reason Required', { description: 'Specify reason for emergency override.' })
+      toast.error('Reason required', { description: 'The override reason is recorded in the audit trail.' })
       return
     }
     if (!s.overrideTeacherId || !s.selectedPosForOverride) {
-      toast.error('Select a teacher and a position', { description: 'The override activates a specific position for a specific teacher.' })
+      toast.error('Choose a responsibility to activate')
       return
     }
     const target = s.teachers.find((t) => t.id === s.overrideTeacherId)
@@ -125,8 +131,8 @@ export function useTeachersActions(s: TeachersState) {
     s.setEmergencyOverrideModalOpen(false)
     s.setOverrideAuthCode('')
     s.setOverrideReason('')
-    toast.success('EMERGENCY OVERRIDE ACTIVATED', {
-      description: `Permissions for position activated instantly for ${target.name}. Logged in Audit Trail.`,
+    toast.success('Emergency override activated', {
+      description: `Permissions activated instantly for ${target.name}. Recorded in the audit trail.`,
     })
   }
 
@@ -150,10 +156,11 @@ export function useTeachersActions(s: TeachersState) {
 
   const handleSaveWorkload = () => {
     if (!s.selectedTeacher) return
-    s.assignSubjectsAndClasses(s.selectedTeacher.id, s.selectedSubjects, s.selectedClasses)
+    const { selectedSubjects, selectedClasses } = s
+    s.assignSubjectsAndClasses(s.selectedTeacher.id, selectedSubjects, selectedClasses)
     s.setWorkloadModalOpen(false)
-    toast.success('Allocations Updated & Synced', {
-      description: `Updated for ${s.selectedTeacher.name}. Subjects [${s.selectedSubjects.join(', ')}], Classes [${s.selectedClasses.join(', ')}]`,
+    toast.success('Allocation updated', {
+      description: `${selectedSubjects.length} ${selectedSubjects.length === 1 ? 'subject' : 'subjects'} · ${selectedClasses.length} ${selectedClasses.length === 1 ? 'class' : 'classes'}`,
     })
   }
 

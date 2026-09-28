@@ -210,8 +210,10 @@ export interface TeachersStoreState {
   // Principal Actions
   addTeacher: (teacher: TeacherRecord) => void
   updateTeacher: (id: string, updates: Partial<TeacherRecord>) => void
-  addCustomPosition: (position: Omit<PositionDefinition, 'id'>) => void
-  assignPositionToTeacher: (teacherId: string, positionId: string, assignedBy?: string, classAssigned?: string) => void
+  /** Creates a canonical school-position definition; returns it (so the
+   *  calling UI can immediately preselect it in the assign flow). */
+  addCustomPosition: (position: Omit<PositionDefinition, 'id'>) => PositionDefinition
+  assignPositionToTeacher: (teacherId: string, positionId: string, assignedBy?: string, classAssigned?: string, effectiveDate?: string) => void
   emergencyOverridePosition: (teacherId: string, positionId: string, reason: string, authCode: string, actorName?: string) => void
   removePositionFromTeacher: (teacherId: string, assignmentId: string, reason?: string, emergency?: boolean, authCode?: string) => void
   assignSubjectsAndClasses: (teacherId: string, subjects: string[], classes: string[], examResp?: string[]) => void
