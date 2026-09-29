@@ -5,15 +5,40 @@
  * messaging workspace. One unified, newest-first list across the teacher's
  * two real channels:
  *   · parent threads (ParentConversation — the former Parent Connect)
- *   · direct staff threads (Message rows grouped by counterpart)
+ *   · direct threads (Message rows grouped by counterpart — staff or
+ *     students with accounts)
  * Search matches the person, the related student or the message subject;
- * filter chips cover All / Unread / Needs Reply / Parents / Staff. Category
- * chips are deliberately NOT repeated on every row — that detail lives in
- * the thread headers only.
+ * filter chips cover All / Unread / Needs Reply / Parents / Staff /
+ * Archived (archived rows are hidden from every other view by default).
+ *
+ * Each row carries a compact kebab action menu (H) — Open · Mark read /
+ * unread · Pin / Unpin · Mark needs reply · Archive — the actions persist
+ * through the canonical PATCH endpoints (ParentConversation flags /
+ * DirectThreadState rows), never in local state.
  */
 
-import { useMemo, useState } from 'react'
-import { AlertCircle, MessagesSquare, Pin, Plus, Search } from 'lucide-react'
+import { useState } from 'react'
+import {
+  AlertCircle,
+  Archive,
+  ArchiveRestore,
+  CheckCheck,
+  MailOpen,
+  MessagesSquare,
+  MoreVertical,
+  Pin,
+  PinOff,
+  Plus,
+  Reply,
+  Search,
+} from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Avatar } from '@/components/shared/avatar'
 import { HubEmptyState } from '@/components/teacher/modules/shared/hub-stat-cards'
 import { formatRelativeTime } from '@/lib/format'
@@ -28,15 +53,26 @@ export type SelectionKey = string
 export const parentKey = (conversationId: string) => `pc:${conversationId}` as SelectionKey
 export const directKey = (counterpartId: string) => `dm:${counterpartId}` as SelectionKey
 
+/** Everything the action menu needs for one row — resolved per kind. */
+export interface RowActions {
+  onTogglePin: (key: SelectionKey, pinned: boolean) => void
+  onMarkRead: (key: SelectionKey) => void
+  onMarkUnread: (key: SelectionKey) => void
+  onSetNeedsReply: (key: SelectionKey, needsReply: boolean) => void
+  onToggleArchive: (key: SelectionKey, archived: boolean) => void
+}
+
 interface ConversationListProps {
   conversations: ConversationSummary[]
   directConversations: DirectConversationSummary[]
   activeKey: SelectionKey | null
   onSelect: (key: SelectionKey) => void
   onNewMessage: () => void
+  /** persisted action handlers (kebab menu) */
+  actions: RowActions
 }
 
-type ListFilter = 'all' | 'unread' | 'reply' | 'parents' | 'staff'
+type ListFilter = 'all' | 'unread' | 'reply' | 'parents' | 'staff' | 'archived'
 
 const LIST_FILTERS: { value: ListFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -44,6 +80,7 @@ const LIST_FILTERS: { value: ListFilter; label: string }[] = [
   { value: 'reply', label: 'Needs Reply' },
   { value: 'parents', label: 'Parents' },
   { value: 'staff', label: 'Staff' },
+  { value: 'archived', label: 'Archived' },
 ]
 
 export function ConversationList({
@@ -52,32 +89,41 @@ export function ConversationList({
   activeKey,
   onSelect,
   onNewMessage,
+  actions,
 }: ConversationListProps) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ListFilter>('all')
 
   const total = conversations.length + directConversations.length
+  const hasArchived =
+    conversations.some((c) => c.archived) || directConversations.some((c) => c.archived)
 
-  const visible = useMemo(() => {
+  // The React Compiler memoizes this derivation automatically — a manual
+  // useMemo here cannot be preserved (spread + switch in the filter chain).
+  const visible = (() => {
     const q = query.trim().toLowerCase()
-    const parentRows = conversations.map((c) => ({
-      kind: 'parent' as const,
-      key: parentKey(c.id),
-      name: c.parent.name,
-      secondary: `Parent of ${c.student.name} · ${c.student.classLabel}`,
-      preview: conversationPreview(c),
-      time: c.lastMessageAt,
-      unread: c.unread,
-      pinned: c.pinned,
-      needsReply: c.lastMessage != null && !c.lastMessage.fromTeacher,
-      followUp: c.openFollowUp != null,
-      chipTone: '',
-      searchHit:
-        !q ||
-        c.parent.name.toLowerCase().includes(q) ||
-        c.student.name.toLowerCase().includes(q) ||
-        (c.lastMessage?.body ?? '').toLowerCase().includes(q),
-    }))
+    const parentRows = conversations.map((c) => {
+      const derivedReply = c.lastMessage != null && !c.lastMessage.fromTeacher
+      return {
+        kind: 'parent' as const,
+        key: parentKey(c.id),
+        name: c.parent.name,
+        secondary: `Parent of ${c.student.name} · ${c.student.classLabel}`,
+        chipTone: '',
+        preview: conversationPreview(c),
+        time: c.lastMessageAt,
+        unread: c.unread,
+        pinned: c.pinned,
+        archived: c.archived,
+        needsReply: derivedReply || c.needsReply,
+        followUp: c.openFollowUp != null,
+        searchHit:
+          !q ||
+          c.parent.name.toLowerCase().includes(q) ||
+          c.student.name.toLowerCase().includes(q) ||
+          (c.lastMessage?.body ?? '').toLowerCase().includes(q),
+      }
+    })
     const directRows = directConversations.map((c) => ({
       kind: 'direct' as const,
       key: directKey(c.counterpartId),
@@ -87,29 +133,32 @@ export function ConversationList({
       preview: directPreview(c),
       time: c.lastMessageAt,
       unread: c.unread,
-      pinned: false,
-      needsReply: c.awaitingReply,
+      pinned: c.pinned,
+      archived: c.archived,
+      needsReply: c.awaitingReply || c.needsReply,
       followUp: false,
       searchHit:
         !q ||
         c.counterpartName.toLowerCase().includes(q) ||
         (c.lastMessage?.subject ?? '').toLowerCase().includes(q) ||
-        (c.lastMessage?.body ?? '').includes(q),
+        (c.lastMessage?.body ?? '').toLowerCase().includes(q),
     }))
     return [...parentRows, ...directRows]
       .filter((r) => r.searchHit)
       .filter((r) => {
         switch (filter) {
+          case 'archived':
+            return r.archived
           case 'unread':
-            return r.unread > 0
+            return r.unread > 0 && !r.archived
           case 'reply':
-            return r.needsReply
+            return r.needsReply && !r.archived
           case 'parents':
-            return r.kind === 'parent'
+            return r.kind === 'parent' && !r.archived
           case 'staff':
-            return r.kind === 'direct'
+            return r.kind === 'direct' && !r.archived
           default:
-            return true
+            return !r.archived
         }
       })
       .sort((a, b) => {
@@ -118,7 +167,7 @@ export function ConversationList({
         const bt = b.time ? Date.parse(b.time) : 0
         return bt - at
       })
-  }, [conversations, directConversations, filter, query])
+  })()
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -134,7 +183,7 @@ export function ConversationList({
           />
         </div>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter conversations">
-          {LIST_FILTERS.map((f) => (
+          {LIST_FILTERS.filter((f) => f.value !== 'archived' || hasArchived).map((f) => (
             <button
               key={f.value}
               onClick={() => setFilter(f.value)}
@@ -160,7 +209,7 @@ export function ConversationList({
           <HubEmptyState
             icon={MessagesSquare}
             title="No conversations yet"
-            hint="Messages with parents and colleagues will appear here."
+            hint="Messages with parents, students and colleagues will appear here."
             action={
               <button
                 onClick={onNewMessage}
@@ -173,11 +222,19 @@ export function ConversationList({
           />
         ) : visible.length === 0 ? (
           <p className="px-4 py-10 text-center text-xs text-muted-foreground">
-            No conversations match your search or filter.
+            {filter === 'archived'
+              ? 'No archived conversations.'
+              : 'No conversations match your search or filter.'}
           </p>
         ) : (
           visible.map((r) => (
-            <ConversationRow key={r.key} r={r} active={r.key === activeKey} onSelect={onSelect} />
+            <ConversationRow
+              key={r.key}
+              r={r}
+              active={r.key === activeKey}
+              onSelect={onSelect}
+              actions={actions}
+            />
           ))
         )}
       </div>
@@ -196,6 +253,7 @@ interface RowShape {
   time: string | null
   unread: number
   pinned: boolean
+  archived: boolean
   needsReply: boolean
   followUp: boolean
 }
@@ -204,50 +262,125 @@ function ConversationRow({
   r,
   active,
   onSelect,
+  actions,
 }: {
   r: RowShape
   active: boolean
   onSelect: (key: SelectionKey) => void
+  actions: RowActions
 }) {
   return (
-    <button
-      onClick={() => onSelect(r.key)}
+    <div
       className={cn(
-        'flex w-full items-start gap-2.5 border-b border-l-2 border-b-border/60 px-3 py-2.5 text-left transition-colors',
-        active ? 'border-l-primary bg-muted/50' : 'border-l-transparent hover:bg-muted/40',
+        'group relative flex w-full items-start gap-2.5 border-b border-l-2 border-b-border/60 px-3 py-2.5 text-left transition-colors',
+        active
+          ? 'border-l-primary bg-muted/50'
+          : 'border-l-transparent hover:bg-muted/40',
+        r.pinned && !active && 'bg-primary/[0.035]',
       )}
     >
-      <Avatar name={r.name} size="sm" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{r.name}</p>
-        {r.kind === 'direct' ? (
-          <span
-            className={cn(
-              'mt-0.5 inline-block max-w-full truncate rounded-full border px-1.5 py-px text-[10px] font-medium',
-              r.chipTone || 'border-border bg-muted text-muted-foreground',
-            )}
+      <button
+        onClick={() => onSelect(r.key)}
+        className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
+        aria-label={`Open conversation with ${r.name}`}
+      >
+        <Avatar name={r.name} size="sm" />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+            {r.pinned && <Pin className="h-3 w-3 shrink-0 text-primary/70" aria-label="Pinned" />}
+            {r.name}
+          </p>
+          {r.kind === 'direct' ? (
+            <span
+              className={cn(
+                'mt-0.5 inline-block max-w-full truncate rounded-full border px-1.5 py-px text-[10px] font-medium',
+                r.chipTone || 'border-border bg-muted text-muted-foreground',
+              )}
+            >
+              {r.secondary}
+            </span>
+          ) : (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{r.secondary}</p>
+          )}
+          <p className="mt-1 truncate text-xs text-muted-foreground/90">{r.preview}</p>
+        </div>
+        <span className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+          {r.time && (
+            <span className="text-[10px] text-muted-foreground">{formatRelativeTime(r.time)}</span>
+          )}
+          {r.unread > 0 && (
+            <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 text-primary-foreground">
+              {r.unread}
+            </span>
+          )}
+          {r.needsReply && (
+            <Reply className="h-3 w-3 text-amber-500" aria-label="Needs reply" />
+          )}
+          {r.followUp && (
+            <AlertCircle className="h-3 w-3 text-amber-500" aria-label="Needs follow-up" />
+          )}
+        </span>
+      </button>
+
+      {/* kebab action menu — persisted through the canonical PATCH routes */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label={`Conversation actions for ${r.name}`}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
           >
-            {r.secondary}
-          </span>
-        ) : (
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{r.secondary}</p>
-        )}
-        <p className="mt-1 truncate text-xs text-muted-foreground/90">{r.preview}</p>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-        {r.time && (
-          <span className="text-[10px] text-muted-foreground">{formatRelativeTime(r.time)}</span>
-        )}
-        {r.unread > 0 && (
-          <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 text-primary-foreground">
-            {r.unread}
-          </span>
-        )}
-        {r.pinned && <Pin className="h-3 w-3 text-muted-foreground" aria-label="Pinned" />}
-        {r.followUp && (
-          <AlertCircle className="h-3 w-3 text-amber-500" aria-label="Needs follow-up" />
-        )}
-      </div>
-    </button>
+            <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={() => onSelect(r.key)}>
+            <MessagesSquare className="h-3.5 w-3.5" aria-hidden="true" />
+            Open
+          </DropdownMenuItem>
+          {r.unread > 0 ? (
+            <DropdownMenuItem onClick={() => actions.onMarkRead(r.key)}>
+              <MailOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              Mark as read
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onClick={() => actions.onMarkUnread(r.key)}>
+              <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              Mark as unread
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => actions.onTogglePin(r.key, !r.pinned)}>
+            {r.pinned ? (
+              <>
+                <PinOff className="h-3.5 w-3.5" aria-hidden="true" />
+                Unpin
+              </>
+            ) : (
+              <>
+                <Pin className="h-3.5 w-3.5" aria-hidden="true" />
+                Pin conversation
+              </>
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => actions.onSetNeedsReply(r.key, !r.needsReply)}>
+            <Reply className="h-3.5 w-3.5" aria-hidden="true" />
+            {r.needsReply ? 'Clear needs reply' : 'Mark needs reply'}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => actions.onToggleArchive(r.key, !r.archived)}>
+            {r.archived ? (
+              <>
+                <ArchiveRestore className="h-3.5 w-3.5" aria-hidden="true" />
+                Unarchive
+              </>
+            ) : (
+              <>
+                <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+                Archive
+              </>
+            )}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }

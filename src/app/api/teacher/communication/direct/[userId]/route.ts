@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withUser } from '@/lib/api'
-import { requireTeacher, parseString } from '@/lib/teacher-hub'
+import { requireTeacher, parseString, auditTeacherAction } from '@/lib/teacher-hub'
 import type { DirectThreadPayload } from '@/components/teacher/modules/communication/types'
 
 export const runtime = 'nodejs'
@@ -72,6 +72,75 @@ export async function GET(
         })),
       }
       return payload
+    },
+    { roles: ['TEACHER'] },
+  )
+}
+
+// PATCH /api/teacher/communication/direct/[userId] — persist the viewer's
+// conversation state for this direct thread. Pin / archive / needs-reply
+// live in DirectThreadState (one row per user↔counterpart — per-user, in
+// the DATABASE, never React state or localStorage). markUnread flips the
+// latest received message back to read=false so the badge re-appears.
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ userId: string }> },
+) {
+  return withUser(
+    async (user) => {
+      const ctx = await requireTeacher(user)
+      const { userId } = await params
+      const body = await req.json().catch(() => null)
+      if (!body || typeof body !== 'object') throw new Error('Invalid request body')
+
+      const counterpart = await db.user.findFirst({
+        where: { id: userId, schoolId: ctx.schoolId },
+        select: { id: true },
+      })
+      if (!counterpart) throw new Error('Conversation participant not found in your school')
+
+      const data: { pinned?: boolean; archived?: boolean; needsReply?: boolean } = {}
+      if (typeof body.pinned === 'boolean') data.pinned = body.pinned
+      if (typeof body.archived === 'boolean') data.archived = body.archived
+      if (typeof body.needsReply === 'boolean') data.needsReply = body.needsReply
+
+      if (body.markUnread === true) {
+        // Flip only the LATEST received message back to unread — the
+        // badge re-appears without resurrecting the whole history.
+        const latestReceived = await db.message.findFirst({
+          where: { schoolId: ctx.schoolId, senderId: counterpart.id, recipientId: ctx.userId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        })
+        if (latestReceived) {
+          await db.message.update({ where: { id: latestReceived.id }, data: { read: false } })
+        }
+      }
+      if (body.markRead === true) {
+        await db.message.updateMany({
+          where: { schoolId: ctx.schoolId, senderId: counterpart.id, recipientId: ctx.userId, read: false },
+          data: { read: true },
+        })
+      }
+
+      const touched =
+        Object.keys(data).length > 0 || body.markRead === true || body.markUnread === true
+      if (!touched) throw new Error('Nothing to update')
+
+      if (Object.keys(data).length > 0) {
+        await db.directThreadState.upsert({
+          where: { userId_counterpartId: { userId: ctx.userId, counterpartId: counterpart.id } },
+          create: { schoolId: ctx.schoolId, userId: ctx.userId, counterpartId: counterpart.id, ...data },
+          update: data,
+        })
+      }
+      await auditTeacherAction(
+        user,
+        ctx.schoolId,
+        'DIRECT_THREAD_UPDATED',
+        `Direct thread with ${counterpart.id} updated (${[...Object.keys(data), ...(body.markRead ? ['markRead'] : []), ...(body.markUnread ? ['markUnread'] : [])].join(', ')})`,
+      )
+      return { ok: true }
     },
     { roles: ['TEACHER'] },
   )

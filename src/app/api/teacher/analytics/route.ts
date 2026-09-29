@@ -161,6 +161,145 @@ export async function GET() {
             return a.exam.name.localeCompare(b.exam.name)
           })
 
+          // Subject configs per exam (configured subjects count) — needed by
+          // the assessments summary and the completion stat below.
+          const configExams = new Map<string, ExamRef & { subjects: number }>()
+          for (const c of configs) {
+            const entry = configExams.get(c.examId) ?? { ...c.exam, subjects: 0 }
+            entry.subjects += 1
+            configExams.set(c.examId, entry)
+          }
+
+          // ── Assessment Performance: every exam the class knows about
+          // (configured ∪ graded), newest first. Status / graded counts /
+          // class average / completion are all real rows — an ungraded
+          // exam honestly shows 0 graded and no average.
+          const allExams = new Map<string, ExamRef>()
+          for (const c of configs) allExams.set(c.examId, c.exam)
+          for (const e of gradedExams) allExams.set(e.exam.id, e.exam)
+          const examYears0 = new Set(
+            [...allExams.values()]
+              .map((e) => e.startDate?.getUTCFullYear())
+              .filter((y): y is number => y != null),
+          )
+          const showYearAll = examYears0.size > 1
+          const assessments = [...allExams.values()]
+            .sort((a, b) => {
+              const ad = a.startDate?.getTime() ?? Number.MAX_SAFE_INTEGER
+              const bd = b.startDate?.getTime() ?? Number.MAX_SAFE_INTEGER
+              if (ad !== bd) return bd - ad
+              return a.name.localeCompare(b.name)
+            })
+            .slice(0, 6)
+            .map((exam) => {
+              const examMarks = marks.filter((m) => m.examId === exam.id && m.marksObtained != null)
+              const subjectsConfigured = configExams.get(exam.id)?.subjects ?? 0
+              const subjectsEntered = new Set(examMarks.map((m) => m.subjectId)).size
+              const studentsBySubject = new Map<string, Set<string>>()
+              const pctByStudent = new Map<string, { pctSum: number; subjects: number }>()
+              for (const m of examMarks) {
+                const max = maxOf.get(`${m.examId}:${m.subjectId}`)
+                if (!max) continue
+                const set = studentsBySubject.get(m.subjectId) ?? new Set<string>()
+                set.add(m.studentId)
+                studentsBySubject.set(m.subjectId, set)
+                const entry = pctByStudent.get(m.studentId) ?? { pctSum: 0, subjects: 0 }
+                entry.pctSum += (m.marksObtained! / max) * 100
+                entry.subjects += 1
+                pctByStudent.set(m.studentId, entry)
+              }
+              const studentAvgs = [...pctByStudent.entries()].map(
+                ([, v]) => v.pctSum / v.subjects,
+              )
+              const classAvg =
+                studentAvgs.length > 0
+                  ? Math.round((studentAvgs.reduce((s, v) => s + v, 0) / studentAvgs.length) * 10) / 10
+                  : null
+              return {
+                examId: exam.id,
+                name: exam.name,
+                dateLabel: exam.startDate
+                  ? (showYearAll ? DAY_MONTH_YEAR : DAY_MONTH).format(exam.startDate)
+                  : exam.name,
+                /** real start date (epoch ms, null when undated) */
+                dateMs: exam.startDate ? exam.startDate.getTime() : null,
+                status: exam.status,
+                resultStatus: exam.resultStatus,
+                subjectsConfigured,
+                subjectsEntered,
+                studentsGraded: pctByStudent.size,
+                studentCount: students.length,
+                entered: examMarks.length,
+                expected: subjectsConfigured * students.length,
+                classAveragePct: classAvg,
+                highestPct:
+                  studentAvgs.length > 0
+                    ? Math.round(Math.max(...studentAvgs) * 10) / 10
+                    : null,
+                lowestPct:
+                  studentAvgs.length > 0
+                    ? Math.round(Math.min(...studentAvgs) * 10) / 10
+                    : null,
+              }
+            })
+
+          // ── Improving students: real exam-over-exam change — each
+          // student's normalized average in the two most recent GRADED
+          // exams; positive deltas only, largest first. Requires both
+          // exams to have at least one entered, config-normalizable mark
+          // for that student.
+          const improvingStudents = (() => {
+            if (gradedExams.length < 2) return []
+            const latestExam = gradedExams[gradedExams.length - 1]
+            const prevExam = gradedExams[gradedExams.length - 2]
+            const perStudent = (exam: (typeof gradedExams)[number]) => {
+              const map = new Map<string, { pctSum: number; subjects: number }>()
+              for (const m of exam.marks) {
+                if (m.marksObtained == null) continue
+                const max = maxOf.get(`${m.examId}:${m.subjectId}`)
+                if (!max) continue
+                const entry = map.get(m.studentId) ?? { pctSum: 0, subjects: 0 }
+                entry.pctSum += (m.marksObtained / max) * 100
+                entry.subjects += 1
+                map.set(m.studentId, entry)
+              }
+              return map
+            }
+            const latestMap = perStudent(latestExam)
+            const prevMap = perStudent(prevExam)
+            const rows: {
+              studentId: string
+              name: string
+              rollNo: string | null
+              deltaPct: number
+              latestAvgPct: number
+              previousAvgPct: number
+              latestExamName: string
+              previousExamName: string
+            }[] = []
+            for (const s of students) {
+              const l = latestMap.get(s.id)
+              const p = prevMap.get(s.id)
+              if (!l || !p) continue
+              const latestAvg = l.pctSum / l.subjects
+              const prevAvg = p.pctSum / p.subjects
+              const delta = latestAvg - prevAvg
+              if (delta <= 0) continue
+              rows.push({
+                studentId: s.id,
+                name: s.user.name ?? 'Unknown student',
+                rollNo: s.rollNo,
+                deltaPct: Math.round(delta * 10) / 10,
+                latestAvgPct: Math.round(latestAvg * 10) / 10,
+                previousAvgPct: Math.round(prevAvg * 10) / 10,
+                latestExamName: latestExam.exam.name,
+                previousExamName: prevExam.exam.name,
+              })
+            }
+            rows.sort((a, b) => b.deltaPct - a.deltaPct)
+            return rows.slice(0, 10)
+          })()
+
           const examYears = new Set(
             gradedExams
               .map((e) => e.exam.startDate?.getUTCFullYear())
@@ -172,6 +311,9 @@ export async function GET() {
             examId: e.exam.id,
             name: e.exam.name,
             dateLabel: examLabel(e.exam, showYear),
+            /** real start date (epoch ms, null when undated) — powers the
+             *  time-period filter client-side without parsing labels */
+            dateMs: e.exam.startDate ? e.exam.startDate.getTime() : null,
             avgPct: Math.round((e.pctSum / e.count) * 10) / 10,
           }))
 
@@ -245,12 +387,6 @@ export async function GET() {
           // Latest exam (by start date) that has subject configs for
           // this class. Expected = configured subjects × enrolled
           // students; entered = ExamMark rows with a value.
-          const configExams = new Map<string, ExamRef & { subjects: number }>()
-          for (const c of configs) {
-            const entry = configExams.get(c.examId) ?? { ...c.exam, subjects: 0 }
-            entry.subjects += 1
-            configExams.set(c.examId, entry)
-          }
           const completionExam = [...configExams.values()].sort((a, b) => {
             const ad = a.startDate?.getTime() ?? Number.MAX_SAFE_INTEGER
             const bd = b.startDate?.getTime() ?? Number.MAX_SAFE_INTEGER
@@ -384,6 +520,8 @@ export async function GET() {
             assessmentCompletion,
             attendance: { total, present, late, absent, pct: attendancePct, weeklyTrend },
             needingAttention,
+            assessments,
+            improvingStudents,
           }
         }),
       )

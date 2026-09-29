@@ -1,14 +1,12 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { lazyModule } from '@/components/shared/lazy-module'
 
 // Every module is a separate lazily-loaded chunk: navigating compiles just
 // that module (small memory spikes) instead of one giant teacher bundle.
+// Chunk-resilient: import retry + per-module error boundary (§22/§29).
 const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
-  dynamic(() => loader().then((m) => m[pick] as React.ComponentType<any>), {
-    loading: ModuleLoading,
-  })
+  lazyModule(loader, pick)
 
 const TeacherDashboard = lazy(() => import('../modules/dashboard'), 'TeacherDashboard')
 const PersonalAttendance = lazy(() => import('../modules/personal-attendance'), 'PersonalAttendance')
@@ -20,8 +18,7 @@ const StudentsModule = lazy(() => import('../modules/students'), 'StudentsModule
 const ClassHubModule = lazy(() => import('../modules/class-hub'), 'ClassHubModule')
 const FeeCollectionModule = lazy(() => import('../modules/fee-collection'), 'FeeCollectionModule')
 const ApplicationReviewsModule = lazy(() => import('../modules/applications'), 'ApplicationReviewsModule')
-const StudentBehaviorModule = lazy(() => import('../modules/student-behavior'), 'StudentBehaviorModule')
-const TeacherAnalyticsModule = lazy(() => import('../modules/analytics'), 'TeacherAnalyticsModule')
+const StudentGrowthModule = lazy(() => import('../modules/student-growth'), 'StudentGrowthModule')
 const TeacherSettingsModule = lazy(() => import('../modules/settings'), 'TeacherSettingsModule')
 const CommunicationModule = lazy(() => import('../modules/communication'), 'CommunicationModule')
 
@@ -43,8 +40,7 @@ export function ModuleRouter({ active, onNavigate }: ModuleRouterProps) {
       {active === 'class-hub' && <ClassHubModule onNavigate={onNavigate} />}
       {active === 'fee-collection' && <FeeCollectionModule />}
       {active === 'app-reviews' && <ApplicationReviewsModule />}
-      {active === 'behavior' && <StudentBehaviorModule onNavigate={onNavigate} />}
-      {active === 'analytics' && <TeacherAnalyticsModule onNavigate={onNavigate} />}
+      {active === 'growth' && <StudentGrowthModule onNavigate={onNavigate} />}
       {active === 'settings' && <TeacherSettingsModule />}
       {active === 'communication' && <CommunicationModule onNavigate={onNavigate} />}
     </>

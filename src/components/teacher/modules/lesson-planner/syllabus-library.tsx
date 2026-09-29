@@ -65,14 +65,10 @@ export function SyllabusLibraryCard({
   return (
     <GlassCard hover={false} className="overflow-hidden p-0">
       {/* header */}
-      <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-muted/60 to-muted/20 px-4 py-3.5">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-emerald-500/10 blur-2xl"
-        />
-        <div className="relative flex items-start gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600/10">
-            <BookMarked className="h-4.5 w-4.5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
+      <div className="border-b border-border bg-muted/30 px-4 py-3.5">
+        <div className="flex items-start gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600/10">
+            <BookMarked className="h-4 w-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -90,7 +86,7 @@ export function SyllabusLibraryCard({
         </div>
 
         {/* coverage */}
-        <div className="relative mt-3">
+        <div className="mt-3">
           <div className="mb-1.5 flex items-baseline justify-between gap-2">
             <p className="text-[11px] font-medium text-muted-foreground">
               {syllabus.coveredTopics} of {syllabus.totalTopics} syllabus topics in your plan
@@ -101,7 +97,7 @@ export function SyllabusLibraryCard({
         </div>
 
         {/* unit coverage chips */}
-        <div className="relative mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {syllabus.units.map((u) => {
             const complete = u.coveredCount >= u.topicCount
             const accent = unitAccent(u.unitNo)

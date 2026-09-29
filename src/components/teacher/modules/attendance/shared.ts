@@ -1,14 +1,15 @@
 'use client'
 
 /**
- * Class Attendance (TWC-FE-2) — shared contracts, status recipes and pure
- * helpers for the two-layer attendance model:
+ * Class Attendance — shared contracts, status recipes and pure helpers
+ * for the canonical class-day attendance model (spec §7–§11):
  *
- *   · the CLASS TEACHER owns the official daily baseline — the canonical
- *     Attendance rows students and parents see;
- *   · SUBJECT TEACHERS get that baseline prefilled, change only the
- *     exceptions, and save the canonical class attendance record
- *     (a separate record — viewing never writes anything).
+ *   · the CLASS TEACHER owns and manages the ONE official daily record
+ *     (CLASS + DATE + STUDENT) — the canonical Attendance rows students
+ *     and parents see;
+ *   · SUBJECT TEACHERS ARE VIEW-ONLY: they see the exact same roster and
+ *     the exact same saved record, with no edit/save/submit controls.
+ *     There is no subject dimension in the record and no subject session.
  *
  * Every value on screen comes from /api/teacher/class-attendance*
  * ({ ok, data } envelopes, TWC-2 routes). Nothing is fabricated or
@@ -74,12 +75,33 @@ export interface BaselineInfo {
   counts: AttendanceCounts
 }
 
-/** The caller's own saved subject session for the viewed date. */
-export interface SubjectSessionInfo {
-  subjectId: string
-  subjectName: string
-  savedAt: string
+/** The open, not-yet-submitted server-side draft for the class-day (§19). */
+export interface DraftInfo {
+  exists: boolean
   entries: Record<string, string>
+  /** BASELINE | SUBJECT_SESSION */
+  source: string | null
+  updatedAt: string | null
+  updatedByName: string | null
+}
+
+/** One journaled attendance edit (§18 audit trail). */
+export interface AuditRow {
+  studentName: string
+  previousStatus: string
+  newStatus: string
+  /** BASELINE | SUBJECT_SESSION | AUTOSAVE */
+  source: string
+  changedBy: string
+  date: string
+  createdAt: string
+}
+
+/** The school's end-of-day autosave policy (§19). */
+export interface AutosaveSettings {
+  autosaveFinalize: boolean
+  /** minutes from midnight school time — 930 = 15:30 */
+  endOfDayMinutes: number
 }
 
 export interface AttendanceBoard {
@@ -87,12 +109,22 @@ export interface AttendanceBoard {
   label: string
   date: string
   isClassTeacher: boolean
+  /** the appointed class teacher's name — the subject-teacher view's
+   *  honest “managed by {name}” context (§9–§10) */
+  classTeacherName?: string | null
   subjects: SubjectRef[]
   students: AttendanceStudent[]
   baseline: BaselineInfo
-  mySessions: Record<string, SubjectSessionInfo>
+  draft: DraftInfo
+  audit: AuditRow[]
+  autosave: AutosaveSettings
   /** last 10 marked school days (30-day lookback) — absent when server predates it */
   history?: AttendanceHistory
+}
+
+/** True when the caller may NOT edit this board (subject teacher — §7–§10). */
+export function isViewOnly(board: AttendanceBoard | null | undefined): boolean {
+  return !!board && !board.isClassTeacher
 }
 
 // ─── Recent history (last 10 marked school days) ──────────────────────
@@ -308,9 +340,32 @@ export function savedAtLabel(iso: string, dateKey: string): string {
   return day === dateKey ? time : `${shortDate(day)}, ${time}`
 }
 
+/** "3:30 PM" — the school's end-of-day boundary, school time (IST). */
+export function boundaryLabel(endOfDayMinutes: number): string {
+  const h24 = Math.floor(endOfDayMinutes / 60)
+  const m = endOfDayMinutes % 60
+  const d = new Date()
+  d.setHours(h24, m, 0, 0)
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** Minutes-from-midnight in school time (IST, UTC+5:30 — matches server). */
+export function istMinutesNowClient(): number {
+  const now = new Date()
+  return (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440
+}
+
+/** True once the viewed day's end-of-school-hours boundary has passed. */
+export function pastBoundary(dateKey: string, autosave: AutosaveSettings | undefined): boolean {
+  if (!autosave) return false
+  if (dateKey < todayKey()) return true
+  if (dateKey > todayKey()) return false
+  return istMinutesNowClient() >= autosave.endOfDayMinutes
+}
+
 // ─── Draft construction (server truth → editable draft) ───────────────
 
-export type PrefillSource = 'session' | 'baseline' | 'present'
+export type PrefillSource = 'session' | 'baseline' | 'present' | 'draft'
 
 function allPresent(students: readonly AttendanceStudent[]): AttendanceDraft {
   const draft: AttendanceDraft = {}
@@ -331,60 +386,59 @@ function overlay(
 }
 
 /**
- * Prefill priority:
- *   class teacher  → baseline.entries (her official record), else all-PRESENT;
- *   subject teacher → her saved session for the subject, else the class
- *                    teacher's baseline (change only exceptions),
- *                    else all-PRESENT.
+ * Prefill priority (the class teacher's editable sheet):
+ *   OPEN SERVER DRAFT → resume it (§11 autosave — never lose entered
+ *                        attendance; the roster context line says so);
+ *   baseline.entries (her official record), else all-PRESENT.
+ *
+ * A SUBJECT TEACHER is view-only: her “draft” simply mirrors the saved
+ * canonical record (no session, no edits — §9/§10).
  */
 export function buildDraft(
   board: AttendanceBoard,
-  subjectId: string | null,
+  _subjectId?: string | null,
 ): { draft: AttendanceDraft; source: PrefillSource } {
-  if (board.isClassTeacher) {
-    return board.baseline.exists
-      ? { draft: overlay(board.students, board.baseline.entries), source: 'baseline' }
-      : { draft: allPresent(board.students), source: 'present' }
+  if (board.draft.exists) {
+    return { draft: overlay(board.students, board.draft.entries), source: 'draft' }
   }
-  if (subjectId) {
-    const session = board.mySessions[subjectId]
-    if (session) return { draft: overlay(board.students, session.entries), source: 'session' }
+  if (board.baseline.exists) {
+    return { draft: overlay(board.students, board.baseline.entries), source: 'baseline' }
   }
-  return board.baseline.exists
-    ? { draft: overlay(board.students, board.baseline.entries), source: 'baseline' }
-    : { draft: allPresent(board.students), source: 'present' }
+  return { draft: allPresent(board.students), source: 'present' }
 }
 
 /**
- * The one quiet context line under the roster header — mode + prefill
+ * The one quiet context line under the roster header — mode + record
  * truth. Never a badge wall, never the module name.
  */
 export function rosterContextLine(
   board: AttendanceBoard,
-  subjectId: string | null,
+  _subjectId: string | null,
   source: PrefillSource,
 ): string {
   const isToday = board.date === todayKey()
-  if (board.isClassTeacher) {
-    if (source === 'baseline') {
-      return `Official record · marked by ${board.baseline.markedBy ?? 'the class teacher'}`
+  if (isViewOnly(board)) {
+    // Subject teacher — the record belongs to the class teacher (§9/§10).
+    if (board.baseline.exists) {
+      const who = board.baseline.markedBy ?? board.classTeacherName ?? 'the class teacher'
+      return `Submitted by ${who}`
     }
     return isToday
-      ? "Today's attendance hasn't been marked yet"
-      : `Attendance for ${shortDate(board.date)} hasn't been marked yet`
+      ? 'Attendance pending · managed by the class teacher'
+      : `Not marked for ${shortDate(board.date)} · managed by the class teacher`
   }
-  if (source === 'session' && subjectId) {
-    const session = board.mySessions[subjectId]
-    const name = session?.subjectName ?? 'subject'
-    const at = session ? savedAtLabel(session.savedAt, board.date) : ''
-    return at ? `Your ${name} session · saved ${at}` : `Your ${name} session`
+  if (source === 'draft') {
+    const who = board.draft.updatedByName
+    return who
+      ? `Unsaved draft — last edited by ${who}. Save to make it official.`
+      : 'Unsaved draft — save to make it official.'
   }
   if (source === 'baseline') {
-    return "Prefilled from the class teacher's attendance — change only exceptions"
+    return `Official record · marked by ${board.baseline.markedBy ?? 'the class teacher'}`
   }
   return isToday
-    ? "Class teacher hasn't marked today yet"
-    : `Class teacher hasn't marked ${shortDate(board.date)} yet`
+    ? "Today's attendance hasn't been marked yet"
+    : `Attendance for ${shortDate(board.date)} hasn't been marked yet`
 }
 
 // ─── Counts ───────────────────────────────────────────────────────────

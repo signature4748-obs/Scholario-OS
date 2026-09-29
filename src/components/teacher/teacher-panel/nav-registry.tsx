@@ -3,7 +3,7 @@
 import {
   LayoutDashboard, CalendarCheck, BookMarked,
   FileText, Users, BarChart3, Megaphone,
-  Shield, Wallet, ClipboardList, Settings,
+  TrendingUp, Wallet, ClipboardList, Settings,
   CalendarDays, MessagesSquare, School,
 } from 'lucide-react'
 import type { NavGroup } from '@/components/shell/app-shell'
@@ -53,13 +53,10 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
         { key: 'lesson-planner', label: 'Lesson Planner', icon: <BookMarked className="h-4.5 w-4.5" /> },
         { key: 'marks', label: 'Marks Entry', icon: <FileText className="h-4.5 w-4.5" /> },
         { key: 'students', label: 'Student Directory', icon: <Users className="h-4.5 w-4.5" /> },
-      ],
-    },
-    {
-      // Applications & Forms assigned to this teacher (Application / Event In-charge)
-      label: 'In-charge Duties',
-      items: [
-        { key: 'app-reviews', label: 'Application Reviews', icon: <ClipboardList className="h-4.5 w-4.5" /> },
+        // Growth lives with teaching scope — every teacher awards points to
+        // the students they teach (spec §13); the module is NOT
+        // class-teacher-gated.
+        { key: 'growth', label: 'Student Growth', icon: <TrendingUp className="h-4.5 w-4.5" /> },
       ],
     },
   ]
@@ -67,16 +64,25 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
   // Class Teacher Hub — ONLY for teachers actually appointed class teacher
   // of a class (the server-derived classTeacherOf list). Not appointed ⇒
   // the group (and every module in it) does not exist for this teacher.
+  // My Class is the command center: class-level fee handling lives INSIDE
+  // it (spec §4/§22) — no separate Fees nav item for class teachers.
   if (classTeacherOf.length > 0) {
     navGroups.push({
       label: 'Class Teacher Hub',
       items: [
         { key: 'class-hub', label: 'My Class', icon: <School className="h-4.5 w-4.5" /> },
-        { key: 'fee-collection', label: 'Fees & Payments', icon: <Wallet className="h-4.5 w-4.5" /> },
-        { key: 'behavior', label: 'Student Behavior', icon: <Shield className="h-4.5 w-4.5" /> },
       ],
     })
   }
+
+  // In-charge duties sit BELOW the teaching + class-teacher groups (§4).
+  navGroups.push({
+    // Applications & Forms assigned to this teacher (Application / Event In-charge)
+    label: 'In-charge Duties',
+    items: [
+      { key: 'app-reviews', label: 'Application Reviews', icon: <ClipboardList className="h-4.5 w-4.5" /> },
+    ],
+  })
 
   // Communication — the single teacher-facing messaging surface (parents,
   // colleagues, principal — parent messaging absorbed from Parent Connect)
@@ -87,15 +93,9 @@ export function buildTeacherNavGroups({ isRelieved, classTeacherOf, hubUnread = 
     ],
   })
 
-  // Add Insights
-  navGroups.push({
-    label: 'Insights & Reviews',
-    items: [
-      { key: 'analytics', label: 'Performance Analytics', icon: <BarChart3 className="h-4.5 w-4.5" /> },
-    ],
-  })
-
-  // Account — personal settings in their own quiet group
+  // Account — personal settings in their own quiet group. (Student Growth
+  // is the UNIFIED growth + performance experience — the former Performance
+  // Analytics module was merged into it; no duplicate analytics entry.)
   navGroups.push({
     label: 'Account',
     items: [

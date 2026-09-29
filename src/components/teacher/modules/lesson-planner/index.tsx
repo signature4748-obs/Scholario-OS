@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * lesson-planner/index — the Lesson Planner module, LP-2 rewrite.
+ * lesson-planner/index — the Lesson Planner module.
  *
  *   Teacher → Class + Subject → board syllabus feeds the COMPLETE session
  *   plan automatically (CBSE / UP Board) → timetable-driven day-wise
@@ -9,11 +9,13 @@
  *   deliberately easy: a per-unit quick-add row, one-tap syllabus merges
  *   and an authoring sheet with a new-unit option.
  *
- * Composition: quiet context toolbar (Class + Subject selectors + the
- * "Add topic" action) → Today's Lesson hero (gradient cover + session
- * ring + confetti) → two-column body — left: Curriculum Progress + the
- * Session Plan (inline add/edit/delete); right: the Syllabus Library,
- * Upcoming and the Schedule basis.
+ * Composition (LP-3 UI refinement — SCHOLARIO house language, benchmark:
+ * My Timetable): quiet context toolbar (session line + Class + Subject
+ * selectors + "Add topic") → 4 compact summary cards (HubStatCards —
+ * curriculum progress, topics left, teaching pace, current topic) → the
+ * compact Current Topic card → two-column body — left: Curriculum
+ * Progress (per-unit) + the Session Plan (inline add/edit/delete); right:
+ * the Syllabus Library, Upcoming and the Schedule basis.
  *
  * module-router.tsx imports the named `LessonPlannerModule` and renders it
  * with no props.
@@ -21,12 +23,15 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { BookOpen, BookPlus, BookX, CircleAlert, Sparkles } from 'lucide-react'
+import { BookOpen, BookPlus, BookX, CircleAlert, Gauge, ListTodo, Sparkles, Target } from 'lucide-react'
 import { GlassCard, PageTransition } from '@/components/shared/ui'
 import { ModuleToolbar } from '@/components/teacher/teacher-panel/module-toolbar'
 import {
   HubEmptyState,
   HubSectionError,
+  HubStatCards,
+  HubStatCardSkeleton,
+  type HubStat,
 } from '@/components/teacher/modules/shared/hub-stat-cards'
 import { Button } from '@/components/ui/button'
 import {
@@ -55,8 +60,8 @@ import { CurriculumMapCard } from './curriculum-map'
 import { ProgressPanel } from './progress-panel'
 import { ScheduleBasisCard, UpcomingPanel } from './upcoming-panel'
 import { SyllabusLibraryCard } from './syllabus-library'
-import { TodayLessonCard } from './today-lesson'
-import { applyCompletion, applyTopicRemoval } from './shared'
+import { CurrentTopicCard } from './today-lesson'
+import { applyCompletion, applyTopicRemoval, TOPIC_STATUS } from './shared'
 
 interface Selection {
   classId: string
@@ -69,27 +74,85 @@ interface SheetTarget {
   forceNewUnit: boolean
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** "2026-04-01" → "2026–27" (Indian academic session Apr–Mar, en dash). */
+function sessionLabelFromStart(sessionStart: string): string | null {
+  const year = Number(sessionStart.slice(0, 4))
+  if (!Number.isFinite(year) || year < 2000 || year > 2100) return null
+  return `${year}–${String((year + 1) % 100).padStart(2, '0')}`
+}
+
+/** The 4 summary cards (canonical numbers — the module's single primary
+ *  progress visualization lives in the first card). My Timetable recipe. */
+function summaryStatsFor(plan: LessonPlanPayload): HubStat[] {
+  const remaining = Math.max(0, plan.progress.total - plan.progress.completed)
+  const currentTopic = plan.today.topic
+  return [
+    {
+      key: 'progress',
+      label: 'Curriculum Progress',
+      value: `${plan.progress.pct}%`,
+      context: `${plan.progress.completed} of ${plan.progress.total} topics`,
+      progress: plan.progress.total > 0 ? plan.progress.completed / plan.progress.total : 0,
+      icon: Target,
+      tone: 'emerald',
+    },
+    {
+      key: 'remaining',
+      label: 'Topics Left',
+      value: remaining,
+      context: remaining === 1 ? 'topic to teach' : 'topics to teach',
+      icon: ListTodo,
+      tone: 'amber',
+    },
+    {
+      key: 'pace',
+      label: 'Teaching Pace',
+      value: `${plan.pace.periodsPerWeek} p/w`,
+      context: `${plan.pace.periodMinutes} min each · ${plan.pace.teachingDaysPerWeek} d/w`,
+      icon: Gauge,
+      tone: 'sky',
+    },
+    {
+      key: 'current',
+      label: 'Current Topic',
+      value: currentTopic ? currentTopic.topicName : null,
+      context: currentTopic
+        ? TOPIC_STATUS[currentTopic.status].label
+        : 'Nothing scheduled today',
+      icon: BookOpen,
+      tone: 'violet',
+      valueClassName: 'font-sans text-lg sm:text-xl font-semibold truncate',
+    },
+  ]
+}
+
 // ─── Layout-matched skeletons (pulse rows, never spinners) ──────────────
 
 function PlanSkeleton() {
   return (
     <div className="space-y-4">
-      {/* hero */}
+      {/* 4 summary cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <HubStatCardSkeleton key={i} />
+        ))}
+      </div>
+      {/* current topic */}
       <div className="animate-pulse rounded-xl border border-border bg-card p-4 sm:p-5">
         <div className="h-3 w-36 rounded bg-muted" />
-        <div className="mt-3 h-5 w-44 rounded bg-muted" />
-        <div className="mt-2.5 h-7 w-2/3 rounded bg-muted" />
-        <div className="mt-2 h-3 w-1/2 rounded bg-muted" />
-        <div className="mt-4 h-8 w-36 rounded-lg bg-muted" />
+        <div className="mt-3 h-5 w-48 rounded bg-muted" />
+        <div className="mt-2 h-3 w-64 rounded bg-muted" />
+        <div className="mt-4 h-9 w-44 rounded-lg bg-muted" />
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
           {/* progress */}
           <div className="animate-pulse rounded-xl border border-border bg-card p-4 sm:p-5">
             <div className="h-3 w-36 rounded bg-muted" />
-            <div className="mt-3 h-2 w-full rounded-full bg-muted" />
             <div className="mt-4 space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="space-y-1.5">
                   <div className="h-2.5 w-40 rounded bg-muted" />
                   <div className="h-1.5 w-full rounded-full bg-muted" />
@@ -531,11 +594,15 @@ export function LessonPlannerModule() {
       (a) => a.classId === selection?.classId && a.subjectId === selection?.subjectId,
     ) ?? null
 
-  const toolbarContext = plan
-    ? `${plan.classLabel} · ${plan.subjectName} · ${plan.progress.pct}% complete`
-    : selected
-      ? `${selected.classLabel} · ${selected.subjectName}`
-      : undefined
+  const sessionLabel = plan ? sessionLabelFromStart(plan.sessionStart) : null
+  const toolbarContext =
+    plan && sessionLabel
+      ? `Academic Session ${sessionLabel}`
+      : plan
+        ? `${plan.classLabel} · ${plan.subjectName}`
+        : selected
+          ? `${selected.classLabel} · ${selected.subjectName}`
+          : undefined
 
   const toggleCompletion = (topicId: string, completed: boolean) => {
     void handleToggleCompletion(topicId, completed)
@@ -636,8 +703,14 @@ export function LessonPlannerModule() {
             transition={{ duration: 0.2 }}
             className="space-y-4"
           >
-            {/* 1 — today's lesson, the first thing the teacher sees */}
-            <TodayLessonCard
+            {/* 1 — summary cards (My Timetable recipe) */}
+            <HubStatCards
+              stats={summaryStatsFor(plan)}
+              className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+            />
+
+            {/* 2 — the current topic (compact card, emerald accent) */}
+            <CurrentTopicCard
               plan={plan}
               pending={plan.today.topic != null && pendingTopicId === plan.today.topic.id}
               onToggleCompletion={toggleCompletion}

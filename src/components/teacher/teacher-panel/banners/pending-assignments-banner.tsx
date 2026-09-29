@@ -45,7 +45,7 @@ export function PendingAssignmentsBanner({
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Assigned by <strong className="font-semibold text-foreground">{pa.assignedBy}</strong> on {pa.assignedDate}. Accepting this responsibility will activate corresponding system permissions and modules.
+                  Assigned by <strong className="font-semibold text-foreground">{pa.assignedBy}</strong> on {pa.assignedDate}. Accepting records this responsibility on your profile — duties like class scope follow the assignment.
                 </p>
               </div>
             </div>

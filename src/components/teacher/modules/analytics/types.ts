@@ -26,6 +26,8 @@ export interface ExamTrendPoint {
   examId: string
   name: string
   dateLabel: string
+  /** real start date (epoch ms, null when undated) — time-period filter */
+  dateMs: number | null
   /** Mean of the class's normalized marks in that exam (0–100). */
   avgPct: number
 }
@@ -85,6 +87,45 @@ export interface AttentionStudent {
   reasons: AttentionReason[]
 }
 
+/** One exam the class knows about (configured ∪ graded) — the Assessment
+ *  Performance section. Every field comes from real rows; an ungraded exam
+ *  honestly carries 0 graded students and no average. */
+export interface AssessmentSummary {
+  examId: string
+  name: string
+  dateLabel: string
+  /** real start date (epoch ms, null when undated) — time-period filter */
+  dateMs: number | null
+  status: string
+  resultStatus: string
+  subjectsConfigured: number
+  /** distinct subjects with ≥1 entered mark */
+  subjectsEntered: number
+  /** distinct students with ≥1 entered, config-normalizable mark */
+  studentsGraded: number
+  studentCount: number
+  /** mark rows entered vs configured subjects × roster */
+  entered: number
+  expected: number
+  classAveragePct: number | null
+  highestPct: number | null
+  lowestPct: number | null
+}
+
+/** A student whose normalized average ROSE between the two most recent
+ *  graded exams — real calculated change, never a fabricated delta. */
+export interface ImprovingStudent {
+  studentId: string
+  name: string
+  rollNo: string | null
+  /** latest avg% − previous avg% (points) */
+  deltaPct: number
+  latestAvgPct: number
+  previousAvgPct: number
+  latestExamName: string
+  previousExamName: string
+}
+
 export interface ClassAnalytics {
   classId: string
   label: string
@@ -98,6 +139,10 @@ export interface ClassAnalytics {
   assessmentCompletion: AssessmentCompletion | null
   attendance: AttendanceStats
   needingAttention: AttentionStudent[]
+  /** recent exams (configured ∪ graded), newest first */
+  assessments: AssessmentSummary[]
+  /** students with positive exam-over-exam change (needs ≥2 graded exams) */
+  improvingStudents: ImprovingStudent[]
 }
 
 export interface AnalyticsPayload {

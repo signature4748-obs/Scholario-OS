@@ -1,6 +1,12 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
-import { parseDateParam, resolveClassScope, isValidStatus } from '@/lib/class-attendance'
+import {
+  parseDateParam,
+  resolveClassScope,
+  isValidStatus,
+  writeCanonicalAttendance,
+  type AttendanceStatusValue,
+} from '@/lib/class-attendance'
 
 export const runtime = 'nodejs'
 
@@ -16,7 +22,9 @@ interface BaselineBody {
  * Attendance rows (unique per student+date) that students/parents see and
  * that subject teachers prefill from. Only the class teacher of this
  * class may write the baseline; the roster is re-derived server-side and
- * every status is validated.
+ * every status is validated. Every EDIT of an already-saved status is
+ * journaled (AttendanceAuditLog — who/when/previous → new), and any open
+ * draft for the day is cleared (an explicit save supersedes autosave).
  */
 export async function POST(request: Request) {
   return withUser(
@@ -38,41 +46,25 @@ export async function POST(request: Request) {
         select: { id: true },
       })
       const rosterIds = new Set(students.map((s) => s.id))
+      const seen = new Set<string>()
       const entries = body.entries.filter(
-        (e) => rosterIds.has(e.studentId) && isValidStatus(e.status)
+        (e): e is { studentId: string; status: AttendanceStatusValue } =>
+          rosterIds.has(e.studentId) && isValidStatus(e.status) && !seen.has(e.studentId) && (seen.add(e.studentId), true)
       )
       if (entries.length !== rosterIds.size) {
         throw new Error('Every student needs a valid status')
       }
 
-      // The baseline save is authoritative for the whole class-day: replace
-      // any rows in the day window (legacy rows may carry non-midnight
-      // times — deleteMany by range avoids unique-constraint collisions)
-      // and write one canonical row per student at midnight UTC.
-      const nextDay = new Date(day.getTime() + 86_400_000)
-      await db.attendance.deleteMany({
-        where: { classId: body.classId, date: { gte: day, lt: nextDay } },
+      const result = await writeCanonicalAttendance({
+        schoolId,
+        classId: body.classId,
+        date: day,
+        entries,
+        actor: { id: user.id, name: user.name ?? 'Class Teacher' },
+        source: 'BASELINE',
+        markedBy: user.name ?? 'Class Teacher',
       })
-      for (const e of entries) {
-        await db.attendance.create({
-          data: {
-            schoolId,
-            studentId: e.studentId,
-            classId: body.classId,
-            date: day,
-            status: e.status,
-            markedBy: user.name ?? 'Class Teacher',
-          },
-        })
-      }
-
-      const counts = {
-        present: entries.filter((e) => e.status === 'PRESENT').length,
-        absent: entries.filter((e) => e.status === 'ABSENT').length,
-        late: entries.filter((e) => e.status === 'LATE').length,
-        leave: entries.filter((e) => e.status === 'LEAVE').length,
-      }
-      return { saved: entries.length, counts }
+      return { ...result, canonical: true }
     },
     { roles: ['TEACHER'] }
   )

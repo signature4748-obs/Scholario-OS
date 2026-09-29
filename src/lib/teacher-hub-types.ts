@@ -1,6 +1,6 @@
 /**
  * teacher-hub-types — the shared DTO contract for the Teacher Hub
- * modules (parent conversations / Student Behavior).
+ * modules (parent conversations / Student Growth).
  *
  * Pure types + tiny config maps: NO server imports — this file is safe for
  * client components. Server routes in /api/teacher/** serialize rows into
@@ -52,6 +52,11 @@ export interface ConversationSummary {
   id: string
   category: ConversationCategory
   pinned: boolean
+  /** manual "needs reply" flag persisted on the row (a latest message from
+   *  the parent ALSO implies it — the UI ORs the two) */
+  needsReply: boolean
+  /** teacher-side archive — archived threads leave the default list view */
+  archived: boolean
   createdAt: string
   lastMessageAt: string | null
   /** parent messages the teacher has not read yet */
@@ -77,6 +82,8 @@ export interface ThreadPayload {
     id: string
     category: ConversationCategory
     pinned: boolean
+    needsReply: boolean
+    archived: boolean
     createdAt: string
     parent: { id: string; name: string; phone: string | null }
     student: StudentRef
@@ -92,13 +99,19 @@ export interface MessageTemplateItem {
   category: string
 }
 
-/** A student the teacher may start a conversation about (has a linked guardian user). */
+/** A student in the teacher's authorized scope the Communication Hub can
+ *  address — the guardian fields power parent threads; `studentUserId`
+ *  powers direct student messages (present only when the school has issued
+ *  the student an active account, which is the policy gate for the
+ *  student audience). */
 export interface ParentLinkableStudent {
   student: StudentRef
   guardianName: string | null
   guardianPhone: string | null
   parentUserId: string | null
   existingConversationId: string | null
+  /** User.id of the student's own account (null = no account → cannot receive) */
+  studentUserId: string | null
 }
 
 export interface ParentConnectStats {
@@ -122,7 +135,11 @@ export interface ParentConnectPayload {
   stats: ParentConnectStats
 }
 
-// ---------- Student Behavior ----------
+// ---------- Student Behavior (LEGACY — the growth redesign) ----------
+// The BehaviorRecord/BehaviorCategory tables and these DTOs remain for
+// the legacy rows (migrated into the GrowthEvent ledger by
+// scripts/growth-migrate.ts) and any future staff-only archive surface.
+// The live module is Student Growth (@/lib/growth/*).
 
 export type BehaviorType = 'positive' | 'observation' | 'concern'
 export type BehaviorStatus = 'open' | 'monitoring' | 'resolved'
@@ -180,6 +197,44 @@ export interface StudentBehaviorProfile {
   followUps: FollowUpItem[]
   conversationId: string | null
 }
+
+// ---------- Student Growth (re-exported canonical contract) ----------
+// The growth system's DTOs live in @/lib/growth/shared (pure, client-safe);
+// they are re-exported here so every Teacher module can keep importing its
+// DTO contract from this one hub-types module.
+
+export type {
+  GrowthCategory,
+  GrowthCategoryConfig,
+  GrowthEventSource,
+  GrowthEventStatus,
+  GrowthEventItem,
+  GrowthDimension,
+  GrowthTrendPoint,
+  GrowthScoreDto,
+  FeeStanding,
+  FeeStandingDto,
+  GrowthPreset,
+  GrowthSettingsDto,
+  StudentGrowthSummary,
+  GrowthBand,
+  GrowthClassSummary,
+  GrowthScopeSummary,
+  GrowthWorkspacePayload,
+} from '@/lib/growth/shared'
+export {
+  GROWTH_CATEGORIES,
+  GROWTH_CATEGORY_CONFIG,
+  isGrowthCategory,
+  growthCategoryOf,
+  GROWTH_SOURCES,
+  SOURCE_LABELS,
+  isAutomaticSource,
+  GROWTH_BAND_LABELS,
+  bandOf,
+  DEFAULT_POSITIVE_PRESETS,
+  DEFAULT_NEGATIVE_PRESETS,
+} from '@/lib/growth/shared'
 
 // ---------- client-side config (labels / tones shared by the modules) ----------
 

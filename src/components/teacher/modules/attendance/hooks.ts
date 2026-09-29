@@ -1,27 +1,33 @@
 'use client'
 
 /**
- * Class Attendance (TWC-FE-2) — the module's single data hook.
+ * Class Attendance — the module's single data hook.
  *
- * Two GETs feed everything: the class list (once) and the board (on every
- * class / date / reload change). Both go through the envelope client with
- * { cache: 'no-store', credentials: 'same-origin' } — the httpOnly
- * erp_session cookie is the ONLY auth source, the server resolves teacher
- * / school / scope, and 401 → shared signOut() exactly once.
+ * Two GETs feed everything: the class list (once — skipped when the board
+ * is EMBEDDED with a fixed class, e.g. inside My Class → Attendance) and
+ * the board (on every class / date / reload change). Both go through the
+ * envelope client with { cache: 'no-store', credentials: 'same-origin' }
+ * — the httpOnly erp_session cookie is the ONLY auth source, the server
+ * resolves teacher / school / scope, and 401 → shared signOut() once.
  *
- * Saving POSTs the explicit endpoint — baseline (class teacher) or session
- * (subject teacher) — then refetches the board so the draft, the context
- * line and the counts always reflect server truth. Viewing the board NEVER
- * writes anything; drafts live in state only.
+ * OWNERSHIP (spec §7–§11): only the CLASS TEACHER saves — the explicit
+ * Save POSTs the baseline endpoint. A SUBJECT TEACHER is view-only: no
+ * save, no draft, no session. Viewing the board NEVER writes anything;
+ * the class teacher's local edits persist as a server-side DRAFT
+ * (debounced PUT, §11 autosave) and finalize only by an explicit save or
+ * the school's end-of-day boundary — never silently.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { signOut } from '@/lib/signout'
+import { useFocusStore } from '@/lib/store/focus-store'
 import {
   buildDraft,
   countsParts,
   draftCounts,
+  isViewOnly,
+  pastBoundary,
   todayKey,
   type AttendanceBoard,
   type AttendanceClassInfo,
@@ -30,7 +36,6 @@ import {
   type PrefillSource,
   type SaveBaselineResult,
   type SaveCounts,
-  type SaveSessionResult,
 } from './shared'
 
 // ─── envelope client ({ ok, data } / { ok: false, error }) ───────────
@@ -74,16 +79,22 @@ async function attendanceFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
 // ─── the hook ─────────────────────────────────────────────────────────
 
+export interface UseAttendanceModuleOptions {
+  /**
+   * EMBEDDED mode (My Class → Attendance): the board is pinned to this
+   * class — no class list is fetched and no class selector is rendered.
+   * The class teacher's authority still comes from the server board.
+   */
+  fixedClassId?: string | null
+}
+
 export interface AttendanceModuleState {
-  /** classes the teacher may mark (class teacher of and/or teaches in) */
+  /** classes the teacher can open (null in embedded mode) */
   classes: AttendanceClassInfo[] | null
   classesError: string | null
   reloadClasses: () => void
   classId: string | null
   selectClass: (classId: string) => void
-  /** her own subject pick for the current class (subject-teacher mode) */
-  subjectId: string | null
-  selectSubject: (subjectId: string) => void
   /** viewed date, "YYYY-MM-DD" (never the future) */
   date: string
   selectDate: (date: string) => void
@@ -94,21 +105,33 @@ export interface AttendanceModuleState {
   draft: AttendanceDraft
   /** what the draft was prefilled from */
   source: PrefillSource
-  /** any local edit not yet saved */
+  /** any local edit not yet persisted (as draft or canonical) */
   dirty: boolean
+  /** the draft was restored from the server (§11 resume) */
+  resumedFromDraft: boolean
+  /** ISO of the last successful server draft autosave */
+  draftSavedAt: string | null
   setStatus: (studentId: string, status: AttendanceStatus) => void
   markAllPresent: () => void
   counts: SaveCounts
   saving: boolean
   justSaved: boolean
   save: () => void
+  /** subject-teacher board — view-only (§7–§10), no edit controls */
+  readOnly: boolean
+  /** true when the embedded/fixed class is active (no class list needed) */
+  embedded: boolean
 }
 
-export function useAttendanceModule(): AttendanceModuleState {
+export function useAttendanceModule(
+  options: UseAttendanceModuleOptions = {},
+): AttendanceModuleState {
+  const fixedClassId = options.fixedClassId ?? null
+  const embedded = fixedClassId != null
+
   const [classes, setClasses] = useState<AttendanceClassInfo[] | null>(null)
   const [classesError, setClassesError] = useState<string | null>(null)
-  const [classId, setClassId] = useState<string | null>(null)
-  const [subjectId, setSubjectId] = useState<string | null>(null)
+  const [classId, setClassId] = useState<string | null>(fixedClassId)
   const [date, setDate] = useState<string>(todayKey)
   const [board, setBoard] = useState<AttendanceBoard | null>(null)
   const [boardLoading, setBoardLoading] = useState(false)
@@ -116,14 +139,37 @@ export function useAttendanceModule(): AttendanceModuleState {
   const [draft, setDraft] = useState<AttendanceDraft>({})
   const [source, setSource] = useState<PrefillSource>('present')
   const [dirty, setDirty] = useState(false)
+  const [resumedFromDraft, setResumedFromDraft] = useState(false)
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [justSaved, setJustSaved] = useState(false)
   const [classesTick, setClassesTick] = useState(0)
   const [boardTick, setBoardTick] = useState(0)
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const draftRef = useRef<AttendanceDraft>({})
+  const dirtyRef = useRef(false)
+  const finalizedRef = useRef<string | null>(null)
 
-  // ── classes: where can this teacher mark attendance? ────────────────
+  // Reflect the live draft into refs for the debounced autosave writer +
+  // boundary watcher (stable callbacks, no stale closures).
   useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+  useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
+
+  // Keep the embedded board pinned to its class even if the caller swaps
+  // the fixed class (e.g. My Class class selector switches Grade 9-A → 10-B).
+  useEffect(() => {
+    if (fixedClassId != null) setClassId(fixedClassId)
+  }, [fixedClassId])
+
+  // ── classes: where can this teacher open attendance? (skipped when
+  //    embedded — the hub already resolved the authorized class) ──────
+  useEffect(() => {
+    if (embedded) return
     let cancelled = false
     setClassesError(null)
     // TS-SETTINGS — the teacher's saved default class (if any) wins over
@@ -138,6 +184,14 @@ export function useAttendanceModule(): AttendanceModuleState {
       .then(([payload, settings]) => {
         if (cancelled) return
         setClasses(payload.classes)
+        // Cross-module deep link (Dashboard → Mark Attendance): the focus
+        // store carries the exact class to open, consumed once on mount.
+        const focus = useFocusStore.getState().focus
+        if (focus && focus.type === 'class' && focus.moduleKey === 'attendance') {
+          const focused = payload.classes.find((c) => c.classId === focus.id)
+          if (focused) setClassId(focused.classId)
+          useFocusStore.getState().clearFocus()
+        }
         const preferred = settings?.data?.workspace?.defaultClassId as string | null | undefined
         const validPreferred =
           preferred && payload.classes.some((c) => c.classId === preferred) ? preferred : null
@@ -152,9 +206,9 @@ export function useAttendanceModule(): AttendanceModuleState {
     return () => {
       cancelled = true
     }
-  }, [classesTick])
+  }, [classesTick, embedded])
 
-  // ── board: roster + baseline + her sessions for classId/date ───────
+  // ── board: roster + the canonical record for classId/date ──────────
   useEffect(() => {
     if (!classId) return
     let cancelled = false
@@ -166,13 +220,6 @@ export function useAttendanceModule(): AttendanceModuleState {
       .then((payload) => {
         if (cancelled) return
         setBoard(payload)
-        // Keep the current subject if she still teaches it in this class,
-        // else fall back to her first subject here (subject-teacher mode).
-        setSubjectId((cur) =>
-          payload.subjects.some((s) => s.id === cur)
-            ? cur
-            : payload.subjects[0]?.id ?? null,
-        )
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -187,88 +234,185 @@ export function useAttendanceModule(): AttendanceModuleState {
     }
   }, [classId, date, boardTick])
 
-  // ── draft: always rebuilt from server truth on board/subject change ─
+  // ── draft: always rebuilt from server truth on board change ────────
   useEffect(() => {
     if (!board) {
       setDraft({})
       setSource('present')
+      setResumedFromDraft(false)
     } else {
-      const built = buildDraft(board, subjectId)
+      const built = buildDraft(board)
       setDraft(built.draft)
       setSource(built.source)
+      setResumedFromDraft(built.source === 'draft' && !isViewOnly(board))
+      if (built.source === 'draft' && board.draft.updatedAt) {
+        setDraftSavedAt(board.draft.updatedAt)
+      } else {
+        setDraftSavedAt(null)
+      }
     }
     setDirty(false)
-  }, [board, subjectId])
+  }, [board])
 
   // Clear the "Saved" pill timer on unmount.
   useEffect(() => {
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current)
+      if (draftTimer.current) clearTimeout(draftTimer.current)
     }
   }, [])
+
+  // ── draft autosave (§11): debounced server persistence of the CLASS
+  //    TEACHER'S open sheet. Never the canonical record — a draft is a
+  //    draft; the explicit Save button (or the end-of-day boundary) makes
+  //    it official. Subject teachers never reach this path (view-only).
+  useEffect(() => {
+    if (!dirty || !board || !classId || board.students.length === 0) return
+    if (isViewOnly(board)) return
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = setTimeout(() => {
+      const entries = (board.students ?? []).map((s) => ({
+        studentId: s.id,
+        status: draftRef.current[s.id] ?? 'PRESENT',
+      }))
+      attendanceFetch<{ saved: number }>(
+        '/api/teacher/class-attendance/draft',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ classId, date, entries }),
+        },
+      )
+        .then(() => {
+          setDraftSavedAt(new Date().toISOString())
+        })
+        .catch(() => {
+          /* a failed draft save is honest — the explicit Save is the
+             authoritative path and its errors surface as toasts */
+        })
+    }, 2000)
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current)
+    }
+
+  }, [draft, dirty, classId, date, board])
+
+  // ── end-of-day autosave finalize (§11): once the school's boundary has
+  // passed, the class teacher's open draft for this class-day becomes the
+  // canonical record (policy permitting). Runs once per class+date while
+  // the sheet is open, and also catches up a past day's forgotten sheet.
+  useEffect(() => {
+    if (!board || !classId || isViewOnly(board)) return
+    const key = `${classId}:${board.date}`
+    if (finalizedRef.current === key) return
+    if (!board.autosave?.autosaveFinalize) return
+    if (!pastBoundary(board.date, board.autosave)) return
+    if (board.baseline.exists) return // already official
+    // Only an open sheet (local edits or a server draft) is finalized.
+    if (!dirtyRef.current && !board.draft.exists) return
+    finalizedRef.current = key
+    attendanceFetch<{ finalized: boolean; saved?: number; reason: string }>(
+      `/api/teacher/class-attendance/draft?classId=${encodeURIComponent(classId)}&date=${board.date}`,
+      { method: 'POST' },
+    )
+      .then((res) => {
+        if (res.finalized) {
+          toast.success('Attendance autosaved after school hours', {
+            description: `The open sheet was made official for ${board.label}.`,
+          })
+          setBoardTick((t) => t + 1)
+        }
+      })
+      .catch(() => {
+        finalizedRef.current = null // retry on the next tick
+      })
+
+  }, [board, classId])
 
   const reloadClasses = useCallback(() => setClassesTick((t) => t + 1), [])
   const reloadBoard = useCallback(() => setBoardTick((t) => t + 1), [])
 
+  /** Flush the open sheet to the server draft RIGHT NOW (§11 — switching
+   *  class/date mid-marking never loses entered attendance). */
+  const flushDraft = useCallback(() => {
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    const currentBoard = board
+    const currentClassId = classId
+    if (!currentBoard || !currentClassId || currentBoard.students.length === 0) return
+    if (isViewOnly(currentBoard)) return
+    const entries = currentBoard.students.map((s) => ({
+      studentId: s.id,
+      status: draftRef.current[s.id] ?? 'PRESENT',
+    }))
+    void attendanceFetch('/api/teacher/class-attendance/draft', {
+      method: 'PUT',
+      body: JSON.stringify({
+        classId: currentClassId,
+        date,
+        entries,
+      }),
+    }).catch(() => {
+      /* the explicit Save path remains the authoritative one */
+    })
+  }, [board, classId, date])
+
   const selectClass = useCallback(
     (id: string) => {
-      if (classId === id) return
+      if (classId === id || embedded) return
       // The old roster must never linger under a newly selected class.
       if (dirty) {
-        toast.info('Unsaved changes discarded', {
-          description: 'The new class opened with its saved attendance.',
+        flushDraft()
+        toast.info('Kept as a draft', {
+          description: 'Your unsaved attendance for this class was preserved as a draft.',
         })
       }
       setBoard(null)
       setBoardError(null)
       setClassId(id)
     },
-    [classId, dirty],
+    [classId, dirty, flushDraft, embedded],
   )
-
-  const selectSubject = useCallback((id: string) => {
-    setSubjectId(id)
-  }, [])
 
   const selectDate = useCallback(
     (value: string) => {
       if (!value || value === date) return
       if (value > todayKey()) return // the future is not markable (server enforces too)
       if (dirty) {
-        toast.info('Unsaved changes discarded', {
-          description: 'The new date opened with its saved attendance.',
+        flushDraft()
+        toast.info('Kept as a draft', {
+          description: 'Your unsaved attendance for this day was preserved as a draft.',
         })
       }
       setBoard(null)
       setBoardError(null)
       setDate(value)
     },
-    [date, dirty],
+    [date, dirty, flushDraft],
   )
 
   const setStatus = useCallback((studentId: string, status: AttendanceStatus) => {
     setDraft((prev) => (prev[studentId] === status ? prev : { ...prev, [studentId]: status }))
     setDirty(true)
   }, [])
-
   const markAllPresent = useCallback(() => {
     if (!board || board.students.length === 0) return
+    // No-op guard: when everyone is already PRESENT there is nothing to
+    // save — no spurious dirty flag, no "Unsaved" badge, no draft write.
+    if (board.students.every((s) => draft[s.id] === 'PRESENT')) {
+      toast.info('Everyone is already marked present')
+      return
+    }
     setDraft((prev) => {
       const next = { ...prev }
-      let changed = false
       for (const s of board.students) {
-        if (next[s.id] !== 'PRESENT') {
-          next[s.id] = 'PRESENT'
-          changed = true
-        }
+        next[s.id] = 'PRESENT'
       }
-      return changed ? next : prev
+      return next
     })
     setDirty(true)
     toast.success('All students marked present', {
       description: 'Review and save the attendance.',
     })
-  }, [board])
+  }, [board, draft])
 
   const counts: SaveCounts = useMemo(
     () => draftCounts(board?.students ?? [], draft),
@@ -278,36 +422,24 @@ export function useAttendanceModule(): AttendanceModuleState {
   const save = useCallback(async (): Promise<void> => {
     if (!board || !classId || saving || boardLoading) return
     if (board.students.length === 0) return
-    if (!board.isClassTeacher && !subjectId) return
+    if (isViewOnly(board)) return // subject teacher — view-only (§7–§10)
     const entries = board.students.map((s) => ({
       studentId: s.id,
       status: draft[s.id] ?? 'PRESENT',
     }))
     setSaving(true)
     try {
-      if (board.isClassTeacher) {
-        // Class teacher → the official daily baseline for the whole class.
-        const res = await attendanceFetch<SaveBaselineResult>(
-          '/api/teacher/class-attendance/baseline',
-          { method: 'POST', body: JSON.stringify({ classId, date, entries }) },
-        )
-        toast.success('Attendance saved', {
-          description: [board.label, ...countsParts(res.counts)].filter(Boolean).join(' · '),
-        })
-      } else {
-        // Subject teacher → her OWN session for this subject (upsert).
-        const res = await attendanceFetch<SaveSessionResult>(
-          '/api/teacher/class-attendance/session',
-          { method: 'POST', body: JSON.stringify({ classId, subjectId, date, entries }) },
-        )
-        toast.success('Attendance saved', {
-          description: [board.label, res.subjectName, ...countsParts(res.counts)]
-            .filter(Boolean)
-            .join(' · '),
-        })
-      }
-      // Refetch so the draft reflects server truth (markedBy, savedAt,
-      // session existence). The current board stays visible meanwhile.
+      // Class teacher → the official daily record for the whole class.
+      const res = await attendanceFetch<SaveBaselineResult>(
+        '/api/teacher/class-attendance/baseline',
+        { method: 'POST', body: JSON.stringify({ classId, date, entries }) },
+      )
+      toast.success('Attendance saved', {
+        description: [board.label, ...countsParts(res.counts)].filter(Boolean).join(' · '),
+      })
+      // Refetch so the draft reflects server truth (markedBy, savedAt).
+      setDirty(false)
+      setDraftSavedAt(null)
       setBoardTick((t) => t + 1)
       setJustSaved(true)
       if (savedTimer.current) clearTimeout(savedTimer.current)
@@ -319,7 +451,7 @@ export function useAttendanceModule(): AttendanceModuleState {
     } finally {
       setSaving(false)
     }
-  }, [board, classId, date, draft, saving, boardLoading, subjectId])
+  }, [board, classId, date, draft, saving, boardLoading])
 
   return {
     classes,
@@ -327,8 +459,6 @@ export function useAttendanceModule(): AttendanceModuleState {
     reloadClasses,
     classId,
     selectClass,
-    subjectId,
-    selectSubject,
     date,
     selectDate,
     board,
@@ -338,11 +468,15 @@ export function useAttendanceModule(): AttendanceModuleState {
     draft,
     source,
     dirty,
+    resumedFromDraft,
+    draftSavedAt,
     setStatus,
     markAllPresent,
     counts,
     saving,
     justSaved,
     save,
+    readOnly: isViewOnly(board),
+    embedded,
   }
 }

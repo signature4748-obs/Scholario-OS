@@ -34,28 +34,38 @@ export function useTeacherRole() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/teacher/role', { cache: 'no-store', credentials: 'same-origin' })
-      .then(async (res) => {
-        if (res.status === 401) {
-          if (!sessionExpiredInFlight) {
-            sessionExpiredInFlight = true
-            void signOut().finally(() => {
-              window.setTimeout(() => {
-                sessionExpiredInFlight = false
-              }, 2000)
-            })
+    const load = () => {
+      fetch('/api/teacher/role', { cache: 'no-store', credentials: 'same-origin' })
+        .then(async (res) => {
+          if (res.status === 401) {
+            if (!sessionExpiredInFlight) {
+              sessionExpiredInFlight = true
+              void signOut().finally(() => {
+                window.setTimeout(() => {
+                  sessionExpiredInFlight = false
+                }, 2000)
+              })
+            }
+            return
           }
-          return
-        }
-        const json = (await res.json().catch(() => null)) as { ok?: boolean; data?: TeacherRole } | null
-        if (!cancelled && json && json.ok === true && json.data) setRole(json.data)
-      })
-      .catch(() => {
-        // A failed role fetch keeps the hub hidden — every hub module
-        // re-checks its own authorization server-side anyway.
-      })
+          const json = (await res.json().catch(() => null)) as { ok?: boolean; data?: TeacherRole } | null
+          if (!cancelled && json && json.ok === true && json.data) setRole(json.data)
+        })
+        .catch(() => {
+          // A failed role fetch keeps the hub hidden — every hub module
+          // re-checks its own authorization server-side anyway.
+        })
+    }
+    load()
+    // Automatic role synchronization (spec §34): when the Principal changes
+    // a class-teacher appointment, the teacher's UI updates on the next
+    // natural session/data refresh — no manual re-login. A quiet refetch on
+    // window focus is exactly that (and costs one cheap GET).
+    const onFocus = () => load()
+    window.addEventListener('focus', onFocus)
     return () => {
       cancelled = true
+      window.removeEventListener('focus', onFocus)
     }
   }, [])
 

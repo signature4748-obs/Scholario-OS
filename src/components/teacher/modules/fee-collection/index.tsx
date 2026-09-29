@@ -21,18 +21,20 @@
  *   · per-student ledger sheet + the shared receipt viewer.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GradientAvatar, PageTransition } from '@/components/shared/ui'
 import { formatINR } from '@/lib/format'
+import { useFocusStore } from '@/lib/store/focus-store'
 import { FeeReceiptViewer } from '@/components/shared/fee-collection/receipt-viewer'
 import { methodLabel, sourceLabel, sourceStory, txnDate, txnStatusMeta } from '@/components/shared/fee-collection/txn-meta'
 import { useFeeCollection } from './hooks'
 import type { FeeTxn } from './types'
 import { CollectFeeDialog } from './collect-dialog'
 import { StudentLedgerSheet } from './student-ledger'
+import { HubStudentProfileSheet } from '../shared/hub-student-profile-sheet'
 import { ModuleToolbar } from '../../teacher-panel/module-toolbar'
 import {
   HubEmptyState,
@@ -41,6 +43,7 @@ import {
   HubStatCards,
   type HubStat,
 } from '../shared/hub-stat-cards'
+import { ClassSelect } from '../shared/class-select'
 import { SectionCard } from '../shared/section-card'
 import {
   AlertTriangle, ArrowLeftRight, BadgeCheck, Banknote, CalendarDays, ChevronLeft,
@@ -66,8 +69,20 @@ export function FeeCollectionModule() {
   const [collectOpen, setCollectOpen] = useState(false)
   const [collectStudent, setCollectStudent] = useState<string | undefined>(undefined)
   const [ledgerStudentId, setLedgerStudentId] = useState<string | null>(null)
+  const [profileStudentId, setProfileStudentId] = useState<string | null>(null)
   const [receiptTxnId, setReceiptTxnId] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
+
+  // Cross-module deep link (My Class → View collection / Fee Collection):
+  // the focus store carries the exact class to open, consumed once on mount.
+  useEffect(() => {
+    const focus = useFocusStore.getState().focus
+    if (focus && focus.type === 'class' && focus.moduleKey === 'fee-collection') {
+      const idx = data?.classes.findIndex((c) => c.classId === focus.id) ?? -1
+      if (idx >= 0) setClassIdx(idx)
+      useFocusStore.getState().clearFocus()
+    }
+  }, [data])
 
   const klass = data?.classes?.[Math.min(classIdx, (data?.classes.length ?? 1) - 1)] ?? null
   const students = klass?.students ?? []
@@ -181,24 +196,19 @@ export function FeeCollectionModule() {
         }
       />
 
-      {/* Class pills (multi-class teachers only) */}
+      {/* Compact class selector (multi-class teachers only) — the SAME
+          selector language as Student Growth / Directory / My Class */}
       {data.classes.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {data.classes.map((c, i) => (
-            <button
-              key={c.classId}
-              onClick={() => setClassIdx(i)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                i === classIdx
-                  ? 'border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400'
-                  : 'bg-card text-muted-foreground hover:bg-muted',
-              )}
-            >
-              {c.label} · {c.studentCount}
-            </button>
-          ))}
-        </div>
+        <ClassSelect
+          classes={data.classes.map((c, i) => ({
+            id: String(i),
+            label: c.label,
+            meta: String(c.studentCount),
+          }))}
+          value={String(Math.min(classIdx, data.classes.length - 1))}
+          onChange={(id) => setClassIdx(Number(id ?? 0))}
+          ariaLabel="Select class"
+        />
       )}
 
       {/* CLASS FINANCIAL OVERVIEW — compact metric grid, one system with
@@ -381,6 +391,15 @@ export function FeeCollectionModule() {
         txns={klass?.transactions ?? []}
         onCollect={(sid) => { setCollectStudent(sid); setCollectOpen(true) }}
         onViewReceipt={(id) => { setLedgerStudentId(null); setReceiptTxnId(id); setReceiptOpen(true) }}
+        onViewProfile={(id) => setProfileStudentId(id)}
+      />
+
+      {/* The ONE canonical student profile (§25 — same canonical page as
+          Directory / My Class; fee tab first for the fee workflow context) */}
+      <HubStudentProfileSheet
+        studentId={profileStudentId}
+        onOpenChange={(o) => { if (!o) setProfileStudentId(null) }}
+        initialTab={profileStudentId != null && ledgerStudentId != null ? 'fees' : undefined}
       />
 
       {/* Shared receipt viewer */}

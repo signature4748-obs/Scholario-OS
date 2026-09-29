@@ -17,7 +17,7 @@ import { GradientAvatar } from '@/components/shared/ui'
 import { formatINR } from '@/lib/format'
 import { methodLabel, sourceStory, txnDate, txnStatusMeta } from '@/components/shared/fee-collection/txn-meta'
 import type { CollectionStudent, FeeTxn } from './types'
-import { Banknote, Clock3, FileText, Receipt, Wallet } from 'lucide-react'
+import { Banknote, Clock3, FileText, Receipt, User, Wallet } from 'lucide-react'
 
 interface Props {
   student: CollectionStudent | null
@@ -27,9 +27,12 @@ interface Props {
   txns: FeeTxn[]
   onCollect: (studentId: string, feeId?: string) => void
   onViewReceipt: (txnId: string) => void
+  /** opens the ONE shared student profile (same sheet as Directory / My
+   *  Class / Behavior — master task §25). */
+  onViewProfile?: (studentId: string) => void
 }
 
-export function StudentLedgerSheet({ student, open, onOpenChange, txns, onCollect, onViewReceipt }: Props) {
+export function StudentLedgerSheet({ student, open, onOpenChange, txns, onCollect, onViewReceipt, onViewProfile }: Props) {
   if (!student) return null
   const ledger = student.ledger
   const studentTxns = txns.filter((t) => t.studentId === student.id)
@@ -46,6 +49,16 @@ export function StudentLedgerSheet({ student, open, onOpenChange, txns, onCollec
                 Roll {student.rollNo ?? '—'} · {student.guardianName ?? 'Guardian —'}
               </span>
             </span>
+            {onViewProfile && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0 gap-1.5 px-2.5 text-[11px]"
+                onClick={() => onViewProfile(student.id)}
+              >
+                <User className="h-3 w-3" /> Profile
+              </Button>
+            )}
           </SheetTitle>
         </SheetHeader>
 

@@ -25,6 +25,8 @@ interface SelectorsBarProps {
   exams: MarksExam[]
   selection: GridSelection | null
   onSelectionChange: (next: GridSelection) => void
+  /** True while the scan workflow holds the context locked. */
+  disabled?: boolean
 }
 
 /** Result-status badge tone: declared/published → success, in progress → warning. */
@@ -35,7 +37,7 @@ function resultStatusVariant(resultStatus: string): 'success' | 'warning' | 'neu
   return 'neutral'
 }
 
-export function SelectorsBar({ exams, selection, onSelectionChange }: SelectorsBarProps) {
+export function SelectorsBar({ exams, selection, onSelectionChange, disabled = false }: SelectorsBarProps) {
   const exam = exams.find((e) => e.id === selection?.examId) ?? null
   const classes = exam?.classes ?? []
   const cls = classes.find((c) => c.classId === selection?.classId) ?? null
@@ -63,13 +65,13 @@ export function SelectorsBar({ exams, selection, onSelectionChange }: SelectorsB
   }
 
   return (
-    <GlassCard className="p-3 sm:p-4">
+    <GlassCard className={disabled ? 'pointer-events-none p-3 opacity-70 sm:p-4' : 'p-3 sm:p-4'}>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="min-w-0 space-y-1.5">
           <Label htmlFor="marks-exam-select" className="text-[11px] font-medium uppercase tracking-wider">
             Examination
           </Label>
-          <Select value={selection?.examId ?? ''} onValueChange={changeExam} disabled={exams.length === 0}>
+          <Select value={selection?.examId ?? ''} onValueChange={changeExam} disabled={disabled || exams.length === 0}>
             <SelectTrigger id="marks-exam-select" className="h-9 w-full">
               <SelectValue placeholder="Select examination" />
             </SelectTrigger>
@@ -92,7 +94,7 @@ export function SelectorsBar({ exams, selection, onSelectionChange }: SelectorsB
           <Label htmlFor="marks-class-select" className="text-[11px] font-medium uppercase tracking-wider">
             Class
           </Label>
-          <Select value={selection?.classId ?? ''} onValueChange={changeClass} disabled={classes.length === 0}>
+          <Select value={selection?.classId ?? ''} onValueChange={changeClass} disabled={disabled || classes.length === 0}>
             <SelectTrigger id="marks-class-select" className="h-9 w-full">
               <SelectValue placeholder="Select class" />
             </SelectTrigger>
@@ -113,7 +115,7 @@ export function SelectorsBar({ exams, selection, onSelectionChange }: SelectorsB
           <Select
             value={selection?.subjectId ?? ''}
             onValueChange={changeSubject}
-            disabled={subjects.length === 0}
+            disabled={disabled || subjects.length === 0}
           >
             <SelectTrigger id="marks-subject-select" className="h-9 w-full">
               <SelectValue placeholder="Select subject" />

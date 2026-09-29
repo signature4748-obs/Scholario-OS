@@ -1,40 +1,33 @@
 'use client'
 
 /**
- * PendingActions — real, server-derived action queue for the Teacher
- * Dashboard. Replaces the former mock "Pending Reviews" widget (homework /
- * assignment grading) after those modules were removed from the Teacher
- * Workspace.
+ * PendingActions (v2) — the dashboard's REAL action queue, rendered entirely
+ * from the ONE aggregate (GET /api/teacher/dashboard) — no second fetch.
  *
- * Sources (existing Teacher Hub APIs, teacher-session scoped):
- *   • GET /api/teacher/parent-connect  → stats.unread + follow-ups
- *   • GET /api/teacher/behavior        → stats.openConcerns
- * (Navigation targets the Communication Hub — Parent Connect was absorbed
- * into it as the parent-thread channel.)
- * Every number rendered here traces to a real row — the widget renders an
- * honest empty state when nothing needs attention.
+ * Sources (all server-derived, teacher-session scoped, same rows the
+ * modules show):
+ *   • attendance snapshots   → unmarked class-attendance baselines (deep-link)
+ *   • hub.unreadMessages     → unread parent messages (Communication Hub)
+ *   • hub.needsAttention     → students needing attention (Student Growth)
+ *   • hub.marksPending       → marks entries sitting in DRAFT (Marks Entry)
+ *   • hub.followUps          → open follow-up rows (person, reason, due)
+ *
+ * Every row has a destination; an honest empty state renders when nothing
+ * needs attention. No fabricated tasks, ever.
  */
 
-import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
-  AlarmClock, ArrowRight, MessageSquareHeart, Shield, Inbox,
+  AlarmClock, ArrowRight, CalendarCheck, FileText, MessageSquareHeart, Shield, Inbox,
 } from 'lucide-react'
-import { GlassCard, GradientAvatar } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
-import type {
-  BehaviorPayload,
-  FollowUpItem,
-  ParentConnectPayload,
-} from '@/lib/teacher-hub-types'
+import { GlassCard, GradientAvatar } from '@/components/shared/ui'
+import { useFocusStore } from '@/lib/store/focus-store'
+import type { AttendanceSnapshot, ClassTeacherClass, TeacherDashboardData } from './types'
 
 interface PendingActionsProps {
+  data: TeacherDashboardData
   onNavigate: (key: string) => void
-  /** true only for appointed class teachers (drives the hub card) */
-  isClassTeacher?: boolean
-}
-
-interface FollowUpRow extends FollowUpItem {
-  moduleKey: 'communication' | 'behavior'
 }
 
 function dueLabel(due: string): { text: string; tone: 'overdue' | 'today' | 'later' } {
@@ -51,180 +44,260 @@ function dueLabel(due: string): { text: string; tone: 'overdue' | 'today' | 'lat
   return { text: `Due in ${days}d`, tone: 'later' }
 }
 
-export function PendingActions({ onNavigate, isClassTeacher = false }: PendingActionsProps) {
-  const [state, setState] = useState<
-    | { phase: 'loading' }
-    | { phase: 'error' }
-    | {
-        phase: 'ready'
-        unread: number
-        openConcerns: number
-        followUps: FollowUpRow[]
-      }
-  >({ phase: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const [pc, beh] = await Promise.allSettled([
-          fetch('/api/teacher/parent-connect', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('pc')))),
-          fetch('/api/teacher/behavior', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error('beh')))),
-        ])
-        if (cancelled) return
-        const pcData = pc.status === 'fulfilled' ? (pc.value.data as ParentConnectPayload) : null
-        const behData = beh.status === 'fulfilled' ? (beh.value.data as BehaviorPayload) : null
-
-        const rows: FollowUpRow[] = []
-        pcData?.followUps
-          ?.filter((f) => f.status === 'open')
-          .forEach((f) => rows.push({ ...f, moduleKey: 'communication' }))
-        rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-
-        setState({
-          phase: 'ready',
-          unread: pcData?.stats?.unread ?? 0,
-          openConcerns: behData?.stats?.openConcerns ?? 0,
-          followUps: rows.slice(0, 4),
-        })
-      } catch {
-        if (!cancelled) setState({ phase: 'error' })
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [])
+export function PendingActions({ data, onNavigate }: PendingActionsProps) {
+  const reduce = useReducedMotion()
+  const unmarked = data.attendance.filter((s) => !s.marked)
+  const { unreadMessages, needsAttention, marksPending, followUps } = data.hub
+  const empty =
+    unmarked.length === 0 && unreadMessages === 0 && needsAttention === 0 && marksPending === 0 && followUps.length === 0
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-      <GlassCard className="p-3 sm:p-4 lg:p-5 lg:col-span-2">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-semibold text-sm flex items-center gap-2">
-              <AlarmClock className="h-4 w-4 text-amber-500" /> Pending Actions
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Follow-ups & messages awaiting your attention</p>
-          </div>
-        </div>
-
-        {state.phase === 'loading' && (
-          <div className="space-y-2.5" aria-hidden>
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-14 rounded-xl bg-muted/40 animate-pulse" />
-            ))}
-          </div>
-        )}
-
-        {state.phase === 'error' && (
-          <div className="py-8 text-center">
-            <Inbox className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
-            <p className="text-sm text-muted-foreground">Pending actions could not load.</p>
-            <button
-              onClick={() => setState({ phase: 'loading' })}
-              className="mt-2 text-xs text-primary font-medium hover:underline"
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {state.phase === 'ready' && state.followUps.length === 0 && state.unread === 0 && state.openConcerns === 0 && (
-          <div className="py-8 text-center">
-            <Inbox className="h-8 w-8 mx-auto text-emerald-500/40 mb-2" />
-            <p className="text-sm font-medium text-muted-foreground">You&apos;re all caught up</p>
-            <p className="text-xs text-muted-foreground/70 mt-0.5">No follow-ups or unread messages right now.</p>
-          </div>
-        )}
-
-        {state.phase === 'ready' && (
-          <div className="space-y-2.5">
-            {state.unread > 0 && (
-              <button
-                onClick={() => onNavigate('communication')}
-                className="w-full flex items-center gap-3 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3 text-left hover:bg-sky-500/10 transition-colors"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600">
-                  <MessageSquareHeart className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm">{state.unread} unread parent message{state.unread === 1 ? '' : 's'}</p>
-                  <p className="text-xs text-muted-foreground">Communication Hub · reply from your conversations</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </button>
-            )}
-
-            {state.openConcerns > 0 && (
-              <button
-                onClick={() => onNavigate('behavior')}
-                className="w-full flex items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-left hover:bg-rose-500/10 transition-colors"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600">
-                  <Shield className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm">{state.openConcerns} open behavior concern{state.openConcerns === 1 ? '' : 's'}</p>
-                  <p className="text-xs text-muted-foreground">Student Behavior · review status</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </button>
-            )}
-
-            {state.followUps.map((f) => {
-              const due = dueLabel(f.dueDate)
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => onNavigate(f.moduleKey)}
-                  className="w-full flex items-center gap-3 rounded-xl border border-border bg-card/40 p-3 text-left hover:bg-accent/40 transition-colors"
-                >
-                  <GradientAvatar name={f.student?.name ?? 'Follow-up'} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm truncate">{f.student?.name ?? 'Follow-up'}</p>
-                    <p className="text-xs text-muted-foreground truncate">{f.reason}</p>
-                  </div>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                      due.tone === 'overdue' && 'bg-rose-500/10 text-rose-600',
-                      due.tone === 'today' && 'bg-amber-500/10 text-amber-600',
-                      due.tone === 'later' && 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {due.text}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </GlassCard>
-
-      <div className="space-y-4">
-        {isClassTeacher && <TeacherHubCard onNavigate={onNavigate} />}
+    <GlassCard className="flex flex-col p-3.5 sm:p-4 lg:p-5">
+      <div className="mb-3.5">
+        <h3 className="flex items-center gap-2 font-display text-sm font-bold tracking-tight">
+          <AlarmClock className="h-4 w-4 text-amber-500" aria-hidden /> Pending Actions
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">What needs your attention right now</p>
       </div>
-    </div>
+
+      {empty && (
+        <div className="flex flex-1 flex-col items-center justify-center py-8 text-center">
+          <div className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
+            <Inbox className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          </div>
+          <p className="text-sm font-medium text-muted-foreground">You&apos;re all caught up</p>
+          <p className="mt-0.5 text-xs text-muted-foreground/70">
+            Nothing requires your attention right now.
+          </p>
+        </div>
+      )}
+
+      {!empty && (
+        <div className="space-y-2.5">
+          {unmarked.map((s) => (
+            <ActionRow
+              key={`att-${s.classId}`}
+              reduce={reduce}
+              onClick={() => {
+                // Same deep-link the attendance prompt uses — the exact
+                // class lands focused in the Class Attendance module.
+                useFocusStore.getState().setFocus({
+                  type: 'class',
+                  id: s.classId,
+                  title: s.classLabel,
+                  moduleKey: 'attendance',
+                })
+                onNavigate('attendance')
+              }}
+              icon={<CalendarCheck className="h-4.5 w-4.5" aria-hidden />}
+              iconTone="amber"
+              title={`${s.classLabel} attendance not marked`}
+              subtitle={`${s.studentCount} student${s.studentCount === 1 ? '' : 's'} · today's baseline is still open`}
+            />
+          ))}
+
+          {unreadMessages > 0 && (
+            <ActionRow
+              reduce={reduce}
+              onClick={() => onNavigate('communication')}
+              icon={<MessageSquareHeart className="h-4.5 w-4.5" aria-hidden />}
+              iconTone="sky"
+              title={`${unreadMessages} unread parent message${unreadMessages === 1 ? '' : 's'}`}
+              subtitle="Communication Hub · reply from your conversations"
+              chip={{ text: 'Reply', tone: 'sky' }}
+            />
+          )}
+
+          {needsAttention > 0 && (
+            <ActionRow
+              reduce={reduce}
+              onClick={() => onNavigate('growth')}
+              icon={<Shield className="h-4.5 w-4.5" aria-hidden />}
+              iconTone="rose"
+              title={`${needsAttention} student${needsAttention === 1 ? '' : 's'} needing attention`}
+              subtitle="Student Growth · review recent points"
+            />
+          )}
+
+          {marksPending > 0 && (
+            <ActionRow
+              reduce={reduce}
+              onClick={() => onNavigate('marks')}
+              icon={<FileText className="h-4.5 w-4.5" aria-hidden />}
+              iconTone="violet"
+              title={`${marksPending} marks entr${marksPending === 1 ? 'y' : 'ies'} in draft`}
+              subtitle="Marks Entry · review and submit"
+              chip={{ text: 'Draft', tone: 'violet' }}
+            />
+          )}
+
+          {followUps.map((f) => {
+            const due = dueLabel(f.dueDate)
+            return (
+              <ActionRow
+                key={f.id}
+                reduce={reduce}
+                onClick={() => onNavigate(f.kind === 'parent-connect' ? 'communication' : 'growth')}
+                avatar={f.studentName ?? 'Follow-up'}
+                title={f.studentName ?? 'Follow-up'}
+                subtitle={f.reason}
+                chip={{ text: due.text, tone: due.tone }}
+              />
+            )
+          })}
+        </div>
+      )}
+    </GlassCard>
   )
 }
 
-/** Quiet secondary card — the appointed class teacher's entry point into
- *  their Class Teacher Hub (My Class). Rendered ONLY for teachers with a
- *  real appointment — a subject teacher never sees hub affordances. */
-function TeacherHubCard({ onNavigate }: { onNavigate: (key: string) => void }) {
+const TONES = {
+  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+} as const
+
+const CHIP_TONES = {
+  overdue: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  today: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  later: 'bg-muted text-muted-foreground',
+  sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+} as const
+
+function ActionRow({
+  reduce,
+  onClick,
+  icon,
+  iconTone,
+  avatar,
+  title,
+  subtitle,
+  chip,
+}: {
+  reduce: boolean | null
+  onClick: () => void
+  icon?: React.ReactNode
+  iconTone?: keyof typeof TONES
+  avatar?: string
+  title: string
+  subtitle: string
+  chip?: { text: string; tone: keyof typeof CHIP_TONES }
+}) {
   return (
-    <GlassCard className="p-3 sm:p-4 lg:p-5">
-      <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
-        <Shield className="h-4 w-4 text-emerald-500" /> Class Teacher Hub
-      </h3>
-      <p className="text-xs text-muted-foreground mb-3">Your class, end to end — attendance, fees, results & behaviour</p>
-      <button
+    <motion.button
+      type="button"
+      initial={reduce ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-xl border border-border bg-card/40 p-3 text-left transition-colors hover:border-primary/30 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {avatar ? (
+        <GradientAvatar name={avatar} size="sm" />
+      ) : (
+        <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', iconTone && TONES[iconTone])}>
+          {icon}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">{title}</p>
+        <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+      </div>
+      {chip && (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+            CHIP_TONES[chip.tone],
+          )}
+        >
+          {chip.text}
+        </span>
+      )}
+      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden />
+    </motion.button>
+  )
+}
+
+// ─── Class Teacher Hub card ─────────────────────────────────────────
+
+/**
+ * ClassTeacherHubCard — the appointed class teacher's compact overview:
+ * students, canonical 30-day attendance rate and open follow-ups per
+ * class-teacher class, with the "Open My Class" entry. Rendered ONLY for
+ * teachers with real appointments — a subject teacher never sees hub
+ * affordances.
+ */
+export function ClassTeacherHubCard({ classes, onNavigate }: {
+  classes: ClassTeacherClass[]
+  onNavigate: (key: string) => void
+}) {
+  const reduce = useReducedMotion()
+  if (classes.length === 0) return null
+  const single = classes.length === 1
+
+  return (
+    <GlassCard className="flex flex-col p-3.5 sm:p-4 lg:p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <Shield className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <h3 className="font-display text-sm font-bold tracking-tight">
+            {single ? 'My Class' : 'My Classes'}
+          </h3>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {single ? classes[0].classLabel : `${classes.length} class-teacher classes`}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-2.5">
+        {classes.map((c) => (
+          <div key={c.classId} className="rounded-xl border border-border/70 bg-background/40 p-3">
+            {classes.length > 1 && (
+              <p className="mb-2 text-[11px] font-semibold text-foreground/80">{c.classLabel}</p>
+            )}
+            <dl className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <dt className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Students</dt>
+                <dd className="mt-0.5 font-display text-base font-bold tabular-nums">{c.studentCount}</dd>
+              </div>
+              <div>
+                <dt className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Attendance</dt>
+                <dd
+                  className={cn(
+                    'mt-0.5 font-display text-base font-bold tabular-nums',
+                    c.attendancePct == null ? 'text-muted-foreground/60' : c.attendancePct >= 90 ? 'text-emerald-600 dark:text-emerald-400' : c.attendancePct >= 75 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400',
+                  )}
+                >
+                  {c.attendancePct == null ? '—' : `${c.attendancePct}%`}
+                </dd>
+                <dd className="text-[9px] text-muted-foreground/70">30 days</dd>
+              </div>
+              <div>
+                <dt className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Follow-ups</dt>
+                <dd className={cn('mt-0.5 font-display text-base font-bold tabular-nums', c.openFollowUps > 0 ? 'text-amber-600 dark:text-amber-400' : '')}>
+                  {c.openFollowUps}
+                </dd>
+                <dd className="text-[9px] text-muted-foreground/70">open</dd>
+              </div>
+            </dl>
+          </div>
+        ))}
+      </div>
+
+      <motion.button
+        type="button"
+        initial={reduce ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
         onClick={() => onNavigate('class-hub')}
-        className="w-full rounded-xl border border-border bg-card/40 p-3 text-left hover:bg-accent/40 transition-colors"
+        className="group mt-3 inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold transition-colors hover:border-primary/40 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <p className="text-[11px] text-muted-foreground">
-          Open My Class overview
-        </p>
-      </button>
+        Open My Class
+        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden />
+      </motion.button>
     </GlassCard>
   )
 }

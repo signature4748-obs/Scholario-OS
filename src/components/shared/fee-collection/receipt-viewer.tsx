@@ -22,7 +22,7 @@
  * (File → Save as PDF produces the downloadable copy).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -78,12 +78,17 @@ interface Props {
   txnId: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** open the browser print dialog as soon as the receipt loads — the
+   *  "Download receipt" shortcut (File → Save as PDF is the canonical
+   *  document export path, exactly like the manual Print button). */
+  autoPrint?: boolean
 }
 
-export function FeeReceiptViewer({ txnId, open, onOpenChange }: Props) {
+export function FeeReceiptViewer({ txnId, open, onOpenChange, autoPrint = false }: Props) {
   const [data, setData] = useState<ReceiptPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const autoPrintDone = useRef(false)
 
   useEffect(() => {
     if (!open || !txnId) return
@@ -91,6 +96,7 @@ export function FeeReceiptViewer({ txnId, open, onOpenChange }: Props) {
     setLoading(true)
     setError(null)
     setData(null)
+    autoPrintDone.current = false
     fetch(`/api/fees/receipts/${txnId}`, { cache: 'no-store', credentials: 'same-origin' })
       .then(async (res) => {
         const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; data?: ReceiptPayload } | null
@@ -99,11 +105,19 @@ export function FeeReceiptViewer({ txnId, open, onOpenChange }: Props) {
         }
         return json.data
       })
-      .then((d) => { if (!cancelled) setData(d) })
+      .then((d) => {
+        if (cancelled) return
+        setData(d)
+        if (autoPrint && !autoPrintDone.current) {
+          autoPrintDone.current = true
+          // let the document paint before the print dialog opens
+          window.setTimeout(() => window.print(), 350)
+        }
+      })
       .catch((e: Error) => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [open, txnId])
+  }, [open, txnId, autoPrint])
 
   const t = data?.txn
   const isVerified = t?.status === 'SUCCESS'

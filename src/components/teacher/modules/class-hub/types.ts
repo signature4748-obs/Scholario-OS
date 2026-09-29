@@ -70,13 +70,151 @@ export interface ClassHubClass {
   }
   fees: ClassHubFees
   results: ClassHubResultExam[]
-  behavior: {
-    openConcerns: number
-    monitoring: number
-    recentPositive: number
+  growth: {
+    average: number | null
+    /** students with a valid calculated score — the only ones in the average */
+    scoredCount: number
+    improving: number
+    steady: number
+    needsAttention: number
+    building: number
+    monthPoints: number
   }
 }
 
 export interface ClassHubPayload {
   classes: ClassHubClass[]
+}
+
+// ─── Class-hub DETAIL payload (GET /api/teacher/class-hub/detail) ───────
+
+/** One roster row in the class directory section. */
+export interface HubDirectoryStudent {
+  studentId: string
+  name: string
+  rollNo: string | null
+  admissionNo: string | null
+  /** 30-day eligible-day rate % — null when nothing marked */
+  attendancePct: number | null
+  /** canonical growth score 0–100 — null = Building */
+  growthScore: number | null
+  growthMonthDelta: number
+  /** latest-exam academic % — null when the student has no marks */
+  academicPct: number | null
+  feeOutstanding: number
+  feeOverdue: boolean
+}
+
+export interface HubRankRow {
+  rank: number
+  studentId: string
+  name: string
+  rollNo: string | null
+  pct: number
+  total?: number
+  maxTotal?: number
+}
+
+export interface HubDetailPayload {
+  classId: string
+  label: string
+  studentCount: number
+  directory: HubDirectoryStudent[]
+  performance: {
+    latestExam: { examId: string; examName: string; examDate: string | null } | null
+    overallAvgPct: number | null
+    subjectAverages: { subjectId: string; subjectName: string; avgPct: number }[]
+    topPerformers: HubRankRow[]
+    needsAttention: HubRankRow[]
+    trend: { examId: string; examName: string; avgPct: number }[]
+  }
+  /** per-exam subject averages (§14 — the Academics tab's examination
+   *  selector drives subject-wise performance for any exam with marks) */
+  subjectAveragesByExam: Record<string, { subjectId: string; subjectName: string; avgPct: number }[]>
+  ranking: {
+    exams: { examId: string; examName: string; examDate: string | null }[]
+    rowsByExam: Record<string, HubRankRow[]>
+  }
+  attendanceReport: {
+    overall: {
+      ratePct: number | null
+      markedDays: number
+      /** school operational days in the window — distinct dates the school
+       * (any class) has canonical attendance for; the honest denominator */
+      schoolDays: number
+      present: number
+      absent: number
+      late: number
+      leave: number
+    }
+    monthly: { month: string; ratePct: number | null }[]
+    weekly: { week: string; ratePct: number | null }[]
+    /** the most recent marked day for THIS class (counts + ISO date) */
+    latestDay: { date: string; present: number; absent: number; late: number; leave: number } | null
+    /** per-student 30-day breakdown — the full roster in roll order */
+    byStudent: {
+      studentId: string
+      name: string
+      rollNo: string | null
+      ratePct: number | null
+      present: number
+      absent: number
+      late: number
+      leave: number
+      /** eligible days (LEAVE excluded) + leave days — the honesty floor */
+      markedDays: number
+    }[]
+    belowThreshold: {
+      studentId: string
+      name: string
+      rollNo: string | null
+      ratePct: number | null
+      absentDays: number
+      markedDays: number
+    }[]
+  }
+  marksheets: {
+    examId: string
+    examName: string
+    examDate: string | null
+    resultStatus: string
+    subjectsWithMarks: number
+    studentsScored: number
+    avgPct: number | null
+  }[]
+  taughtSubjects: { subjectId: string; subjectName: string }[]
+  /** the class's 8-week growth trend (average of members' weekly
+   *  snapshots — the SAME canonical growth engine, §20–§22) */
+  growthTrend: { label: string; value: number | null }[]
+}
+
+// ─── Marksheet matrix payload (GET /api/teacher/class-hub/marksheet) ────
+
+export interface MarksheetPayload {
+  classId: string
+  classLabel: string
+  room: string | null
+  /** the school's configured identity (print header) — never hardcoded */
+  schoolName: string
+  exam: {
+    examId: string
+    examName: string
+    type: string
+    session: string | null
+    examDate: string | null
+    resultStatus: string
+  }
+  subjects: { subjectId: string; subjectName: string; maxMarks: number }[]
+  rows: {
+    studentId: string
+    rollNo: string | null
+    admissionNo: string | null
+    name: string
+    marks: Record<string, { obtained: number | null; status: string }>
+    total: number
+    maxTotal: number
+    pct: number
+    rank: number | null
+  }[]
+  classAveragePct: number | null
 }

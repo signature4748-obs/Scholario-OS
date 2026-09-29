@@ -8,8 +8,7 @@ import {
   PieChart, Download, LayoutGrid, Users, Layers, Clock
 } from 'lucide-react'
 import { AppShell, type NavGroup } from '@/components/shell/app-shell'
-import dynamic from 'next/dynamic'
-import { ModuleLoading } from '@/components/shared/module-loading'
+import { lazyModule } from '@/components/shared/lazy-module'
 import { useLiveAlerts } from '@/lib/store/live-alerts-store'
 import { useAdmissionStore } from '@/lib/store/admission-store'
 import { ensureApplicationSeedData } from '@/lib/store/applications-store'
@@ -22,10 +21,10 @@ import type { UnifiedTab } from './modules/students-classes'
 
 // Every module is a separate lazily-loaded chunk: navigating compiles just
 // that module (small memory spikes) instead of one giant principal bundle.
+// Chunk-resilient lazy loader: import retry + per-module error boundary
+// (stabilization §22/§29 — a failed chunk must never blank the app).
 const lazy = (loader: () => Promise<{ [key: string]: any }>, pick: string) =>
-  dynamic(() => loader().then((m) => m[pick] as React.ComponentType<any>), {
-    loading: ModuleLoading,
-  })
+  lazyModule(loader, pick)
 
 // Wave 1 scope: Homework & Assignments are intentionally deferred from the
 // Principal role. They will be rebuilt as a connected Teacher → Student →
@@ -115,15 +114,31 @@ const navGroups: NavGroup[] = [
   },
 ]
 
-export function PrincipalPanel() {
+// Per-tab module memory (sessionStorage) — same pattern as the Teacher
+// panel: a lazy-chunk recovery reload (stale chunk graph after a dev
+// recompile / server restart) must land the principal back on the module
+// they opened, not silently reset them to the dashboard. The memory dies
+// with the tab; an explicit ?module= deep-link always wins.
+const MODULE_MEMORY_KEY = 'scholario-principal-module'
+
+function initialActiveModule(): string {
+  if (typeof window === 'undefined') return 'dashboard'
   // ?module=<key> deep-link — lets a bookmark (or a colleague-shared link)
   // open a specific module directly. The value must exist in the registry;
-  // anything else falls back to the dashboard.
-  const [active, setActive] = useState(() => {
-    if (typeof window === 'undefined') return 'dashboard'
-    const requested = new URLSearchParams(window.location.search).get('module')
-    return requested && moduleRegistry[requested] ? requested : 'dashboard'
-  })
+  // anything else falls through to the memory / dashboard.
+  const requested = new URLSearchParams(window.location.search).get('module')
+  if (requested && moduleRegistry[requested]) return requested
+  try {
+    const remembered = window.sessionStorage.getItem(MODULE_MEMORY_KEY)
+    if (remembered && moduleRegistry[remembered]) return remembered
+  } catch {
+    /* storage disabled (private mode) — honest fallback */
+  }
+  return 'dashboard'
+}
+
+export function PrincipalPanel() {
+  const [active, setActive] = useState(initialActiveModule)
   const alertCount = useLiveAlerts((s) => s.alerts.length)
   const { isModuleEnabled } = useFeatureGate()
   const pendingAdmissions = useAdmissionStore((s) =>
@@ -156,6 +171,29 @@ export function PrincipalPanel() {
       return g
     }), [alertCount, pendingAdmissions, isModuleEnabled])
 
+  // Remember the open module for this tab (see initialActiveModule) — a
+  // lazy-chunk recovery reload then re-opens exactly where the principal
+  // was instead of silently bouncing to the dashboard.
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(MODULE_MEMORY_KEY, active)
+    } catch {
+      /* storage disabled — nothing to remember */
+    }
+  }, [active])
+
+  // Consume the ?module= deep-link once (strip it from the URL) so later
+  // in-app navigation isn't shadowed by the stale param on the next
+  // recovery reload — the per-tab memory takes over from here.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('module')) {
+      url.searchParams.delete('module')
+      window.history.replaceState(null, '', url.toString())
+    }
+  }, [])
+
   // If the active module gets disabled while viewing it (platform toggle
   // + tenant switch), fall back to the dashboard — never render a module
   // the school doesn't have.
@@ -185,8 +223,6 @@ export function PrincipalPanel() {
         <StudentsClassesModule initialTab={initialTab} />
       ) : active === 'dashboard' ? (
         <PrincipalDashboard onNavigate={setActive} />
-      ) : active === 'teachers' ? (
-        <TeachersModule />
       ) : active === 'fees' ? (
         // Fees receives cross-module navigation so the Fee Structure editor
         // can deep-link to the Examination module ("Go to Examinations" —

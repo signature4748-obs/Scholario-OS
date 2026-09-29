@@ -1,43 +1,35 @@
 'use client'
 
 /**
- * TodayClasses (TWC-FE-4) — the REAL teaching day, rebuilt on the aggregate
- * API. The left panel lists the teacher's own timetable cells for today's
- * weekday (the mock `lib/mock/academics` schedule and the fake
- * ClassPerformanceChart are gone); the right panel is Today's Lessons — one
- * card per curriculum assignment with the scheduled topic and pace, opening
- * the Lesson Planner.
+ * TodayClasses — the REAL teaching day, rebuilt on the aggregate API.
+ * The left panel lists the teacher's own timetable cells for today's
+ * weekday; the right panel is Today's Lessons — one card per curriculum
+ * assignment with the scheduled topic, pace bar and a contextual action.
  *
  * Period states are derived on the client from the device clock and refresh
  * quietly every 30s; the CURRENT period is highlighted with restraint.
+ * Every period row is CLICKABLE — it opens the Lesson Planner when that
+ * class-subject has a curriculum (the period's content), otherwise the
+ * My Timetable week view.
  */
 
-import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowRight, BookOpen, CalendarDays, Clock, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GlassCard, StatusBadge } from '@/components/shared/ui'
-import {
-  formatTime,
-  periodsWithState,
-  type PeriodWithState,
-} from './hooks/use-teacher-dashboard'
+import { formatTime, periodsWithState, type PeriodWithState } from './hooks/use-teacher-dashboard'
 import type { CurriculumAssignment, LessonTopicState, TeacherDashboardData } from './types'
 
 interface TodayClassesProps {
   data: TeacherDashboardData
+  /** shared 30s clock from the composition (drives hero + schedule states) */
+  now: Date
   onNavigate: (key: string) => void
 }
 
-export function TodayClasses({ data, onNavigate }: TodayClassesProps) {
-  // Re-derive period states on a quiet 30s cadence (no API refetch — the
+export function TodayClasses({ data, now, onNavigate }: TodayClassesProps) {
+  // Period states re-derive from the shared clock — no API refetch (the
   // timetable came in the single dashboard aggregate; only "now" moves).
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const t = window.setInterval(() => setNow(new Date()), 30_000)
-    return () => window.clearInterval(t)
-  }, [])
-
   const periods = periodsWithState(data.today.periods, now)
   const current = periods.find((p) => p.state === 'current')
 
@@ -63,7 +55,7 @@ export function TodayClasses({ data, onNavigate }: TodayClassesProps) {
           {current && (
             <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
               <span className="relative flex h-1.5 w-1.5" aria-hidden>
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60 motion-reduce:animate-none" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60 motion-reduce:animate-none [animation-duration:2s]" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
               </span>
               Live
@@ -82,7 +74,13 @@ export function TodayClasses({ data, onNavigate }: TodayClassesProps) {
         ) : (
           <ul className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-0.5">
             {periods.map((p, i) => (
-              <PeriodRow key={`${p.period}-${i}`} p={p} i={i} />
+              <PeriodRow
+                key={`${p.period}-${i}`}
+                p={p}
+                i={i}
+                curriculum={data.curriculum}
+                onNavigate={onNavigate}
+              />
             ))}
           </ul>
         )}
@@ -94,71 +92,102 @@ export function TodayClasses({ data, onNavigate }: TodayClassesProps) {
   )
 }
 
-function PeriodRow({ p, i }: { p: PeriodWithState; i: number }) {
+function PeriodRow({ p, i, curriculum, onNavigate }: {
+  p: PeriodWithState
+  i: number
+  curriculum: CurriculumAssignment[]
+  onNavigate: (key: string) => void
+}) {
   const isNow = p.state === 'current'
   const isPast = p.state === 'completed'
+
+  // The period's own content when a curriculum exists for this exact
+  // class-subject; otherwise the week grid.
+  const hasCurriculum =
+    p.classId != null &&
+    p.subjectId != null &&
+    curriculum.some((c) => c.classId === p.classId && c.subjectId === p.subjectId)
+  const destination = hasCurriculum ? 'lesson-planner' : 'my-timetable'
+  const actionLabel = hasCurriculum ? 'Open lesson' : 'Timetable'
+
   return (
     <motion.li
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(i * 0.04, 0.3), ease: [0.22, 1, 0.36, 1] }}
-      className={cn(
-        'relative flex items-center gap-3 overflow-hidden rounded-xl border p-2.5 transition-colors',
-        isNow && 'border-emerald-500/40 bg-emerald-500/[0.06]',
-        !isNow && 'border-border/70 bg-background/40',
-        isPast && 'opacity-60',
-      )}
     >
-      {isNow && <span className="absolute inset-y-0 left-0 w-0.5 bg-emerald-500" aria-hidden />}
-      {/* Time tile — the period window, e.g. 08:30 over 09:15 */}
-      <div
+      <button
+        type="button"
+        onClick={() => onNavigate(destination)}
+        aria-label={`${formatTime(p.startTime)} ${p.subjectName}, ${p.classLabel}${p.room ? `, ${p.room}` : ''} — ${actionLabel}`}
         className={cn(
-          'flex h-11 w-16 shrink-0 flex-col items-center justify-center rounded-lg',
-          isNow ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-muted/60 text-foreground/70',
+          'group relative flex w-full items-center gap-3 overflow-hidden rounded-xl border p-2.5 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          isNow && 'border-emerald-500/40 bg-emerald-500/[0.06]',
+          !isNow && 'border-border/70 bg-background/40 hover:border-primary/30 hover:bg-accent/40',
+          isPast && 'opacity-60 hover:opacity-90',
         )}
-        aria-label={`${formatTime(p.startTime)} to ${formatTime(p.endTime)}`}
       >
-        <span className="text-[11px] font-bold leading-none tabular-nums">
-          {p.startTime ?? '—'}
-        </span>
-        <span className="mt-1 text-[9px] font-medium uppercase leading-none tabular-nums text-muted-foreground">
-          {p.endTime ?? '—'}
-        </span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <p
+        {isNow && <span className="absolute inset-y-0 left-0 w-0.5 bg-emerald-500" aria-hidden />}
+        {/* Time tile — the period window, e.g. 08:30 over 09:15 */}
+        <div
+          className={cn(
+            'flex h-11 w-16 shrink-0 flex-col items-center justify-center rounded-lg',
+            isNow ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-muted/60 text-foreground/70',
+          )}
+          aria-hidden
+        >
+          <span className="text-[11px] font-bold leading-none tabular-nums">
+            {p.startTime ?? '—'}
+          </span>
+          <span className="mt-1 text-[9px] font-medium uppercase leading-none tabular-nums text-muted-foreground">
+            {p.endTime ?? '—'}
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <p
+              className={cn(
+                'truncate text-sm font-semibold',
+                isPast && 'text-muted-foreground line-through decoration-muted-foreground/40',
+              )}
+            >
+              {p.subjectName}
+            </p>
+            {isNow ? (
+              <span className="rounded bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                Now
+              </span>
+            ) : isPast ? (
+              <span className="rounded bg-muted px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                Done
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            {p.classLabel}
+            {p.room ? (
+              <>
+                {' · '}
+                <MapPin className="inline h-3 w-3 align-[-2px]" aria-hidden /> {p.room}
+              </>
+            ) : null}
+          </p>
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span
             className={cn(
-              'truncate text-sm font-semibold',
-              isPast && 'text-muted-foreground line-through decoration-muted-foreground/40',
+              'rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+              'bg-muted/60 text-foreground/70',
             )}
           >
-            {p.subjectName}
-          </p>
-          {isNow && (
-            <span className="rounded bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              Now
-            </span>
-          )}
-        </div>
-        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-          {p.classLabel}
-          {p.room ? (
-            <>
-              {' · '}
-              <MapPin className="inline h-3 w-3 align-[-2px]" aria-hidden /> {p.room}
-            </>
-          ) : null}
-        </p>
-      </div>
-      <span
-        className={cn(
-          'shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
-          isPast ? 'bg-muted/60 text-muted-foreground' : 'bg-muted/60 text-foreground/70',
-        )}
-      >
-        P{p.period}
-      </span>
+            P{p.period}
+          </span>
+          <ArrowRight
+            className="h-3.5 w-3.5 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground group-focus-visible:text-muted-foreground motion-reduce:transition-none"
+            aria-hidden
+          />
+        </span>
+      </button>
     </motion.li>
   )
 }
@@ -205,6 +234,7 @@ function TodayLessons({ curriculum, onNavigate }: {
             const topic = c.todayTopic
             // `in` guard keeps an unexpected server status from crashing the row.
             const badge = topic && topic.status in TOPIC_BADGES ? TOPIC_BADGES[topic.status] : null
+            const active = topic && (topic.status === 'today' || topic.status === 'in-progress' || topic.status === 'needs-rescheduling')
             return (
               <motion.button
                 key={`${c.classId}-${c.subjectId}`}
@@ -213,7 +243,7 @@ function TodayLessons({ curriculum, onNavigate }: {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(0.05 + i * 0.05, 0.25), ease: [0.22, 1, 0.36, 1] }}
                 onClick={() => onNavigate('lesson-planner')}
-                className="w-full rounded-xl border border-border/70 bg-background/40 p-3 text-left transition-colors hover:border-primary/30 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="w-full rounded-xl border border-border/70 bg-background/40 p-3 text-left transition-all hover:border-primary/30 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -239,12 +269,38 @@ function TodayLessons({ curriculum, onNavigate }: {
                     />
                   )}
                 </div>
+
+                {/* Real pace bar — completed/total topics from the planner */}
+                {c.progress.total > 0 && (
+                  <div className="mt-2.5">
+                    <div
+                      className="h-1 overflow-hidden rounded-full bg-muted"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={c.progress.pct}
+                      aria-label={`${c.classLabel} ${c.subjectName} syllabus progress`}
+                    >
+                      <motion.div
+                        initial={false}
+                        animate={{ width: `${Math.min(Math.max(c.progress.pct, 0), 100)}%` }}
+                        transition={{ type: 'spring', stiffness: 160, damping: 24, delay: Math.min(0.1 + i * 0.05, 0.3) }}
+                        className={cn(
+                          'h-full rounded-full',
+                          active ? 'bg-primary' : 'bg-emerald-500',
+                        )}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <span className="text-[10px] tabular-nums text-muted-foreground">
                     {c.progress.completed}/{c.progress.total} topics · {c.progress.pct}%
                   </span>
                   <span className="flex items-center gap-1 text-[11px] font-semibold text-primary">
-                    Open Lesson Planner <ArrowRight className="h-3 w-3" aria-hidden />
+                    {active ? 'Continue lesson' : 'Open Lesson Planner'}
+                    <ArrowRight className="h-3 w-3" aria-hidden />
                   </span>
                 </div>
               </motion.button>

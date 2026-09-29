@@ -7,7 +7,14 @@ interface SaveBody {
   examId?: string
   classId?: string
   subjectId?: string
-  entries?: { studentId: string; marks: number | null; remarks?: string | null }[]
+  entries?: {
+    studentId: string
+    marks: number | null
+    remarks?: string | null
+    /** Canonical absent marker (ExamMark.status='ABSENT'): used by the
+     *  scan review flow when the teacher confirms "AB". Requires null marks. */
+    absent?: boolean
+  }[]
 }
 
 /**
@@ -18,6 +25,8 @@ interface SaveBody {
  *   • the roster is re-derived server-side; unknown students are dropped;
  *   • SUBMITTED rows cannot be edited (the module enforces an explicit
  *     submit step; corrections flow through the office).
+ * Both the manual roster and the Scan Marks Sheet review grid write
+ * through THIS one canonical route — there is no second marks path.
  */
 export async function POST(request: Request) {
   return withUser(
@@ -65,6 +74,10 @@ export async function POST(request: Request) {
       for (const e of body.entries) {
         if (!rosterIds.has(e.studentId)) continue
         if (submittedIds.has(e.studentId)) continue
+        // Canonical absent: status='ABSENT' with null marks — the same
+        // representation the marksheet and outcome engines already read.
+        const absent = e.absent === true
+        if (absent && e.marks != null) throw new Error('Absent entries cannot carry marks')
         if (e.marks != null) {
           if (typeof e.marks !== 'number' || !Number.isFinite(e.marks)) {
             throw new Error('Invalid marks value')
@@ -89,14 +102,20 @@ export async function POST(request: Request) {
             classId: body.classId,
             subjectId: body.subjectId,
             studentId: e.studentId,
-            marksObtained: e.marks,
-            status: 'PRESENT',
+            marksObtained: absent ? null : e.marks,
+            status: absent ? 'ABSENT' : 'PRESENT',
             workflowStatus: 'DRAFT',
             remarks,
             enteredBy: user.name ?? 'Teacher',
             enteredAt: new Date(),
           },
-          update: { marksObtained: e.marks, remarks, enteredBy: user.name ?? 'Teacher', enteredAt: new Date() },
+          update: {
+            marksObtained: absent ? null : e.marks,
+            status: absent ? 'ABSENT' : 'PRESENT',
+            remarks,
+            enteredBy: user.name ?? 'Teacher',
+            enteredAt: new Date(),
+          },
         })
         saved += 1
       }

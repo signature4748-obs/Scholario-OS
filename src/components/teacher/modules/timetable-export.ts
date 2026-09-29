@@ -22,7 +22,7 @@ import {
   AlignmentType, BorderStyle, Document, HeadingLevel, Packer, Paragraph,
   ShadingType, Table, TableCell, TableRow, TextRun, WidthType,
 } from 'docx'
-import { school } from '@/lib/mock/school'
+import { schoolPrintIdentity } from '@/lib/school-print-identity'
 
 export interface TimetableExportCell {
   day: string
@@ -90,15 +90,16 @@ export function downloadTeacherTimetablePdf(input: TimetableExportInput): void {
   const marginX = 32
 
   // ── Document header ──────────────────────────────────────────────────
+  const identity = schoolPrintIdentity()
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
   doc.setTextColor(16, 24, 40)
-  doc.text(school.name, marginX, 40)
+  doc.text(identity.name, marginX, 40)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   doc.setTextColor(100, 116, 139)
-  doc.text(`${school.tagline}  ·  ${school.affiliation}`, marginX, 53)
+  doc.text(identity.line2, marginX, 53)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(15)
@@ -189,7 +190,7 @@ export function downloadTeacherTimetablePdf(input: TimetableExportInput): void {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
   doc.setTextColor(148, 163, 184)
-  doc.text(`${school.name} — system-generated teacher timetable`, marginX, pageHeight - 18)
+  doc.text(`${identity.name} — system-generated teacher timetable`, marginX, pageHeight - 18)
   doc.text(`Generated ${generatedAtLabel()}`, pageWidth - marginX, pageHeight - 18, { align: 'right' })
 
   doc.save(safeFileName(input.teacherName, 'pdf'))
@@ -204,6 +205,7 @@ const ROW_ALT = 'F8FAFC'
 
 export async function downloadTeacherTimetableDocx(input: TimetableExportInput): Promise<void> {
   const sessionLabel = input.session ? input.session.replace('-', '–') : ''
+  const identity = schoolPrintIdentity()
 
   const heading = (text: string, size: number, opts: { bold?: boolean; color?: string; spacingBefore?: number; spacingAfter?: number } = {}) =>
     new Paragraph({
@@ -286,7 +288,7 @@ export async function downloadTeacherTimetableDocx(input: TimetableExportInput):
         table,
         heading('', 18, { spacingAfter: 8 }),
         heading(
-          `${school.name} — system-generated timetable · Generated ${generatedAtLabel()}`,
+          `${identity.name} — system-generated timetable · Generated ${generatedAtLabel()}`,
           15, { color: MUTED },
         ),
       ],

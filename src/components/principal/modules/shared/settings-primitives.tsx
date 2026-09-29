@@ -99,16 +99,17 @@ export function SettingsCard({
   )
 }
 
-/* SettingsCardSection — collapsible row with icon + title + optional
- * scope tag (FORM / OFFICIAL DOCUMENT) + chevron */
+/* SettingsCardSection — collapsible row with icon + title + chevron */
 export function SettingsCardSection({
-  title, icon: Icon, tag, defaultOpen = false, children,
+  title, icon: Icon, defaultOpen = false, description, tag, children,
 }: {
   title: string
   icon?: ComponentType<{ className?: string }>
+  defaultOpen?: boolean
+  /** One short contextual line under the group title (max ~60 chars). */
+  description?: string
   /** Short scope label, e.g. "FORM" or "OFFICIAL DOCUMENT" */
   tag?: string
-  defaultOpen?: boolean
   children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -117,7 +118,12 @@ export function SettingsCardSection({
       <CollapsibleTrigger asChild>
         <button type="button" className="w-full flex items-center gap-3 py-4 text-left">
           {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
-          <p className="text-base font-medium text-foreground flex-1">{title}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-medium text-foreground">{title}</p>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">{description}</p>
+            )}
+          </div>
           {tag && (
             <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 border border-border/60 rounded px-1.5 py-0.5 shrink-0">
               {tag}
@@ -174,6 +180,49 @@ export function ValueRow({
         {helper && <p className="text-[11px] text-muted-foreground mt-0.5">{helper}</p>}
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  )
+}
+
+/* RadioRowGroup — name + inline radio options (e.g. Required / Optional) */
+export function RadioRowGroup({
+  label, helper, name, options, value, onValueChange,
+}: {
+  label: string
+  helper?: string
+  name: string
+  options: Array<{ value: string; label: string; hint?: string }>
+  value: string
+  onValueChange: (v: string) => void
+}) {
+  return (
+    <div className="py-3 border-t border-border/40 first:border-t-0">
+      <p className="text-sm text-foreground">{label}</p>
+      {helper && <p className="text-[11px] text-muted-foreground mt-0.5">{helper}</p>}
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="mt-2 flex flex-wrap gap-2"
+      >
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={value === opt.value}
+            title={opt.hint}
+            onClick={() => onValueChange(opt.value)}
+            className={
+              'rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ' +
+              (value === opt.value
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground')
+            }
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

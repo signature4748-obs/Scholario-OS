@@ -8,12 +8,11 @@
  * LOCAL midnight — never UTC — to keep date-fns formatting stable.
  *
  * LP-2 additions: entrance/exit motion variants, the AnimatedBar primitive
- * (spring width), a lightweight ConfettiBurst, and the per-unit accent
- * palette used across the Session Plan + Syllabus Library.
+ * (spring width), and the per-unit accent palette used across the Session
+ * Plan + Syllabus Library.
  */
 
 import { motion, type Variants } from 'framer-motion'
-import { useMemo } from 'react'
 import { format, isSameDay, isSameMonth } from 'date-fns'
 import type { LessonPlanPayload, ScheduledTopic, TopicStatus, UnitProgress } from './api'
 
@@ -59,49 +58,6 @@ export function AnimatedBar({
         animate={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         transition={{ type: 'spring', stiffness: 90, damping: 20, delay }}
       />
-    </div>
-  )
-}
-
-// ─── ConfettiBurst — tiny celebration particles (no deps) ───────────────
-
-const CONFETTI_COLORS = ['#10b981', '#f59e0b', '#14b8a6', '#f97316', '#84cc16']
-
-/**
- * Fires a one-shot particle burst. Re-render with a new `fireKey` to
- * explode again. Render inside a `relative` container near the trigger.
- */
-export function ConfettiBurst({ fireKey }: { fireKey: number }) {
-  const burst = useMemo(
-    () =>
-      Array.from({ length: 16 }).map((_, i) => {
-        const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.4
-        const dist = 46 + Math.random() * 42
-        return {
-          key: `${fireKey}-${i}`,
-          x: Math.cos(angle) * dist,
-          y: Math.sin(angle) * dist,
-          scale: 0.5 + Math.random() * 0.9,
-          rotate: Math.random() * 280 - 140,
-          color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-          round: i % 3 === 0,
-        }
-      }),
-    [fireKey],
-  )
-  if (fireKey === 0) return null
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
-      {burst.map((p) => (
-        <motion.span
-          key={p.key}
-          className={p.round ? 'absolute h-1.5 w-1.5 rounded-full' : 'absolute h-2 w-1.5 rounded-[2px]'}
-          style={{ backgroundColor: p.color }}
-          initial={{ opacity: 1, x: 0, y: 0, scale: 0.4, rotate: 0 }}
-          animate={{ opacity: 0, x: p.x, y: p.y, scale: p.scale, rotate: p.rotate }}
-          transition={{ duration: 0.85, ease: [0.15, 0.8, 0.35, 1] }}
-        />
-      ))}
     </div>
   )
 }

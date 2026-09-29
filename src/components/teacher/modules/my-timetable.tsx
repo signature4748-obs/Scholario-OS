@@ -317,12 +317,11 @@ function DayPeriodList({
 
 // ── examination duties (invigilation, assigned by the principal) ─────
 
-/** The client's local day key (YYYY-MM-DD) — duty dates are day keys. */
+/** The "today" key in the SAME convention the server uses for duty dates
+ *  (UTC day keys — exam papers are stored at UTC midnights). A local-time
+ *  key disagreed with the server between 00:00 and 05:30 IST. */
 function localDateKey(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return d.toISOString().slice(0, 10)
 }
 
 /** Date-tile pieces for a duty (UTC day key → weekday / day / month). */

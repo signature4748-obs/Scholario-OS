@@ -62,11 +62,19 @@ interface Props {
   visibleTabs?: readonly TabName[]
   /** Server-authorized real data (teacher view). Absent ⇒ store mode. */
   detail?: StudentProfileRealData
+  /**
+   * Optional tab to open first (must be part of the rendered allowlist —
+   * falls back to the first tab otherwise). Used by workflow entry points
+   * (e.g. a fee collection sheet opening the profile at the Fees tab).
+   */
+  initialTab?: TabName
 }
 
-export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTransfer, backLabel = 'Students & Classes', visibleTabs, detail }: Props) {
+export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTransfer, backLabel = 'Students & Classes', visibleTabs, detail, initialTab }: Props) {
   const tabs = visibleTabs ?? STUDENT_PROFILE_TABS
-  const [activeTab, setActiveTab] = useState<TabName>(tabs[0] ?? 'overview')
+  const [activeTab, setActiveTab] = useState<TabName>(
+    initialTab && tabs.includes(initialTab) ? initialTab : (tabs[0] ?? 'overview'),
+  )
   // Safety: the active tab must always be part of the (possibly
   // role-scoped) allowlist — e.g. if the scope shrinks between renders.
   const currentTab: TabName = tabs.includes(activeTab) ? activeTab : (tabs[0] ?? 'overview')
