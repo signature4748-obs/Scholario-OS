@@ -5,21 +5,26 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET() {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const books = await db.libraryBook.findMany({
-      where: { schoolId },
-      orderBy: { title: 'asc' },
-      include: { _count: { select: { issues: true } } },
-      take: 300,
-    })
-    const issues = await db.bookIssue.findMany({
-      where: { status: 'ISSUED', book: { schoolId } },
-      include: { book: true, student: { include: { user: { select: { name: true } } } } },
-      take: 100,
-    })
-    return { books, issues }
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const books = await db.libraryBook.findMany({
+        where: { schoolId },
+        orderBy: { title: 'asc' },
+        include: { _count: { select: { issues: true } } },
+        take: 300,
+      })
+      const issues = await db.bookIssue.findMany({
+        where: { status: 'ISSUED', book: { schoolId } },
+        include: { book: true, student: { include: { user: { select: { name: true } } } } },
+        take: 100,
+      })
+      return { books, issues }
+    },
+    // Audit §11 — the catalogue + issue register (who holds which book)
+    // is admin-only.
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] },
+  )
 }
 
 export async function POST(req: NextRequest) {

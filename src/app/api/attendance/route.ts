@@ -5,22 +5,27 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const { searchParams } = new URL(req.url)
-    const classId = searchParams.get('classId')
-    const date = searchParams.get('date')
-    const where: Record<string, unknown> = { schoolId }
-    if (classId) where.classId = classId
-    if (date) where.date = new Date(date)
-    const rows = await db.attendance.findMany({
-      where,
-      include: { student: { include: { user: { select: { name: true } } } } },
-      orderBy: { date: 'desc' },
-      take: 500,
-    })
-    return rows
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const { searchParams } = new URL(req.url)
+      const classId = searchParams.get('classId')
+      const date = searchParams.get('date')
+      const where: Record<string, unknown> = { schoolId }
+      if (classId) where.classId = classId
+      if (date) where.date = new Date(date)
+      const rows = await db.attendance.findMany({
+        where,
+        include: { student: { include: { user: { select: { name: true } } } } },
+        orderBy: { date: 'desc' },
+        take: 500,
+      })
+      return rows
+    },
+    // Audit §11 — attendance rosters are staff-only; students read their
+    // own rows through /api/student/dashboard.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] },
+  )
 }
 
 // bulk mark attendance for a class on a date

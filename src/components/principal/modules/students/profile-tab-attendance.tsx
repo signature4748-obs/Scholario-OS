@@ -75,10 +75,22 @@ export function AttendanceTab({ student, real }: Props) {
   }
 
   // ── Principal store view — honest statistics derived from the stored
-  // monthly trend (no fabricated day counts). ─────────────────────────────
+  // monthly trend (no fabricated day counts). A student with no records
+  // at all (fresh admission) shows ONLY the empty state — no fabricated
+  // "0%" average metric. ────────────────────────────────────────────────
   const trend = student.attendanceTrend
+  const hasRecords = trend.length > 0 || student.attendance > 0
   const best = trend.length > 0 ? Math.max(...trend.map((m) => m.percent)) : null
   const belowMin = trend.filter((m) => m.percent < 75).length
+  if (!hasRecords) {
+    return (
+      <div className="py-8 text-center">
+        <Clock3 className="mx-auto h-6 w-6 text-muted-foreground/60" aria-hidden="true" />
+        <p className="mt-2 text-sm text-muted-foreground">No attendance records on file.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Records appear once the class attendance is marked.</p>
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">

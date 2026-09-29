@@ -7,37 +7,42 @@ export const runtime = 'nodejs'
 /// GET /api/fees/transactions?status=SUCCESS&from=2025-04-01&to=2025-04-30&recon=unreconciled
 /// Returns paginated, filtered fee transactions.
 export async function GET(req: NextRequest) {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const { searchParams } = new URL(req.url)
-    const status = searchParams.get('status')
-    const recon = searchParams.get('recon')
-    const method = searchParams.get('method')
-    const from = searchParams.get('from')
-    const to = searchParams.get('to')
-    const limit = Math.min(500, Number(searchParams.get('limit') || 200))
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const { searchParams } = new URL(req.url)
+      const status = searchParams.get('status')
+      const recon = searchParams.get('recon')
+      const method = searchParams.get('method')
+      const from = searchParams.get('from')
+      const to = searchParams.get('to')
+      const limit = Math.min(500, Number(searchParams.get('limit') || 200))
 
-    const where: any = { schoolId }
-    if (status) where.status = status
-    if (recon) where.reconciliationStatus = recon
-    if (method) where.method = method
-    if (from || to) {
-      where.createdAt = {
-        ...(from ? { gte: new Date(from) } : {}),
-        ...(to ? { lte: new Date(to) } : {}),
+      const where: any = { schoolId }
+      if (status) where.status = status
+      if (recon) where.reconciliationStatus = recon
+      if (method) where.method = method
+      if (from || to) {
+        where.createdAt = {
+          ...(from ? { gte: new Date(from) } : {}),
+          ...(to ? { lte: new Date(to) } : {}),
+        }
       }
-    }
 
-    const transactions = await db.feeTransaction.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      include: {
-        settlement: { select: { id: true, payoutId: true, status: true, periodStart: true, periodEnd: true } },
-      },
-    })
-    return transactions
-  })
+      const transactions = await db.feeTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: {
+          settlement: { select: { id: true, payoutId: true, status: true, periodStart: true, periodEnd: true } },
+        },
+      })
+      return transactions
+    },
+    // Audit §11 — the school fee ledger is admin-only; students read
+    // their own payments through /api/student/payments/*.
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] },
+  )
 }
 
 /// POST /api/fees/transactions — record a manual (offline) payment as a

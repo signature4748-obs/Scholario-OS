@@ -36,7 +36,18 @@ export function FeesTab({ student, real }: Props) {
     return <RealFees fees={fees} />
   }
 
-  // ── Principal store view (unchanged) ──────────────────────────────────
+  // ── Principal store view ──────────────────────────────────────────────
+  // Nothing billed yet (fresh admission) renders an honest empty state —
+  // no fabricated ₹0 "Pending" ledger.
+  if (student.feeTotal === 0 && student.feePaid === 0) {
+    return (
+      <div className="py-8 text-center">
+        <IndianRupee className="mx-auto h-6 w-6 text-muted-foreground/60" aria-hidden="true" />
+        <p className="mt-2 text-sm text-muted-foreground">No fee records for this student yet.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Fee lines appear once a fee structure is assigned to their class.</p>
+      </div>
+    )
+  }
   const balance = student.feeTotal - student.feePaid
   const feePct = student.feeTotal > 0 ? Math.round((student.feePaid / student.feeTotal) * 100) : 0
   return (

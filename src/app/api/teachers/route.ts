@@ -6,15 +6,20 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET() {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const teachers = await db.teacher.findMany({
-      where: { schoolId },
-      include: { user: { select: { name: true, email: true, phone: true } } },
-      orderBy: { createdAt: 'desc' },
-    })
-    return teachers
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const teachers = await db.teacher.findMany({
+        where: { schoolId },
+        include: { user: { select: { name: true, email: true, phone: true } } },
+        orderBy: { createdAt: 'desc' },
+      })
+      return teachers
+    },
+    // Audit §11 — staff contact details are admin-only (the student role
+    // has no surface that reads this route).
+    { roles: ['PRINCIPAL', 'MANAGEMENT'] },
+  )
 }
 
 export async function POST(req: NextRequest) {

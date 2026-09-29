@@ -5,16 +5,21 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET() {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const notifs = await db.notification.findMany({
-      where: { schoolId },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: { sender: { select: { name: true } } },
-    })
-    return notifs
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const notifs = await db.notification.findMany({
+        where: { schoolId },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: { sender: { select: { name: true } } },
+      })
+      return notifs
+    },
+    // Audit §11 — staff announcement feed; the student-facing bell feed
+    // is the separately scoped /api/notifications-feed.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] },
+  )
 }
 
 export async function POST(req: NextRequest) {

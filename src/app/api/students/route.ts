@@ -6,25 +6,30 @@ import { withUser, schoolScoped } from '@/lib/api'
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
-  return withUser(async (user) => {
-    const schoolId = schoolScoped(user)
-    const { searchParams } = new URL(req.url)
-    const classId = searchParams.get('classId')
-    const q = searchParams.get('q')
-    const students = await db.student.findMany({
-      where: {
-        schoolId,
-        ...(classId ? { classId } : {}),
-        ...(q
-          ? { OR: [{ user: { name: { contains: q } } }, { admissionNo: { contains: q } }] }
-          : {}),
-      },
-      include: { class: true, user: { select: { name: true, email: true, phone: true } }, route: true },
-      orderBy: { rollNo: 'asc' },
-      take: 200,
-    })
-    return students
-  })
+  return withUser(
+    async (user) => {
+      const schoolId = schoolScoped(user)
+      const { searchParams } = new URL(req.url)
+      const classId = searchParams.get('classId')
+      const q = searchParams.get('q')
+      const students = await db.student.findMany({
+        where: {
+          schoolId,
+          ...(classId ? { classId } : {}),
+          ...(q
+            ? { OR: [{ user: { name: { contains: q } } }, { admissionNo: { contains: q } }] }
+            : {}),
+        },
+        include: { class: true, user: { select: { name: true, email: true, phone: true } }, route: true },
+        orderBy: { rollNo: 'asc' },
+        take: 200,
+      })
+      return students
+    },
+    // Audit §11 — the roster (guardian contacts, addresses, routes) is
+    // staff-only; the student role uses /api/student/* surfaces.
+    { roles: ['PRINCIPAL', 'MANAGEMENT', 'TEACHER'] },
+  )
 }
 
 export async function POST(req: NextRequest) {

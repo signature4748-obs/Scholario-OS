@@ -29,7 +29,6 @@ import {
   DocumentsTab, MedicalTab, ParentsTab, TransportTab,
   DisciplineTab, TimelineTab,
 } from './profile-tabs'
-import { StudentIdentityCodes } from './profile/identity-codes'
 
 export const STUDENT_PROFILE_TABS = ['overview', 'academics', 'attendance', 'fees', 'applications', 'documents', 'medical', 'parents', 'transport', 'discipline', 'timeline'] as const
 export type TabName = (typeof STUDENT_PROFILE_TABS)[number]
@@ -76,18 +75,21 @@ export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTr
   // Destructive actions exist only where a handler was provided (Principal).
   const showActions = !!(onArchive || onRestore || onTransfer)
 
-  // ── Role-aware quick metrics — only what this role actually knows ──────
+  // ── Role-aware quick metrics — only what this role actually knows.
+  // Fresh admissions (store mode, no attendance records / nothing billed)
+  // show honest placeholders instead of fabricated 0% / Pending values. ──
   const attPct = real?.attendance?.pct ?? (real ? null : student.attendance)
+  const attKnown = attPct != null && (real || student.attendanceTrend.length > 0 || student.attendance > 0)
   const avgPct = real?.latestExam?.averagePct ?? (real ? null : student.academics.overallPercent)
   const feeKnown = real ? !!real.fees && real.fees.status !== 'NONE' : true
   const feeValue = real?.fees
     ? (real.fees.status === 'PAID' ? 'Paid' : real.fees.status === 'PARTIAL' ? 'Partial' : real.fees.outstanding > 0 ? 'Due' : 'Paid')
-    : student.feeStatus
+    : student.feeTotal > 0 ? student.feeStatus : 'Not billed'
   const metrics = [
-    attPct != null && { icon: <Activity className="h-3.5 w-3.5" />, label: 'Attendance', value: `${attPct}%`, color: 'text-emerald-600 dark:text-emerald-400' },
-    avgPct != null && { icon: <GraduationCap className="h-3.5 w-3.5" />, label: 'Average', value: `${avgPct}%`, color: 'text-violet-600 dark:text-violet-400' },
-    !real && { icon: <TrendingUp className="h-3.5 w-3.5" />, label: 'Rank', value: `#${student.academics.rankInClass}`, color: 'text-amber-600 dark:text-amber-400' },
-    feeKnown && { icon: <IndianRupee className="h-3.5 w-3.5" />, label: 'Fee', value: feeValue, color: feeValue === 'Paid' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' },
+    attKnown && { icon: <Activity className="h-3.5 w-3.5" />, label: 'Attendance', value: `${attPct}%`, color: 'text-emerald-600 dark:text-emerald-400' },
+    avgPct != null && (real || student.academics.overallPercent > 0) && { icon: <GraduationCap className="h-3.5 w-3.5" />, label: 'Average', value: `${avgPct}%`, color: 'text-violet-600 dark:text-violet-400' },
+    !real && student.academics.overallPercent > 0 && { icon: <TrendingUp className="h-3.5 w-3.5" />, label: 'Rank', value: `#${student.academics.rankInClass}`, color: 'text-amber-600 dark:text-amber-400' },
+    feeKnown && { icon: <IndianRupee className="h-3.5 w-3.5" />, label: 'Fee', value: feeValue, color: feeValue === 'Paid' ? 'text-emerald-600 dark:text-emerald-400' : feeValue === 'Not billed' ? 'text-muted-foreground' : 'text-rose-600 dark:text-rose-400' },
   ].filter(Boolean) as { icon: React.ReactNode; label: string; value: string; color: string }[]
   const metricsGrid = metrics.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' : metrics.length === 3 ? 'grid-cols-3' : 'grid-cols-2'
 
@@ -163,12 +165,7 @@ export function StudentProfilePage({ student, onBack, onArchive, onRestore, onTr
 
       {/* Tab content */}
       <div className="max-w-4xl">
-        {currentTab === 'overview' && (
-          <div className="space-y-4">
-            <OverviewTab student={student} real={real} />
-            {!real && <StudentIdentityCodes student={student} />}
-          </div>
-        )}
+        {currentTab === 'overview' && <OverviewTab student={student} real={real} />}
         {currentTab === 'academics' && <AcademicsTab student={student} real={real} />}
         {currentTab === 'attendance' && <AttendanceTab student={student} real={real} />}
         {currentTab === 'fees' && <FeesTab student={student} real={real} />}

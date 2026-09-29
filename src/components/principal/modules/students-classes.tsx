@@ -78,14 +78,19 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
   const handleRestore = (st: StudentRecord) => {
     store.restoreStudent(st.id, 'Dr. Ananya Iyer')
     toast.success(`${st.name} restored`)
-    const fresh = store.students.find((x) => x.id === st.id)
+    // Read the post-action record through getState() — the render-scope
+    // `store` snapshot is stale inside this closure, so re-setting it
+    // would keep the profile header on the pre-action class/status.
+    const fresh = useStudentsStore.getState().students.find((x) => x.id === st.id)
     if (fresh && profileStudent?.id === st.id) setProfileStudent(fresh)
   }
   const confirmTransfer = () => {
     if (!transferTarget || !transferToClass) { toast.error('Select target class'); return }
     store.transferStudent(transferTarget.id, 'Class Change', transferToClass, 'Class Change requested', 'Dr. Ananya Iyer')
     toast.success(`${transferTarget.name} transferred`); setTransferTarget(null)
-    const fresh = store.students.find((x) => x.id === transferTarget.id)
+    // Same stale-snapshot guard as handleRestore — the open profile must
+    // reflect the new class the moment the transfer confirms (TEST D).
+    const fresh = useStudentsStore.getState().students.find((x) => x.id === transferTarget.id)
     if (fresh && profileStudent?.id === transferTarget.id) setProfileStudent(fresh)
   }
 
