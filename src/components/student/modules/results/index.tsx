@@ -124,8 +124,8 @@ export function ResultsModule() {
   )
   const selected = selectedIdx >= 0 ? ctx.published[selectedIdx] : null
   const selectedResult = useMemo(
-    () => (selected ? resultFor(results, selected.id) : null),
-    [results, selected],
+    () => (selected ? resultFor(results, selected.id, ctx.studentId) : null),
+    [results, selected, ctx.studentId],
   )
 
   const selectedTotals = selectedResult ? totalsOf(selectedResult) : null
@@ -137,8 +137,8 @@ export function ResultsModule() {
 
   const previous = selectedIdx > 0 ? ctx.published[selectedIdx - 1] : null
   const previousResult = useMemo(
-    () => (previous ? resultFor(results, previous.id) : null),
-    [results, previous],
+    () => (previous ? resultFor(results, previous.id, ctx.studentId) : null),
+    [results, previous, ctx.studentId],
   )
   const previousTotals = previousResult ? totalsOf(previousResult) : null
 
@@ -152,11 +152,16 @@ export function ResultsModule() {
     [selectedResult, previousResult],
   )
 
+  // Identity — the session student's canonical record (never a demo id);
+  // neutral placeholders only for the brief unresolved window. ctx.studentId
+  // is the SAME resolved id useMyResults threads through every derivation,
+  // so the lookups below can never fall back to another student's rows.
   const identity = {
-    name: ctx.student?.name ?? 'Aarav Sharma',
-    admissionNo: ctx.student?.admissionNo ?? 'DSO2024058',
+    studentId: ctx.student?.id ?? ctx.studentId,
+    name: ctx.student?.name ?? '—',
+    admissionNo: ctx.student?.admissionNo ?? '—',
     classSection: `${ctx.className}-${ctx.section}`,
-    rollNo: ctx.student?.rollNo ?? '18',
+    rollNo: ctx.student?.rollNo ?? '—',
   }
 
   /* ── EMPTY STATE — nothing published for this session yet (§44) ── */
@@ -244,6 +249,7 @@ export function ResultsModule() {
               upcoming={ctx.upcoming}
               results={results}
               gradeScale={gradeScale}
+              studentId={ctx.studentId}
               selectedId={selected.id}
               onSelect={setSelectedId}
             />

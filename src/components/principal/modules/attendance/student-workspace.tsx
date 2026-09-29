@@ -16,7 +16,7 @@
  * AttendanceInsights.
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Filter, CalendarCheck, UserCheck, UserX, Clock, ArrowUpRight, ArrowDownRight, Download } from 'lucide-react'
 import { PageTransition } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,6 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import {
   classSections,
   getClassSection,
-  getAllSectionsToday,
   getClassWeeklyTrend,
   getClassMonthlyTrend,
 } from '@/lib/mock/attendance'
@@ -32,8 +31,9 @@ import { formatNumber } from '@/lib/format'
 import { ModuleHeader } from '../shared/module-header'
 import { OverviewCharts } from './overview-charts'
 import { AttendanceHeatmap } from './heatmap'
-import { ClassReport } from './class-report'
-import { AttendanceInsights } from './insights'
+import { ClassReport, type ClassReportRow } from './class-report'
+import { AttendanceInsights, type AttendanceInsightsData } from './insights'
+import { useAttendanceOverview } from './use-attendance-overview'
 
 interface StudentWorkspaceProps {
   classFilter: string
@@ -45,22 +45,66 @@ interface StudentWorkspaceProps {
 export function StudentWorkspace({
   classFilter, setClassFilter, onExport, onViewFullAttendance,
 }: StudentWorkspaceProps) {
+  // attendance-overview-real — school-wide figures come from the canonical
+  // Attendance table (GET /api/attendance/overview, session-cached). The
+  // per-class branch below still reads classSections (per-class roster
+  // workstream); only the All-Classes path was fabricated school-wide.
+  const { data } = useAttendanceOverview()
   const [selectedDay, setSelectedDay] = useState<number | null>(10)
 
   // Brief §10: derive ALL metrics from classFilter
   const isAllClasses = classFilter === 'all'
   const section = getClassSection(classFilter)
 
-  const { todaysRate, present, absent, late, leave, total } = useMemo(() => {
+  // Per-class weekly + monthly trends (All-Classes = real recorded series).
+  // Hooks stay unconditional — the loading early-return below comes after.
+  const weeklyTrend = useMemo(
+    () => (isAllClasses
+      ? (data?.weekTrend ?? []).map((d) => ({ day: d.day, present: d.present, rate: d.rate }))
+      : getClassWeeklyTrend(classFilter)),
+    [isAllClasses, classFilter, data],
+  )
+  const monthlyTrend = useMemo(
+    () => (isAllClasses
+      ? (data?.monthly ?? []).map((m) => ({ month: m.month, rate: m.rate }))
+      : getClassMonthlyTrend(classFilter)),
+    [isAllClasses, classFilter, data],
+  )
+
+  // attendance-overview-real — the real "today" of the dataset (latest
+  // recorded date); anchors the header month, the heatmap's opening month
+  // and the default selected day.
+  const latestDate = data?.today.date ?? null
+
+  // Default the selected day to the latest recorded day once data lands
+  // (mirrors the old Dec-10 "demo today" default with the real date).
+  useEffect(() => {
+    if (!latestDate) return
+    setSelectedDay(Number(latestDate.slice(8, 10)))
+  }, [latestDate])
+
+  // Loading state — one centered pulse tile (app-shell skeleton pattern)
+  // until the canonical overview lands.
+  if (!data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 animate-pulse" />
+      </div>
+    )
+  }
+
+  const { todaysRate, present, absent, late, leave, total } = (() => {
     if (isAllClasses || !section) {
-      const all = getAllSectionsToday()
+      // attendance-overview-real — latest RECORDED day, honest denominator
+      // (distinct students marked that day, not school size).
+      const t = data.today
       return {
-        todaysRate: all.rate,
-        present: all.present,
-        absent: all.absent,
-        late: all.late,
-        leave: all.leave,
-        total: all.total,
+        todaysRate: t.rate,
+        present: t.present,
+        absent: t.absent,
+        late: t.late,
+        leave: t.leave,
+        total: t.total,
       }
     }
     return {
@@ -71,11 +115,7 @@ export function StudentWorkspace({
       leave: section.leave,
       total: section.total,
     }
-  }, [isAllClasses, section])
-
-  // Per-class weekly + monthly trends
-  const weeklyTrend = useMemo(() => getClassWeeklyTrend(classFilter), [classFilter])
-  const monthlyTrend = useMemo(() => getClassMonthlyTrend(classFilter), [classFilter])
+  })()
 
   // KPI contextual info — derived from REAL data
   const yesterdayRate = weeklyTrend[weeklyTrend.length - 2]?.rate ?? todaysRate
@@ -83,11 +123,44 @@ export function StudentWorkspace({
   const absentPct = total > 0 ? +((absent / total) * 100).toFixed(1) : 0
   const latePct = total > 0 ? +((late / total) * 100).toFixed(1) : 0
 
+  // Header month label + heatmap opening month — from the latest recorded date.
+  const monthMeta = latestDate
+    ? new Date(Number(latestDate.slice(0, 4)), Number(latestDate.slice(5, 7)) - 1, 1)
+        .toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : ''
+  const initialMonth = latestDate
+    ? { year: Number(latestDate.slice(0, 4)), month: Number(latestDate.slice(5, 7)) }
+    : undefined
+
+  // attendance-overview-real — grade-group rows for the Class-wise Report
+  // (All-Classes) + the three headline insight cards.
+  const schoolRows: ClassReportRow[] = data.byClass.map((g) => ({
+    class: g.class,
+    rate: g.rate,
+    total: g.students,
+    present: g.present,
+    late: g.late,
+    absent: g.absent,
+    leave: g.leave,
+  }))
+  const insightsData: AttendanceInsightsData = (() => {
+    const sorted = [...data.byClass].sort((a, b) => b.rate - a.rate)
+    const best = sorted[0] ?? null
+    const needs = sorted.length > 1 ? sorted[sorted.length - 1] : null
+    return {
+      best: best ? { class: best.class, rate: best.rate, students: best.students } : null,
+      needs: needs ? { class: needs.class, rate: needs.rate, students: needs.students } : null,
+      average: data.today.total > 0
+        ? { rate: data.today.rate, classes: data.byClass.length, students: data.today.total }
+        : null,
+    }
+  })()
+
   return (
     <PageTransition className="space-y-4">
       {/* Brief PART 3: compact All Classes filter; QA-FIX-A: real CSV Export */}
       <ModuleHeader
-        meta={[`December 2025`, isAllClasses ? 'All Classes' : (section?.name ?? '')]}
+        meta={[monthMeta, isAllClasses ? 'All Classes' : (section?.name ?? '')]}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -164,12 +237,15 @@ export function StudentWorkspace({
         selectedDay={selectedDay}
         setSelectedDay={setSelectedDay}
         onViewFullAttendance={onViewFullAttendance}
+        daily={data.daily}
+        initialMonth={initialMonth}
       />
 
-      <ClassReport classFilter={classFilter} />
+      <ClassReport classFilter={classFilter} schoolRows={schoolRows} />
 
       <AttendanceInsights
         classFilter={classFilter}
+        insights={insightsData}
         onViewAllClasses={() => {
           // Brief §11: View all classes → currently no full screen modal,
           // could navigate to a dedicated page later. For now, switch filter

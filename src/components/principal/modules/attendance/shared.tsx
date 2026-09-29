@@ -11,10 +11,18 @@
 
 import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, CalendarOff } from 'lucide-react'
-import { attendanceOverview } from '@/lib/mock/attendance'
 import type { Holiday } from '@/lib/mock/school-calendar'
 import { formatNumber } from '@/lib/format'
 import { ATTENDANCE_PALETTE } from './attendance-charts'
+
+/** Real per-date school-wide breakdown (from GET /api/attendance/overview). */
+export interface SelectedDayStats {
+  present: number
+  late: number
+  absent: number
+  leave: number
+  rate: number
+}
 
 export function CalendarLegend() {
   return (
@@ -50,16 +58,24 @@ export function CalendarLegend() {
  *
  * Brief PART 35: when the selected day is a holiday, shows the holiday name
  *   instead of attendance counts.
+ *
+ * attendance-overview-real: the day's figures come from the caller as
+ * `stats` (real recorded breakdown for that date, derived at the call
+ * site from GET /api/attendance/overview). null ⇒ no attendance was
+ * recorded on that day — shown honestly instead of fabricated numbers.
  */
 export function SelectedDayPanel({
   selectedDay,
   dateStr,
   holiday,
+  stats,
   onViewFullAttendance,
 }: {
   selectedDay: number
   dateStr: string
   holiday: Holiday | null
+  /** real recorded breakdown for dateStr; null when the day has no rows */
+  stats?: SelectedDayStats | null
   onViewFullAttendance?: () => void
 }) {
   const reduce = useReducedMotion()
@@ -102,18 +118,41 @@ export function SelectedDayPanel({
     )
   }
 
-  // Compute the rate from the dateStr — derive deterministically per date.
-  // This matches the buildMonthCalendar() rate formula.
-  const seed = y * 10000 + m * 100 + d
-  let rate = 88 + Math.round(Math.sin(seed * 0.6) * 4 + Math.cos(seed * 0.3) * 3 + 4)
-  rate = Math.max(82, Math.min(98, rate))
+  // attendance-overview-real: no recorded rows for this day — honest
+  // empty state (same panel chrome, no fabricated rate/counts).
+  if (!stats) {
+    return (
+      <motion.div
+        initial={reduce ? false : { opacity: 0, y: 6, height: 0 }}
+        animate={{ opacity: 1, y: 0, height: 'auto' }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        className="mt-3 rounded-lg border border-primary/30 bg-primary/5 overflow-hidden"
+      >
+        <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-primary/20 bg-primary/5">
+          <div className="min-w-0">
+            <p className="text-[9px] uppercase tracking-wider font-semibold text-primary">Selected Day</p>
+            <p className="text-xs font-semibold text-foreground truncate">{dateLabel}</p>
+          </div>
+          <div className="flex items-baseline gap-1 shrink-0">
+            <span className="font-display text-2xl font-bold tabular-nums text-primary">—</span>
+            <span className="text-[10px] text-muted-foreground">attendance</span>
+          </div>
+        </div>
+        <div className="px-3 py-2">
+          <p className="text-[10px] text-muted-foreground italic">
+            No attendance was recorded on this day.
+          </p>
+        </div>
+      </motion.div>
+    )
+  }
 
-  // Derived counts — same proportional computation as before (Brief §29).
-  const total = attendanceOverview.today.total
-  const presentCount = Math.round(total * rate / 100)
-  const lateCount = Math.round(total * 0.012)
-  const absentCount = Math.max(0, total - presentCount - lateCount - Math.round(total * 0.005))
-  const leaveCount = Math.round(total * 0.005)
+  // Real recorded breakdown for the selected date (passed from the caller).
+  const rate = stats.rate
+  const presentCount = stats.present
+  const lateCount = stats.late
+  const absentCount = stats.absent
+  const leaveCount = stats.leave
 
   return (
     <motion.div

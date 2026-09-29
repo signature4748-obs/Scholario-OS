@@ -10,7 +10,7 @@ import { GlassCard } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { getVirtualOccupied, type StudentRecord, type StudentsState } from '@/lib/store/students-store'
+import type { StudentRecord, StudentsState } from '@/lib/store/students-store'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 
 interface OverviewTabProps {
@@ -25,10 +25,9 @@ export function OverviewTab({ store, onNavigateToClasses }: OverviewTabProps) {
   const activeStudents = useMemo(() => students.filter((s) => s.status === 'Active'), [students])
   const inactiveStudents = useMemo(() => students.filter((s) => s.status !== 'Active'), [students])
 
-  const totalStudents = useMemo(
-    () => classes.reduce((a, c) => a + c.sections.reduce((sa, s) => sa + getVirtualOccupied(s.id, s.capacity), 0), 0),
-    [classes]
-  )
+  // Real enrolled count — ACTIVE students on the roster (the store is
+  // DB-hydrated), replacing the old virtual-occupancy estimate.
+  const totalStudents = activeStudents.length
   const totalCapacity = useMemo(
     () => classes.reduce((a, c) => a + c.sections.reduce((sa, s) => sa + s.capacity, 0), 0),
     [classes]
@@ -39,9 +38,11 @@ export function OverviewTab({ store, onNavigateToClasses }: OverviewTabProps) {
   const girls = totalStudents - boys
   const occupancyPct = totalCapacity > 0 ? Math.round((totalStudents / totalCapacity) * 100) : 0
 
+  // REAL over-capacity detection — enrolled = ACTIVE roster students in the
+  // class; capacity = the sum of its section capacities.
   const overloadedClasses = useMemo(
-    () => classes.filter((c) => c.sections.reduce((a, s) => a + getVirtualOccupied(s.id, s.capacity), 0) > c.sections.reduce((a, s) => a + s.capacity, 0)),
-    [classes]
+    () => classes.filter((c) => students.filter((s) => s.classId === c.id && s.status === 'Active').length > c.sections.reduce((a, s) => a + s.capacity, 0)),
+    [classes, students]
   )
 
   const insights = useMemo(() => [
@@ -50,14 +51,15 @@ export function OverviewTab({ store, onNavigateToClasses }: OverviewTabProps) {
     { icon: <Lightbulb className="h-4 w-4" />, color: 'violet', title: `${occupancyPct}% total seat utilization`, desc: `${formatNumber(totalStudents)} of ${formatNumber(totalCapacity)} seats filled across ${classes.length} active classes.` },
   ], [overloadedClasses, occupancyPct, totalStudents, totalCapacity, classes.length])
 
+  // REAL level distribution — ACTIVE students grouped by their class's level.
   const levelDistribution = useMemo(() => {
     const levels = ['Pre-Primary', 'Primary', 'Middle', 'Secondary', 'Senior Secondary']
+    const levelByClass = new Map(classes.map((c) => [c.id, c.level]))
     return levels.map((level) => {
-      const lc = classes.filter((c) => c.level === level)
-      const value = lc.reduce((a, c) => a + c.sections.reduce((sa, s) => sa + getVirtualOccupied(s.id, s.capacity), 0), 0)
+      const value = activeStudents.filter((s) => levelByClass.get(s.classId) === level).length
       return { name: level.replace('Senior Secondary', 'Sr Sec'), value }
     }).filter((d) => d.value > 0)
-  }, [classes])
+  }, [classes, activeStudents])
 
   const ageGroups = [
     { label: 'Pre-Primary (3-5 yrs)', count: Math.round(totalStudents * 0.12), pct: 12 },

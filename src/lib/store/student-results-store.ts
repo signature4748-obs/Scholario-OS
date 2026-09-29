@@ -34,7 +34,7 @@
 
 import { create } from 'zustand'
 import { useMemo } from 'react'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useStudentsStore, useMyStudentRecord } from '@/lib/store/students-store'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
 
 /* ─── Types ────────────────────────────────────────────────────────── */
@@ -105,7 +105,16 @@ export interface StudentResultsState {
   resetToSeed: () => void
 }
 
-/* ─── Seed — AY 2026–2027, Class 2-A (demo student STU-58) ─────────── */
+/* ─── Seed — AY 2026–2027, Class 2-A (demo student STU-58) ───────────
+ *
+ * SEED-ONLY constant: it keys the legacy demo rows and nothing else.
+ * Identity resolution NEVER defaults to it any more — every reader
+ * resolves the session student through useMyStudentRecord (userId →
+ * email → the legacy demo record while the first roster sync is still
+ * in flight) and threads THAT id through the derivation helpers below.
+ * Post-sync the canonical student simply has no row here → the honest
+ * "No published results yet" state renders (never another student's
+ * marks). ────────────────────────────────────────────────────────── */
 
 const STUDENT_ID = 'STU-58'
 
@@ -320,8 +329,11 @@ export function totalsOf(result: AssessmentResult): AssessmentTotals {
   return { obtained, max, pct: pctOf(obtained, max) }
 }
 
-/** The student's result row for one assessment (or null). */
-export function resultFor(results: AssessmentResult[], assessmentId: string, studentId: string = STUDENT_ID): AssessmentResult | null {
+/** The student's result row for one assessment (or null). The caller
+ * supplies the resolved session student's id — there is deliberately NO
+ * demo-id default (an implicit default would leak another student's
+ * marks once the canonical roster replaces the mock universe). */
+export function resultFor(results: AssessmentResult[], assessmentId: string, studentId: string): AssessmentResult | null {
   return results.find((r) => r.assessmentId === assessmentId && r.studentId === studentId) ?? null
 }
 
@@ -374,7 +386,7 @@ export function classStandingsOf(
   assessmentId: string,
   roster: { id: string; name: string; rollNo: string; overallPercent: number }[],
   myPercentage: number,
-  myStudentId: string = STUDENT_ID,
+  myStudentId: string,
 ): ClassStanding[] {
   const entries = roster.map((st) => ({
     studentId: st.id,
@@ -403,7 +415,7 @@ export function trendOf(
   assessments: AssessmentDef[],
   results: AssessmentResult[],
   scale: GradeBand[],
-  studentId: string = STUDENT_ID,
+  studentId: string,
 ): TrendPoint[] {
   return publishedAssessments(assessments).flatMap((a) => {
     const r = resultFor(results, a.id, studentId)
@@ -457,7 +469,7 @@ export interface SubjectSnapshot {
 export function subjectSnapshotOf(
   assessments: AssessmentDef[],
   results: AssessmentResult[],
-  studentId: string = STUDENT_ID,
+  studentId: string,
 ): SubjectSnapshot {
   const order = new Map(publishedAssessments(assessments).map((a) => [a.id, a.publishDate]))
   const byPublishOrder = (a: AssessmentResult, b: AssessmentResult) => {
@@ -524,15 +536,21 @@ export interface LatestResultSnapshot {
 /**
  * useMyResults — the ONE composite reader for Student Results surfaces
  * (module, Dashboard academic tiles, Profile academic line). Resolves:
- * authenticated demo student → enrollment → active session results →
- * school-configured grading + privacy policy. External consumers get
- * the latest published result snapshot WITHOUT duplicating any
- * derivation logic (§34: one result source).
+ * canonical session identity (useMyStudentRecord — session user →
+ * roster record; the legacy demo record covers the pre-sync paint) →
+ * enrollment → active session results → school-configured grading +
+ * privacy policy. External consumers get the latest published result
+ * snapshot WITHOUT duplicating any derivation logic (§34: one source).
  */
-export function useMyResults(studentId: string = STUDENT_ID) {
+export function useMyResults(studentId?: string) {
   const assessments = useStudentResultsStore((s) => s.assessments)
   const results = useStudentResultsStore((s) => s.results)
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === studentId))
+  // Canonical identity — when the caller doesn't pin a student, resolve
+  // the session user's OWN record (userId → email → the legacy demo
+  // record while the first roster sync is still in flight).
+  const me = useMyStudentRecord()
+  const resolvedId = studentId ?? me?.id ?? ''
+  const student = useStudentsStore((s) => s.students.find((x) => x.id === resolvedId))
   const className = student?.className ?? 'Class 2'
   const section = student?.section ?? 'A'
   const roster = useClassRoster(className, section)
@@ -546,25 +564,25 @@ export function useMyResults(studentId: string = STUDENT_ID) {
 
   const published = useMemo(() => publishedAssessments(assessments), [assessments])
   const upcoming = useMemo(() => upcomingAssessments(assessments), [assessments])
-  const trend = useMemo(() => trendOf(assessments, results, gradeScale, studentId), [assessments, results, gradeScale, studentId])
+  const trend = useMemo(() => trendOf(assessments, results, gradeScale, resolvedId), [assessments, results, gradeScale, resolvedId])
   const insight = useMemo(() => insightOf(trend), [trend])
-  const snapshot = useMemo(() => subjectSnapshotOf(assessments, results, studentId), [assessments, results, studentId])
+  const snapshot = useMemo(() => subjectSnapshotOf(assessments, results, resolvedId), [assessments, results, resolvedId])
 
   /** Standings per published assessment — ONE derivation each (§35). */
   const standings = useMemo(() => {
     const map = new Map<string, ClassStanding[]>()
     for (const a of published) {
-      const r = resultFor(results, a.id, studentId)
+      const r = resultFor(results, a.id, resolvedId)
       const mine = r ? totalsOf(r).pct : 0
-      map.set(a.id, classStandingsOf(a.id, roster, mine, studentId))
+      map.set(a.id, classStandingsOf(a.id, roster, mine, resolvedId))
     }
     return map
-  }, [published, results, roster, studentId])
+  }, [published, results, roster, resolvedId])
 
   const latest: LatestResultSnapshot | null = useMemo(() => {
     if (published.length === 0) return null
     const assessment = published[published.length - 1]
-    const result = resultFor(results, assessment.id, studentId)
+    const result = resultFor(results, assessment.id, resolvedId)
     if (!result) return null
     const totals = totalsOf(result)
     const list = standings.get(assessment.id) ?? []
@@ -577,10 +595,14 @@ export function useMyResults(studentId: string = STUDENT_ID) {
       rank: showRank ? (mine?.rank ?? null) : null,
       classSize: list.length,
     }
-  }, [published, results, studentId, standings, gradeScale, showRank])
+  }, [published, results, resolvedId, standings, gradeScale, showRank])
 
   return {
     student: student ?? null,
+    /** The resolved session student's id (seed demo record pre-sync,
+     * canonical DB id after) — consumers thread it into the exported
+     * derivation helpers instead of relying on any default identity. */
+    studentId: resolvedId,
     className,
     section,
     published,

@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:seed": "bun prisma/seed.ts",
+    "db:seed-roster": "bun prisma/seed-roster-150.ts",
     "db:seed-study-materials": "bun prisma/seed-study-materials.ts",
     "db:seed-learning": "bun prisma/seed-learning.ts",
     "db:seed-dashboard": "bun prisma/seed-student-dashboard.ts",

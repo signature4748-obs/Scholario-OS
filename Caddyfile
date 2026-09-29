@@ -1,23 +1,82 @@
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+        @transform_port_query {
+                query XTransformPort=*
+        }
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle @transform_port_query {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 
-	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
+
+        # Asset Guard gateway layer — when the dev server is mid-restart
+        # (watchdog respawn / OOM guard), the reverse proxy fails. Instead
+        # of a blank browser error page the visitor gets a branded,
+        # self-healing "Scholario is restarting" screen that polls and
+        # returns to the fully styled application the moment the server
+        # is back. (Counterpart of the in-app asset watchdog.)
+        handle_errors {
+                respond `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scholario is restarting…</title>
+<style>
+  html,body{margin:0;height:100%}
+  body{display:flex;align-items:center;justify-content:center;background:#f8fbf9;color:#0c1f17;
+       font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;text-align:center;padding:24px}
+  @media (prefers-color-scheme:dark){body{background:#06140f;color:#e8f5ee}.muted{color:#8fb8a5!important}}
+  .card{max-width:440px}
+  .mark{display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;
+        border-radius:16px;margin-bottom:20px;background:#0d9488;color:#fff;font-weight:800;font-size:26px}
+  h1{font-size:20px;font-weight:700;margin:0 0 10px}
+  p{font-size:14px;line-height:1.6;margin:0 0 6px}
+  .muted{color:#5b7a6b}
+  .pulse{width:10px;height:10px;border-radius:50%;background:#0d9488;display:inline-block;
+         margin-right:8px;animation:p 1.2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:.25}50%{opacity:1}}
+  button{appearance:none;border:0;cursor:pointer;border-radius:10px;padding:11px 26px;
+         font-size:14px;font-weight:600;background:#0d9488;color:#fff;margin-top:16px}
+  .word{margin-top:26px;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#5b7a6b}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark">S</div>
+    <h1>Scholario is restarting.</h1>
+    <p class="muted">The workspace server is taking a moment to come back.
+       This screen returns to your application automatically.</p>
+    <p class="muted"><span class="pulse"></span><span id="status">Reconnecting…</span></p>
+    <button onclick="location.reload()">Retry now</button>
+    <div class="word">SCHOLARIO &middot; School OS</div>
+  </div>
+<script>
+  var tries = 0;
+  var t = setInterval(function () {
+    tries++;
+    document.getElementById('status').textContent = 'Reconnecting… (attempt ' + tries + ')';
+    fetch('/', { method: 'GET', cache: 'no-store' }).then(function (r) {
+      if (r.ok && (r.headers.get('content-type') || '').includes('text/html')) {
+        clearInterval(t);
+        location.reload();
+      }
+    }).catch(function () {});
+  }, 4000);
+</script>
+</body>
+</html>` 502
+        }
 }

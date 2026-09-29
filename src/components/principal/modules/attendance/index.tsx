@@ -18,14 +18,14 @@
 import { useState, useCallback } from 'react'
 import { PageTransition } from '@/components/shared/ui'
 import { toast } from 'sonner'
-import { attendanceOverview, classSections } from '@/lib/mock/attendance'
+import { classSections } from '@/lib/mock/attendance'
 import { downloadCSVFile, safeFileName } from '@/lib/download-file'
 import { toCsv } from '@/lib/csv'
 import { AttendanceTabs, type AttendanceTab } from './attendance-tabs'
 import { StudentWorkspace } from './student-workspace'
 import { StaffAttendanceTab } from './staff-tab'
 import { AttendanceHistoryTab } from './history-tab'
-import { classTotalForIndex } from './data'
+import { useAttendanceOverview } from './use-attendance-overview'
 
 export function AttendanceModule() {
   const [activeTab, setActiveTab] = useState<AttendanceTab>('overview')
@@ -38,19 +38,17 @@ export function AttendanceModule() {
   // Brief §18: Export respects current tab + filter context.
   // QA-FIX-A: REAL CSV download of the Overview's class-wise summary table
   // (the exact rows ClassReport renders), respecting the class filter.
+  // attendance-overview-real — All-Classes rows come from the canonical
+  // Attendance table (session-cached hook; same fetch as the Overview tab).
+  const { data: overview } = useAttendanceOverview()
   const handleExport = useCallback(() => {
     // Mirror ClassReport's row derivation (class-report.tsx).
     const statusFor = (pct: number) =>
       pct >= 95 ? 'Excellent' : pct >= 90 ? 'Good' : pct >= 85 ? 'Average' : 'Needs Attention'
     const rows: (string | number)[][] = []
     if (classFilter === 'all') {
-      attendanceOverview.byClass.slice(0, 10).forEach((r, i) => {
-        const total = classTotalForIndex(i)
-        const present = Math.round((total * r.rate) / 100)
-        const late = 2
-        const absent = Math.max(0, total - present - late)
-        const leave = Math.max(0, Math.round(total * 0.005))
-        rows.push([r.class, total, present, absent, late, leave, r.rate, statusFor(Math.round(r.rate))])
+      (overview?.byClass ?? []).slice(0, 10).forEach((r) => {
+        rows.push([r.class, r.students, r.present, r.absent, r.late, r.leave, r.rate, statusFor(Math.round(r.rate))])
       })
     } else {
       const section = classSections.find((c) => c.id === classFilter)
@@ -75,7 +73,7 @@ export function AttendanceModule() {
     toast.success('Attendance report exported', {
       description: `${filename} · ${rows.length} class summar${rows.length === 1 ? 'y' : 'ies'} · ${scope}`,
     })
-  }, [classFilter])
+  }, [classFilter, overview])
 
   // Brief PART 8 + §19: View full attendance from heatmap → switch to
   // History tab with the date pre-filled. Accepts ISO date string (YYYY-MM-DD).

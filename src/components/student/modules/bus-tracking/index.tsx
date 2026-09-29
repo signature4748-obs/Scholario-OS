@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { GlassCard } from '@/components/shared/ui'
 import { myBusRoute, myBusStops } from '@/lib/mock/bus-tracking'
 import { useTransportStore } from '@/lib/store/transport-store'
+import { useMyStudentRecord } from '@/lib/store/students-store'
 import { cn } from '@/lib/utils'
 import { KpiRow } from './kpi-row'
 import { LiveMap } from './live-map'
@@ -14,8 +15,9 @@ import { StopsTimeline } from './stops-timeline'
 import { TripHistory } from './trip-history'
 import { SafetyCard } from './safety-card'
 
-/** Canonical demo student (the same id the sibling student modules key on). */
-const STUDENT_ID = 'STU-58'
+// (Identity: the route-change banner is scoped to the session student's
+// OWN canonical id — resolved through useMyStudentRecord, never a
+// hardcoded demo id.)
 
 function formatEffectiveDate(iso: string): string {
   const d = new Date(iso)
@@ -25,6 +27,8 @@ function formatEffectiveDate(iso: string): string {
 }
 
 export function BusTrackingModule() {
+  // Canonical identity — the session user's own roster record.
+  const student = useMyStudentRecord()
   const [trip, setTrip] = useState<'pickup' | 'drop'>('pickup')
   const [eta, setEta] = useState(myBusRoute.etaMinutes)
   const [progress, setProgress] = useState(0)
@@ -35,7 +39,7 @@ export function BusTrackingModule() {
   const routeChange = useTransportStore((s) => s.routeChange)
   const dismissRouteChange = useTransportStore((s) => s.dismissRouteChange)
   // The store field is global — only the affected student sees their banner.
-  const myRouteChange = routeChange?.studentId === STUDENT_ID ? routeChange : null
+  const myRouteChange = routeChange?.studentId === (student?.id ?? '') ? routeChange : null
 
   // T4-C — honest live-data behaviour: while the tab is hidden BOTH clocks
   // stop (the simulation AND the freshness ticker) and the UI says

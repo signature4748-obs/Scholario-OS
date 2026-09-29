@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/shared/theme-provider";
 import { VersionGuard } from "@/components/shared/version-guard";
+import { ASSET_WATCHDOG_SCRIPT } from "@/components/shared/asset-guard/inline-watchdog";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -100,6 +101,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} antialiased bg-background text-foreground`}
       >
+        {/* Asset Guard (root-cause fix for the raw/unstyled page flash):
+            inline, dependency-free watchdog. Verifies the critical CSS
+            actually applied after load; retries transient stylesheet
+            failures (dev-server restart windows) and shows a branded
+            recovery screen — NEVER raw browser-default HTML. */}
+        <script dangerouslySetInnerHTML={{ __html: ASSET_WATCHDOG_SCRIPT }} />
         <ThemeProvider>
           {/* Global a11y (SR-UI §21/§27): every framer-motion animation
               respects the OS "prefers-reduced-motion" setting. */}

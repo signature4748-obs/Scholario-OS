@@ -8,10 +8,10 @@
  * Principal attendance UI writes. When staff correct a record, the
  * student sees the updated status here live.
  *
- * Resolution chain: authenticated demo student → enrollment (class +
- * section, never chosen) → active academic session (school settings) →
- * this student's records only (§41 privacy — the store filter is by
- * student id).
+ * Resolution chain: canonical session identity (useMyStudentRecord —
+ * session user → roster record) → enrollment (class + section, never
+ * chosen) → active academic session (school settings) → this student's
+ * records only (§41 privacy — the store filter is by student id).
  *
  * Percentage policy (the school's existing convention, unchanged):
  *   attended = Present + Late (late counts as attended)
@@ -36,7 +36,7 @@ import {
   type StudentAttendanceRecord,
 } from '@/lib/store/student-attendance-store'
 import { useSchoolSettingsStore } from '@/lib/store/school-settings-store'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useMyStudentRecord } from '@/lib/store/students-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 import { Snapshot, type TodayStatus } from './snapshot'
 import { CalendarView } from './calendar-view'
@@ -55,20 +55,19 @@ import {
   type MonthCursor,
 } from './date-utils'
 
-/** The canonical demo student (single roster backs every role). */
-const STUDENT_ID = 'STU-58'
-
 export function AttendanceModule() {
+  // ── Identity — the canonical session student (never hardcoded, §38) ──
+  const student = useMyStudentRecord()
+  const studentId = student?.id ?? ''
+
   // ── Canonical data — the same rows Teacher/Principal write ──
   const allRecords = useStudentAttendanceStore((s) => s.records)
-  const my = useMemo(() => studentRecords(allRecords, STUDENT_ID), [allRecords])
+  const my = useMemo(() => studentRecords(allRecords, studentId), [allRecords, studentId])
   const stats = computeStats(my)
 
   // ── School policy — thresholds drive labels and chips only (§27) ──
   const thresholds = useSchoolSettingsStore((s) => s.academics?.attendanceThresholds)
 
-  // ── Identity — enrollment decides the class (never hardcoded, §38) ──
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === STUDENT_ID))
   // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
   const srvClassLabel = useCurrentUser((s) => s.me?.student?.classLabel)
   const classLabel = srvClassLabel ?? (student ? `${student.className}-${student.section}` : 'My Class')

@@ -8,8 +8,8 @@
  *   Timetable        → timetable-store publications (≤72h, affects the
  *                      student's class) — one notification per publication.
  *   Exams            → mock academics `exams` (Scheduled)
- *   Fee reminder     → students-store STU-58 (feeStatus ≠ Paid)
- *   Library overdue  → library-store issues (borrower STU-58, Overdue)
+ *   Fee reminder     → the session student's roster record (feeStatus ≠ Paid)
+ *   Library overdue  → library-store issues (own borrower id, Overdue)
  *   New messages     → student-messaging store unread conversations
  *   School news      → LR-1: REAL announcements from /api/student/notices
  *                      (audience-scoped Notification rows published by the
@@ -35,7 +35,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime, formatDate, formatINR } from '@/lib/format'
 import { exams } from '@/lib/mock/academics'
-import { useStudentsStore, type StudentRecord } from '@/lib/store/students-store'
+import { useMyStudentRecord, type StudentRecord } from '@/lib/store/students-store'
 import { useLibraryStore, type IssueRecord } from '@/lib/store/library-store'
 import {
   useStudentMessagingStore, countUnreadConversations, isConversationUnread,
@@ -45,7 +45,6 @@ import { useStudentNotifPrefsStore, NOTIF_KIND_TO_PREF } from '@/lib/store/stude
 import { useTimetableStore, getRecentChangesForClass, type PublishedVersion } from '@/lib/store/timetable-store'
 import { useServerNotices, type ServerNotice } from '@/lib/store/server-notices-store'
 import { toast } from 'sonner'
-import { DEMO_STUDENT_ID } from '../applications/student'
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -191,7 +190,7 @@ export function buildStudentNotifications({ student, issues, conversations, seen
  *  badge (same filter the feed applies — prefs are server-persisted,
  *  hydrated on panel mount). */
 export function useUnreadStudentNotificationCount(): number {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  const student = useMyStudentRecord()
   const issues = useLibraryStore((s) => s.issues)
   const conversations = useStudentMessagingStore((s) => s.conversations)
   const seenAt = useStudentMessagingStore((s) => s.seenAt)
@@ -221,7 +220,7 @@ const KIND_META: Record<StudentNotificationKind, { icon: typeof Bell; tone: stri
 // ─── Module ──────────────────────────────────────────────────────────
 
 export function StudentNotificationsModule({ onNavigate }: { onNavigate?: (key: string) => void }) {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  const student = useMyStudentRecord()
   const issues = useLibraryStore((s) => s.issues)
   const publications = useTimetableStore((s) => s.publications)
   const conversations = useStudentMessagingStore((s) => s.conversations)

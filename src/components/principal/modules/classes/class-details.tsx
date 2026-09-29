@@ -7,7 +7,7 @@ import { StudentCard as SharedStudentCard } from '@/components/shared/student-di
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { getVirtualOccupied, useStudentsStore } from '@/lib/store/students-store'
+import { useStudentsStore } from '@/lib/store/students-store'
 import type { ClassRecord, StudentRecord } from '@/lib/store/students-store'
 import { useAcademicConfigStore, resolveDbClassFor } from '@/lib/academic-config/client'
 import { formatINR } from '@/lib/format'
@@ -39,7 +39,9 @@ export function ClassDetailsPage({ cls, onBack, store, onStudentClick }: {
   const subjectCount = dbClass ? dbClass.subjects.length : liveClass.subjects.length
   const students = useMemo(() => store.students.filter((s: any) => s.classId === liveClass.id), [store.students, liveClass.id])
   const cap = liveClass.capacity * liveClass.sections.length
-  const enr = liveClass.sections.reduce((a, s) => a + getVirtualOccupied(s.id, s.capacity), 0)
+  // REAL occupancy — ACTIVE roster students in this class over real capacity
+  // (the old figure was a virtual seat-occupancy estimate).
+  const enr = students.filter((s: any) => s.status === 'Active').length
   const pct = cap > 0 ? Math.round((enr / cap) * 100) : 0
   // Spec §4 / §6 — show stream badge so Class 11 PCM vs PCB details are distinguishable.
   const streamBadge = classStreamBadge(liveClass)

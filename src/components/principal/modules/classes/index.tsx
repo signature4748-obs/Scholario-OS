@@ -6,7 +6,7 @@ import { Layers, Users, AlertTriangle, Plus, MapPin, ChevronRight, UserCheck, Do
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/ui'
 import { cn } from '@/lib/utils'
-import { useStudentsStore, getVirtualOccupied } from '@/lib/store/students-store'
+import { useStudentsStore } from '@/lib/store/students-store'
 import type { ClassRecord } from '@/lib/store/students-store'
 import { getTeacherById } from '@/lib/mock/teachers'
 import { classStreamBadge } from './class-display'
@@ -20,15 +20,17 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
   const [roomsOpen, setRoomsOpen] = useState(false)
   const store = useStudentsStore()
   const classes = store.classes.filter((c) => c.status === 'Active')
+  const students = store.students
 
   const stats = useMemo(() => {
     const totalSections = classes.reduce((a, c) => a + c.sections.length, 0)
     const totalCapacity = classes.reduce((a, c) => a + c.capacity * c.sections.length, 0)
-    const totalEnrolled = classes.reduce((a, c) => a + c.sections.reduce((sa, s) => sa + getVirtualOccupied(s.id, s.capacity), 0), 0)
+    // REAL enrolled count — ACTIVE students on the roster, not virtual seats.
+    const totalEnrolled = students.filter((s) => s.status === 'Active').length
     const vacant = Math.max(0, totalCapacity - totalEnrolled)
     const withTeacher = classes.filter((c) => c.classTeacherId).length
     return { totalClasses: classes.length, totalSections, totalCapacity, totalEnrolled, vacant, withTeacher, unassigned: classes.length - withTeacher }
-  }, [classes])
+  }, [classes, students])
 
   const levels = useMemo(() => { const set = new Set<string>(); classes.forEach((c) => set.add(c.level)); return Array.from(set) }, [classes])
 
@@ -84,8 +86,10 @@ export function ClassesView({ onOpenClass, onAddClass }: { onOpenClass: (c: Clas
    ============================================================ */
 function ClassCard({ cls, index, onClick }: { cls: ClassRecord; index: number; onClick: () => void }) {
   const reduce = useReducedMotion()
+  const students = useStudentsStore((s) => s.students)
   const cap = cls.capacity * cls.sections.length
-  const enr = cls.sections.reduce((a, s) => a + getVirtualOccupied(s.id, s.capacity), 0)
+  // REAL enrolled count — ACTIVE roster students in this class's sections.
+  const enr = students.filter((s) => s.classId === cls.id && s.status === 'Active').length
   const vacant = Math.max(0, cap - enr)
   const pct = cap > 0 ? Math.round((enr / cap) * 100) : 0
   const tight = pct >= 90
@@ -149,7 +153,8 @@ function ClassCard({ cls, index, onClick }: { cls: ClassRecord; index: number; o
       {/* Section occupancy chips (over → rose, ≥90% → amber) + subjects */}
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {cls.sections.map((s) => {
-          const count = getVirtualOccupied(s.id, s.capacity)
+          // REAL per-section enrollment from the roster.
+          const count = students.filter((st) => st.classId === cls.id && st.section === s.name && st.status === 'Active').length
           const over = count > s.capacity
           const sFull = !over && count / s.capacity >= 0.9
           return (

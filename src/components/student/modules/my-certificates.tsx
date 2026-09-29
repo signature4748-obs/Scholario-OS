@@ -18,11 +18,13 @@ import {
 } from '@/components/ui/dialog'
 import { useCertificatesStore } from '@/lib/store/certificates-store'
 import type { GeneratedDocument } from '@/lib/store/certificates-store'
+import { useMyStudentRecord } from '@/lib/store/students-store'
 import { school } from '@/lib/mock/school'
 import { formatDate } from '@/lib/format'
 import { toast } from 'sonner'
 
-const STUDENT_ID = 'STU-58'
+// (Identity: the module resolves the session student's OWN records — no
+// hardcoded id; the canonical resolver lives in useMyStudentRecord.)
 
 function statusVariant(status: string): 'success' | 'primary' | 'neutral' {
   if (status === 'Issued' || status === 'Downloaded' || status === 'Printed') return 'success'
@@ -73,11 +75,15 @@ export function MyCertificatesModule() {
   const documents = useCertificatesStore((s) => s.documents)
   const [previewDoc, setPreviewDoc] = useState<GeneratedDocument | null>(null)
 
+  // Canonical identity — the session user's own roster record.
+  const me = useMyStudentRecord()
+  const studentId = me?.id ?? ''
+
   const mine = useMemo(
     () => documents
-      .filter((d) => d.studentId === STUDENT_ID || d.admissionNo === 'DSO2024058')
+      .filter((d) => d.studentId === studentId || d.admissionNo === me?.admissionNo)
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
-    [documents],
+    [documents, studentId, me?.admissionNo],
   )
 
   function handleDownload(doc: GeneratedDocument) {

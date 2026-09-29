@@ -19,7 +19,7 @@ import { GlassCard, GradientAvatar, StatusBadge } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { useStudentsStore, type StudentPosition, type StudentRecord } from '@/lib/store/students-store'
+import { useStudentsStore, useMyStudentRecord, type StudentPosition } from '@/lib/store/students-store'
 import { POSITION_DEFS, hasCapability, allCapabilities, filterActivePositions, type StudentCapability } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
 import { useClassResponsibilityStore, type ClassUpdateCategory, type IssueCategory, type IssuePriority, type ResponsibilityTask } from '@/lib/store/class-responsibility-store'
@@ -27,7 +27,6 @@ import { teachers } from '@/lib/mock/teachers'
 import { useDismissOnEscape } from '@/hooks/use-dismiss-on-escape'
 import { formatDate, formatRelativeTime } from '@/lib/format'
 import { toast } from 'sonner'
-import { DEMO_STUDENT_ID } from '../applications/student'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 
 const CAPABILITY_META: Record<StudentCapability, { label: string; icon: typeof Crown }> = {
@@ -63,15 +62,19 @@ function allowedTeachers(classId: string, section: string): { id: string; name: 
 }
 
 export function MyClassModule() {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // Canonical identity — the session user's own roster record (server
+  // sync stamps the userId/email link fields; the legacy demo record
+  // covers the pre-sync paint).
+  const student = useMyStudentRecord()
+  const studentId = student?.id ?? ''
   // Raw array + useMemo — zustand v5 selectors must return stable refs.
   // RB-1 — activity resolves ONLY through the canonical session-scoped
   // resolver; a position from an earlier session is history, not authority.
   const allPositions = useStudentsStore((s) => s.studentPositions)
   const sessionId = useAcademicSession().id
   const positions = useMemo(
-    () => filterActivePositions(allPositions, DEMO_STUDENT_ID, sessionId),
-    [allPositions, sessionId],
+    () => filterActivePositions(allPositions, studentId, sessionId),
+    [allPositions, studentId, sessionId],
   )
 
   const updates = useClassResponsibilityStore((s2) => s2.classUpdates)
@@ -82,7 +85,7 @@ export function MyClassModule() {
   const [dialog, setDialog] = useState<'update' | 'issue' | 'meeting' | null>(null)
 
   const caps = allCapabilities(positions)
-  const myUpdates = useMemo(() => updates.filter((u) => u.studentId === DEMO_STUDENT_ID), [updates])
+  const myUpdates = useMemo(() => updates.filter((u) => u.studentId === studentId), [updates, studentId])
   const noticeBoard = useMemo(
     () =>
       student
@@ -90,9 +93,9 @@ export function MyClassModule() {
         : [],
     [updates, student],
   )
-  const myIssues = useMemo(() => issues.filter((i) => i.studentId === DEMO_STUDENT_ID), [issues])
-  const myTasks = useMemo(() => tasks.filter((t) => t.studentId === DEMO_STUDENT_ID), [tasks])
-  const myRequests = useMemo(() => requests.filter((r) => r.studentId === DEMO_STUDENT_ID), [requests])
+  const myIssues = useMemo(() => issues.filter((i) => i.studentId === studentId), [issues, studentId])
+  const myTasks = useMemo(() => tasks.filter((t) => t.studentId === studentId), [tasks, studentId])
+  const myRequests = useMemo(() => requests.filter((r) => r.studentId === studentId), [requests, studentId])
 
   // SD-3b — the SERVER session label wins (never disagrees with the sidebar).
   // (Declared before the early return — hooks must run unconditionally.)
@@ -335,8 +338,10 @@ function ActionCard({ icon, title, desc, stat, onClick, accent }: {
 
 function TaskRow({ task }: { task: ResponsibilityTask }) {
   const completeTask = useClassResponsibilityStore((s) => s.completeTask)
+  // Canonical actor — the session's own student record.
+  const me = useMyStudentRecord()
   const toggle = () => {
-    const result = completeTask(task.id, DEMO_STUDENT_ID)
+    const result = completeTask(task.id, me?.id ?? '')
     if (!result.ok) toast.error('Could not update task', { description: result.error })
   }
   return (
@@ -408,13 +413,15 @@ function DialogShell({ title, subtitle, onClose, children, footer }: {
 
 function PostUpdateDialog({ positions, onClose }: { positions: StudentPosition[]; onClose: () => void }) {
   const postClassUpdate = useClassResponsibilityStore((s) => s.postClassUpdate)
+  // Canonical actor — the session's own student record.
+  const me = useMyStudentRecord()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [category, setCategory] = useState<ClassUpdateCategory>('notice')
 
   const submit = () => {
     if (!title.trim() || !body.trim()) return
-    const result = postClassUpdate({ actorStudentId: DEMO_STUDENT_ID, title: title.trim(), body: body.trim(), category })
+    const result = postClassUpdate({ actorStudentId: me?.id ?? '', title: title.trim(), body: body.trim(), category })
     if (result.ok) {
       toast.success('Update submitted for review', { description: 'Your class teacher will review it before it appears on the class notice board.' })
       onClose()
@@ -466,6 +473,8 @@ function PostUpdateDialog({ positions, onClose }: { positions: StudentPosition[]
 
 function ReportIssueDialog({ onClose }: { onClose: () => void }) {
   const reportIssue = useClassResponsibilityStore((s) => s.reportIssue)
+  // Canonical actor — the session's own student record.
+  const me = useMyStudentRecord()
   const [category, setCategory] = useState<IssueCategory>('facility')
   const [priority, setPriority] = useState<IssuePriority>('medium')
   const [title, setTitle] = useState('')
@@ -473,7 +482,7 @@ function ReportIssueDialog({ onClose }: { onClose: () => void }) {
 
   const submit = () => {
     if (!title.trim() || !description.trim()) return
-    const result = reportIssue({ actorStudentId: DEMO_STUDENT_ID, category, priority, title: title.trim(), description: description.trim() })
+    const result = reportIssue({ actorStudentId: me?.id ?? '', category, priority, title: title.trim(), description: description.trim() })
     if (result.ok) {
       toast.success('Issue reported', { description: 'Your class teacher and the principal have been notified.' })
       onClose()
@@ -542,7 +551,7 @@ function ReportIssueDialog({ onClose }: { onClose: () => void }) {
 
 function MeetingDialog({ onClose }: { onClose: () => void }) {
   const requestTeacherMeeting = useClassResponsibilityStore((s) => s.requestTeacherMeeting)
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  const student = useMyStudentRecord()
   const teacherList = useMemo(
     () => (student ? allowedTeachers(student.classId, student.section) : []),
     [student],
@@ -555,7 +564,7 @@ function MeetingDialog({ onClose }: { onClose: () => void }) {
     if (!teacherId || !topic.trim()) return
     const teacher = teacherList.find((t) => t.id === teacherId)
     const result = requestTeacherMeeting({
-      actorStudentId: DEMO_STUDENT_ID,
+      actorStudentId: student?.id ?? '',
       teacherId,
       teacherName: teacher?.name ?? teacherId,
       topic: topic.trim(),

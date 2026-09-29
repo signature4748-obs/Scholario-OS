@@ -23,10 +23,9 @@
 import { ChevronLeft, ChevronRight, X, Search } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useMyStudentRecord } from '@/lib/store/students-store'
 import { useCurrentUser } from '@/lib/store/current-user-store'
 import { APP_VERSION } from '@/lib/app-version'
-import { DEMO_STUDENT_ID } from '../modules/applications/student'
 import type { NavGroup } from '@/components/shell/app-shell/types'
 
 interface StudentSidebarProps {
@@ -56,10 +55,10 @@ export function StudentSidebar({
 
   // Personal workspace identity — the SERVER enrollment context
   // (user → student → class, resolved by /api/auth/me) is the truth;
-  // the client roster is only a hydrating fallback. SS-1: shows the
-  // student's real profile photo (server identity) when one is set,
-  // initials otherwise.
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // the canonical roster record (session-resolved) is only a hydrating
+  // fallback. SS-1: shows the student's real profile photo (server
+  // identity) when one is set, initials otherwise.
+  const student = useMyStudentRecord()
   const me = useCurrentUser((s) => s.me)
   const initials = student?.avatar ?? '·'
   const avatarUrl = useCurrentUser((s) => s.me?.avatarUrl)

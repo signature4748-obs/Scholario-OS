@@ -27,7 +27,7 @@
  */
 import { BookOpen, Users, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getVirtualOccupied, useStudentsStore } from '@/lib/store/students-store'
+import { useStudentsStore } from '@/lib/store/students-store'
 import type { ClassRecord } from '@/lib/store/students-store'
 import { useTeachersMockStore } from '@/lib/store/teachers-mock-store'
 import { SummaryCard, SummaryCardGrid } from '../../shared/summary-card'
@@ -38,9 +38,11 @@ export function ClassOverview({ cls }: { cls: ClassRecord }) {
   // subject, reassign a teacher, etc.) reflect here immediately.
   // Brief section 35 + 37.
   const liveClass = useStudentsStore((s) => s.getClassById(cls.id)) ?? cls
+  const students = useStudentsStore((s) => s.students)
   const teachers = useTeachersMockStore((s) => s.teachers)
   const cap = liveClass.capacity * liveClass.sections.length
-  const enr = liveClass.sections.reduce((a, s) => a + getVirtualOccupied(s.id, s.capacity), 0)
+  // REAL enrolled count — ACTIVE roster students in this class.
+  const enr = students.filter((st) => st.classId === liveClass.id && st.status === 'Active').length
 
   const findTeacher = (id: string | null | undefined) => {
     if (!id) return undefined
@@ -61,7 +63,8 @@ export function ClassOverview({ cls }: { cls: ClassRecord }) {
         <p className="text-xs font-bold text-primary mb-3 uppercase tracking-wider">Sections</p>
         <div>
           {liveClass.sections.map((s) => {
-            const count = getVirtualOccupied(s.id, s.capacity)
+            // REAL per-section enrollment from the roster.
+            const count = students.filter((st) => st.classId === liveClass.id && st.section === s.name && st.status === 'Active').length
             const over = count > s.capacity
             const fillPct = s.capacity > 0 ? Math.round((count / s.capacity) * 100) : 0
             const sFull = !over && fillPct >= 90

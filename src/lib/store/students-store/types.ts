@@ -110,6 +110,11 @@ export interface StudentRecord {
   documents: { id: string; title: string; type: string; uploadedDate: string; verified: boolean }[]
   transportRoute?: string
   timeline: TimelineEvent[]
+  /** Server-sync link (canonical DB universe): login email of the student
+   * account. Present when the record was hydrated from /api/students/roster. */
+  email?: string
+  /** Server-sync link: User.id of the student account (canonical id). */
+  userId?: string
 }
 
 export interface SectionRecord {

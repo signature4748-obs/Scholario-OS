@@ -12,7 +12,7 @@ import { ModuleLoading } from '@/components/shared/module-loading'
 import { useUnreadStudentNotificationCount } from './modules/notifications'
 import { StudentSubscriptionActivation } from './StudentSubscriptionActivation'
 import { getStudentSubscription } from '@/lib/platform-subscription'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useStudentsStore, useMyStudentRecord } from '@/lib/store/students-store'
 import { useStudentMessagingStore, countUnreadConversations } from '@/lib/store/student-messaging-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
@@ -189,9 +189,15 @@ export function StudentPanel() {
   const [active, setActive] = useState('dashboard')
   // Deep-link tab target for the consolidated modules (see LEGACY_TAB).
   const [pendingTab, setPendingTab] = useState<string | null>(null)
-  // Canonical demo student — one roster backs every role (see students-store v2).
-  const studentId = 'STU-58'
-  const studentName = 'Aarav Sharma'
+
+  // Canonical identity — one roster backs every role (see students-store
+  // server-sync). The resolver matches the session user (userId, then
+  // email) against the roster records' link fields, falling back to the
+  // legacy demo record while the first sync is still in flight, so the
+  // pre-sync paint stays safe.
+  const student = useMyStudentRecord()
+  const studentId = student?.id
+  const studentName = student?.name ?? 'Student'
 
   // SS-1 — one server fetch on mount hydrates the student's persisted
   // preferences (notification channels + learning reminders) into the
@@ -218,11 +224,10 @@ export function StudentPanel() {
   // resolver), never hardcoded. Ending the assignment (or moving to a new
   // session) removes it instantly.
   // (Raw array + useMemo — zustand v5 selectors must return stable refs.)
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === studentId))
   const allPositions = useStudentsStore((s) => s.studentPositions)
   const sessionId = useAcademicSession().id
   const activePositions = useMemo(
-    () => filterActivePositions(allPositions, studentId, sessionId),
+    () => (studentId ? filterActivePositions(allPositions, studentId, sessionId) : []),
     [allPositions, studentId, sessionId],
   )
   const myClassGroup: NavGroup[] =
@@ -244,8 +249,9 @@ export function StudentPanel() {
   // RB-1 — Transport is an opt-in service: students without a transport
   // assignment (no roster opt-in, no assigned route) never see the
   // Transport entry — not in the sidebar and not in ⌘K search (the palette
-  // is nav-derived). The demo student HAS transport, so the demo shows it.
-  const hasTransport = useTransportAssignment(studentId)
+  // is nav-derived). The resolver's record carries the canonical
+  // transport opt-in (roster route), so the entry follows the real data.
+  const hasTransport = useTransportAssignment(studentId ?? '')
 
   const groups: NavGroup[] = [
     // Home first, then the (conditional) Class Leadership responsibility —
@@ -274,7 +280,7 @@ export function StudentPanel() {
     setActive(LEGACY_MODULE[rawKey] ?? rawKey)
   }
 
-  const [subRecord, setSubRecord] = useState(() => getStudentSubscription(studentId))
+  const [subRecord, setSubRecord] = useState(() => getStudentSubscription(studentId ?? ''))
   const [forceFirstLoginFlow, setForceFirstLoginFlow] = useState(false)
 
   const isSubActive = subRecord.isActive && !forceFirstLoginFlow
@@ -282,10 +288,10 @@ export function StudentPanel() {
   if (!isSubActive) {
     return (
       <StudentSubscriptionActivation
-        studentId={studentId}
+        studentId={studentId ?? ''}
         studentName={studentName}
         onActivated={() => {
-          setSubRecord(getStudentSubscription(studentId))
+          setSubRecord(getStudentSubscription(studentId ?? ''))
           setForceFirstLoginFlow(false)
         }}
       />

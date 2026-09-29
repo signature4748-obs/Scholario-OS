@@ -1,6 +1,8 @@
 // Scholario SaaS Platform Subscription Engine
 // Completely independent from School Fees. Handles student platform licensing.
 
+import { useStudentsStore } from '@/lib/store/students-store'
+
 export interface PlatformConfig {
   annualFee: number
   offerDiscountPercentage: number
@@ -55,6 +57,29 @@ const subscriptionStore: Record<string, StudentSubscriptionRecord> = {
   },
 }
 
+// Legacy seed key — the record above was issued to the DEMO student
+// (Aarav Sharma) under their pre-sync mock id. The license belongs to
+// that ONE student, so lookups made under their canonical (post-sync)
+// id must still find it — without granting it to any other student.
+const SEEDED_LICENSE_KEY = 'STU-58'
+
+// The demo student's account email (the student login quick-fill
+// account). It anchors "who the seeded license belongs to" across the
+// mock-id → canonical-id unification.
+const DEMO_ACCOUNT_EMAIL = 'aarav.sharma@greenwood.edu.in'
+
+/**
+ * The demo student's CURRENT id: their canonical roster record (matched
+ * by the demo account email the roster sync stamps on the record), or
+ * the legacy mock id while the roster is still the pre-sync seed.
+ */
+function seededLicenseHolderId(): string {
+  const holder = useStudentsStore
+    .getState()
+    .students.find((s) => (s.email ?? '').toLowerCase() === DEMO_ACCOUNT_EMAIL)
+  return holder?.id ?? SEEDED_LICENSE_KEY
+}
+
 export const getPlatformConfig = (): PlatformConfig => globalPlatformConfig
 
 export const updatePlatformConfig = (newConfig: Partial<PlatformConfig>): PlatformConfig => {
@@ -71,6 +96,15 @@ export const updatePlatformConfig = (newConfig: Partial<PlatformConfig>): Platfo
 export const getStudentSubscription = (studentId: string): StudentSubscriptionRecord => {
   if (subscriptionStore[studentId]) {
     return subscriptionStore[studentId]
+  }
+
+  // Identity unification: the seeded license was issued to the demo
+  // student under their legacy mock id — serve it to the same student
+  // under their canonical (post-sync) id so an active license never
+  // lapses just because the roster ids changed underneath it.
+  if (studentId && studentId === seededLicenseHolderId()) {
+    const seeded = subscriptionStore[SEEDED_LICENSE_KEY]
+    if (seeded) return seeded
   }
 
   // Default record for new/unsubbed student

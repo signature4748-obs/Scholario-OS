@@ -16,21 +16,43 @@ import { GlassCard } from '@/components/shared/ui'
 import { Badge } from '@/components/ui/badge'
 import {
   classSections,
-  attendanceOverview,
   type ClassSection,
 } from '@/lib/mock/attendance'
-import { classList, school } from '@/lib/mock/school'
 import { formatNumber } from '@/lib/format'
 import { ATTENDANCE_PALETTE } from './attendance-charts'
 import { STATUS_META } from './attendance-status'
 
+/** attendance-overview-real — the three headline insight cards, derived at
+ *  the call site from GET /api/attendance/overview (best / needs-attention
+ *  grade-group + the school's latest recorded rate). null ⇒ honest
+ *  "no data" placeholders. */
+export interface AttendanceInsightsData {
+  best: { class: string; rate: number; students: number } | null
+  needs: { class: string; rate: number; students: number } | null
+  average: { rate: number; classes: number; students: number } | null
+}
+
+const EMPTY_INSIGHT: { class: string; rate: number; students: number } = {
+  class: '—',
+  rate: 0,
+  students: 0,
+}
+
 export function AttendanceInsights({
   classFilter,
+  insights,
   onViewAllClasses,
 }: {
   classFilter: string
+  /** REAL headline insights (see AttendanceInsightsData). */
+  insights?: AttendanceInsightsData
   onViewAllClasses?: () => void
 }) {
+  // attendance-overview-real — derive the three cards from the canonical
+  // overview; honest placeholders when a figure isn't available.
+  const best = insights?.best ?? EMPTY_INSIGHT
+  const needs = insights?.needs ?? EMPTY_INSIGHT
+  const average = insights?.average ?? null
   return (
     <>
       {/* Three compact insight cards (Brief §12 — Phase 1 preserved) */}
@@ -38,26 +60,28 @@ export function AttendanceInsights({
         <InsightCard
           icon={<TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
           title="Best Performing Class"
-          value="Nursery"
-          rate={96.8}
+          value={best.class}
+          rate={best.rate}
           color={ATTENDANCE_PALETTE.present}
-          sub="96.8% · 48 students"
+          sub={best.class === '—' ? 'No attendance recorded yet' : `${best.rate}% · ${formatNumber(best.students)} students`}
         />
         <InsightCard
           icon={<UserX className="h-4 w-4 text-rose-600 dark:text-rose-400" />}
           title="Needs Attention"
-          value="Class 12"
-          rate={88.8}
+          value={needs.class}
+          rate={needs.rate}
           color={ATTENDANCE_PALETTE.absent}
-          sub="88.8% · 86 students"
+          sub={needs.class === '—' ? 'No attendance recorded yet' : `${needs.rate}% · ${formatNumber(needs.students)} students`}
         />
         <InsightCard
           icon={<CalendarCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />}
           title="School Average"
-          value="93.3%"
-          rate={93.3}
+          value={average ? `${average.rate}%` : '—'}
+          rate={average?.rate ?? 0}
           color={ATTENDANCE_PALETTE.late}
-          sub={`${classList.length} classes · ${formatNumber(school.totalStudents)} students`}
+          sub={average
+            ? `${average.classes} classes · ${formatNumber(average.students)} students`
+            : 'No attendance recorded yet'}
         />
       </div>
 

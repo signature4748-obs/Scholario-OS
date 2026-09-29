@@ -7,7 +7,8 @@
  * needs at a glance:
  *   1. Attendance (emerald) — today's school-wide attendance rate
  *   2. Pending fees (rose) — outstanding dues (Round-7: SERVER TRUTH)
- *   3. New admissions (sky) — applications submitted this month
+ *   3. New admissions (sky) — students admitted this month (REAL: derived
+ *      from the roster's admissionDate in the students store)
  *   4. Upcoming exams (amber) — scheduled examinations
  *
  * Each card is clickable — clicking navigates to the relevant module:
@@ -32,31 +33,72 @@
  * Removed: `SecondaryKpiRow` (was dead code at lines 38-47).
  */
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   CalendarCheck, IndianRupee, UserPlus, FileText,
 } from 'lucide-react'
-import { attendanceOverview } from '@/lib/mock/attendance'
 import { feeAnalytics } from '@/lib/mock/finance'
-import { studentStats } from '@/lib/mock/students'
-import { exams } from '@/lib/mock/academics'
 import { formatINR } from '@/lib/format'
 import { useDuesSummaryStore, selectLiveDues } from '@/lib/store/dues-summary-store'
 import { useFocusStore } from '@/lib/store/focus-store'
+import { useStudentsStore } from '@/lib/store/students-store'
 import { SummaryCard, SummaryCardGrid } from '../shared/summary-card'
 import { LiveChip } from '../shared/live-chip'
-import { admissionsMonthly } from '../analytics/data'
+import { useAttendanceOverview } from '../attendance/use-attendance-overview'
+import { useSchoolStats } from './use-school-stats'
+import { useUpcomingExams } from './use-upcoming-exams'
 
 export interface KpiRowProps {
   onNavigate?: (module: string) => void
 }
 
 export function KpiRow({ onNavigate }: KpiRowProps) {
+  // attendance-overview-real — the Attendance card reads the canonical
+  // Attendance table (GET /api/attendance/overview, session-cached): latest
+  // recorded day's rate + present count + the real 6-day sparkline. While
+  // the fetch is in flight the card shows an honest "—" placeholder (same
+  // pattern as the dues card's pre-live fallback).
+  const { data: attendance } = useAttendanceOverview()
+
+  // REAL upcoming exams — canonical /api/exams rows (was the mock
+  // "Pre-Board in 12 days" constant).
+  const upcoming = useUpcomingExams()
+
   // Round-7 — server-truth dues for the Pending Fees card (mock fallback
   // until the sync lands; honest lineage via the live chip).
   const dues = useDuesSummaryStore(selectLiveDues)
   const ensureDues = useDuesSummaryStore((s) => s.ensure)
   useEffect(() => { void ensureDues() }, [ensureDues])
+
+  // REAL admissions intelligence — every figure on the New Admissions card
+  // is derived from the roster's admissionDate ('YYYY-MM-DD') in the students
+  // store (DB-hydrated): KPI = ACTIVE students admitted in the current
+  // calendar month, sub = real month-over-month delta, sparkline = the real
+  // monthly series ending on the current month (replaces the mock
+  // studentStats.newThisMonth and the mock analytics trend).
+  const students = useStudentsStore((s) => s.students)
+  const admissionsSeries = useMemo(() => {
+    const now = new Date()
+    const months = Array.from({ length: 8 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (7 - i), 1)
+      return { year: d.getFullYear(), month: d.getMonth() + 1 }
+    })
+    const counts = months.map(() => 0)
+    for (const st of students) {
+      if (st.status !== 'Active') continue
+      const parts = st.admissionDate.split('-').map(Number)
+      const idx = months.findIndex((m) => m.year === parts[0] && m.month === parts[1])
+      if (idx >= 0) counts[idx]++
+    }
+    return counts
+  }, [students])
+  const newThisMonth = admissionsSeries[admissionsSeries.length - 1] ?? 0
+  const newLastMonth = admissionsSeries[admissionsSeries.length - 2] ?? 0
+  const momDelta = newThisMonth - newLastMonth
+  const admissionsSub =
+    momDelta > 0 ? `+${momDelta} vs last month`
+      : momDelta < 0 ? `${momDelta} vs last month`
+        : 'Same as last month'
 
   /** Deep-link: fees module + Outreach tab (the card's numbers live there). */
   const openOutreach = () => {
@@ -79,13 +121,15 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
     <SummaryCardGrid columns={4}>
       <SummaryCard
         label="Attendance"
-        value={attendanceOverview.today.rate}
-        suffix="%"
-        sub={`${attendanceOverview.today.present.toLocaleString('en-IN')} present`}
+        value={attendance ? attendance.today.rate : '—'}
+        suffix={attendance ? '%' : undefined}
+        sub={attendance
+          ? `${attendance.today.present.toLocaleString('en-IN')} present`
+          : 'Loading…'}
         tone="emerald"
         icon={<CalendarCheck className="h-4 w-4" />}
         delay={0}
-        sparkline={attendanceOverview.weekTrend.map((d) => d.rate)}
+        sparkline={attendance ? attendance.weekTrend.map((d) => d.rate) : undefined}
         trend="up"
         onClick={onNavigate ? () => onNavigate('attendance') : undefined}
       />
@@ -103,19 +147,19 @@ export function KpiRow({ onNavigate }: KpiRowProps) {
       />
       <SummaryCard
         label="New Admissions"
-        value={studentStats.newThisMonth}
-        sub="+18.4% this month"
+        value={newThisMonth}
+        sub={admissionsSub}
         tone="sky"
         icon={<UserPlus className="h-4 w-4" />}
         delay={0.08}
-        sparkline={admissionsMonthly.map((d) => d.value)}
-        trend="up"
+        sparkline={admissionsSeries}
+        trend={momDelta > 0 ? 'up' : momDelta < 0 ? 'down' : 'neutral'}
         onClick={onNavigate ? () => onNavigate('admission') : undefined}
       />
       <SummaryCard
         label="Upcoming Exams"
-        value={exams.filter((e) => e.status === 'Scheduled').length}
-        sub="Pre-Board in 12 days"
+        value={upcoming ? upcoming.count : '—'}
+        sub={upcoming ? upcoming.sub : 'No scheduled exams'}
         tone="amber"
         icon={<FileText className="h-4 w-4" />}
         delay={0.12}

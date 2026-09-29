@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { IndianRupee } from 'lucide-react'
 import { computeAccount, findStructureForStudent } from '@/lib/store/fee-store'
 import { useFeeStore } from '@/lib/store/fee-store'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useMyStudentRecord } from '@/lib/store/students-store'
 import { useFeatureGate } from '@/lib/tenant/store'
 // STRUCT-REV — mid-session fee-structure acknowledgement (student side).
 import { FeeRevisionApprovalCard } from './fee-revision-card'
@@ -14,7 +14,6 @@ import { Statement } from './statement'
 import { AllPaidState, OnlineUnavailableCard } from './paid-state'
 import { PaymentDialog } from './payment-dialog'
 import type { PaymentConfigResponse } from './data'
-import { DEMO_STUDENT_ID } from '../applications/student'
 
 /**
  * FeesModule — the student's financial truth.
@@ -31,7 +30,11 @@ import { DEMO_STUDENT_ID } from '../applications/student'
  * the single WHERE-AM-I (nav dedup rule).
  */
 export function FeesModule() {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // Canonical identity — the session user's own roster record (server
+  // sync stamps the userId/email link fields; the legacy demo record
+  // covers the pre-sync paint). The guard below renders the loading
+  // tile while the record resolves.
+  const student = useMyStudentRecord()
 
   // Reactive slices of the ONE fee ledger — computeAccount re-derives the
   // entire account whenever any of them changes (a payment made here

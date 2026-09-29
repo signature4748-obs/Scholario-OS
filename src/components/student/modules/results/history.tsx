@@ -57,11 +57,14 @@ interface HistoryProps {
   upcoming: AssessmentDef[]
   results: AssessmentResult[]
   gradeScale: GradeBand[]
+  /** The resolved session student's id — every timeline node reads THIS
+   * student's marks (never a default demo identity). */
+  studentId: string
   selectedId: string
   onSelect: (id: string) => void
 }
 
-export function History({ published, upcoming, results, gradeScale, selectedId, onSelect }: HistoryProps) {
+export function History({ published, upcoming, results, gradeScale, studentId, selectedId, onSelect }: HistoryProps) {
   // The story reads forward: oldest → latest → what's coming next.
   const story = [
     ...published.map((a) => ({ def: a, published: true as const })),
@@ -78,7 +81,7 @@ export function History({ published, upcoming, results, gradeScale, selectedId, 
         <span className="absolute bottom-3 left-[1.05rem] top-3 w-px bg-border/80" aria-hidden />
 
         {story.map(({ def, published: isPublished }) => {
-          const r = isPublished ? resultFor(results, def.id) : null
+          const r = isPublished ? resultFor(results, def.id, studentId) : null
           const t = r ? totalsOf(r) : null
           const grade = t ? gradeFor(t.pct, gradeScale) : null
           const tone = grade ? gradeTone(grade) : null

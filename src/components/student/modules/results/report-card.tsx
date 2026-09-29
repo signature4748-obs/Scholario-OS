@@ -57,7 +57,7 @@ interface ReportCardInput {
   standings: ClassStanding[]
   showRank: boolean
   reportCardConfig: { includeAttendance: boolean; includePrincipalRemark: boolean; includeSealNote: boolean }
-  identity: { name: string; admissionNo: string; classSection: string; rollNo: string }
+  identity: { studentId: string; name: string; admissionNo: string; classSection: string; rollNo: string }
 }
 
 const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -80,9 +80,10 @@ function buildReportCardHTML(input: ReportCardInput): string {
   const mine = standings.find((s) => s.isMe)
 
   // Attendance — only when the school includes it on the report card.
+  // Keyed to the session student's OWN canonical id (never a demo id).
   let attendanceLine = ''
   if (reportCardConfig.includeAttendance) {
-    const records = studentRecords(useStudentAttendanceStore.getState().records, 'STU-58')
+    const records = studentRecords(useStudentAttendanceStore.getState().records, identity.studentId)
     const stats = computeStats(records)
     if (stats.total > 0) {
       attendanceLine = `<tr><th>Attendance</th><td>${stats.percent}% (${stats.attended} of ${stats.total} recorded school days)</td></tr>`
@@ -212,7 +213,7 @@ interface ReportCardProps {
   standings: ClassStanding[]
   showRank: boolean
   reportCardConfig: { includeAttendance: boolean; includePrincipalRemark: boolean; includeSealNote: boolean }
-  identity: { name: string; admissionNo: string; classSection: string; rollNo: string }
+  identity: { studentId: string; name: string; admissionNo: string; classSection: string; rollNo: string }
 }
 
 export function ReportCard(props: ReportCardProps) {

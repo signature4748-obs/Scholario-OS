@@ -16,8 +16,7 @@ import { User, Camera, Trash2, Upload, Info } from 'lucide-react'
 import { Avatar } from '@/components/shared/avatar'
 import { Button } from '@/components/ui/button'
 import { useCurrentUser } from '@/lib/store/current-user-store'
-import { useStudentsStore } from '@/lib/store/students-store'
-import { DEMO_STUDENT_ID } from '../applications/student'
+import { useMyStudentRecord } from '@/lib/store/students-store'
 import { useAvatarUpload } from './hooks'
 import { SectionCard, InfoRow, ManagedBadge } from './primitives'
 
@@ -25,7 +24,10 @@ const ACCEPTED = 'image/jpeg,image/png,image/webp'
 const MAX_BYTES = 5 * 1024 * 1024
 
 export function ProfileSection() {
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // Canonical identity — the session user's own roster record (server
+  // sync stamps the userId/email link fields; the legacy demo record
+  // covers the pre-sync paint). Fields render '—' until it resolves.
+  const student = useMyStudentRecord()
   const me = useCurrentUser((s) => s.me)
   const { avatarUrl, upload, remove, uploading, removing } = useAvatarUpload()
 

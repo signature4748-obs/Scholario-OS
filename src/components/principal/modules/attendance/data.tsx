@@ -8,7 +8,6 @@
 // for holidays + weekends. NO duplicate holiday list here.
 
 import { isHoliday, isWeekend, getHoliday, type Holiday } from '@/lib/mock/school-calendar'
-import { attendanceOverview } from '@/lib/mock/attendance'
 
 export type CalendarCell = {
   /** ISO date string (YYYY-MM-DD) — used for school-calendar lookups. */
@@ -38,8 +37,18 @@ export type CalendarCell = {
  *
  * Brief PART 35: Weekend cells show "Weekend" — clearly distinguished from
  * attendance intensity colors.
+ *
+ * attendance-overview-real: when `recorded` (real per-date school-wide rates
+ * from GET /api/attendance/overview) is provided, a day's rate is the REAL
+ * recorded rate and every unrecorded day renders as "no attendance yet"
+ * (null). The deterministic per-date fluctuation below is the LEGACY
+ * fallback used only when no recorded data is passed (backward compat).
  */
-export function buildMonthCalendar(year: number, month: number): CalendarCell[] {
+export function buildMonthCalendar(
+  year: number,
+  month: number,
+  recorded?: Record<string, number>,
+): CalendarCell[] {
   const days: CalendarCell[] = []
   // First day of the month
   const firstDay = new Date(year, month - 1, 1)
@@ -67,19 +76,22 @@ export function buildMonthCalendar(year: number, month: number): CalendarCell[] 
     const holiday = isHoliday(dateStr)
     const holidayDetails = getHoliday(dateStr)
     let rate: number | null = null
-    // Brief PART 7: derive a deterministic attendance rate per working day.
-    // Uses the same fluctuation formula as before, but keyed on the date
-    // so different months produce different (but stable) rates.
     if (!weekend && !holiday) {
-      // Brief PART 12: future dates have NO rate (yet to occur).
-      const today = '2025-12-10'
-      if (dateStr > today) {
-        rate = null
+      if (recorded) {
+        // attendance-overview-real — REAL rate for recorded days only;
+        // every other working day honestly shows "no attendance yet".
+        rate = recorded[dateStr] ?? null
       } else {
-        // Deterministic per-date fluctuation
-        const seed = year * 10000 + month * 100 + d
-        rate = 88 + Math.round(Math.sin(seed * 0.6) * 4 + Math.cos(seed * 0.3) * 3 + 4)
-        rate = Math.max(82, Math.min(98, rate))
+        // Legacy deterministic per-date fluctuation (pre-real fallback).
+        // Brief PART 12: future dates have NO rate (yet to occur).
+        const today = '2025-12-10'
+        if (dateStr > today) {
+          rate = null
+        } else {
+          const seed = year * 10000 + month * 100 + d
+          rate = 88 + Math.round(Math.sin(seed * 0.6) * 4 + Math.cos(seed * 0.3) * 3 + 4)
+          rate = Math.max(82, Math.min(98, rate))
+        }
       }
     }
     days.push({
@@ -108,19 +120,6 @@ export function rateColor(rate: number | null): string {
 
 /** Holiday cell color — distinct from attendance intensity (Brief PART 35). */
 export const HOLIDAY_CELL_COLOR = 'bg-violet-500/15 border-violet-500/40 text-violet-700 dark:text-violet-300'
-
-export const todayBreakdown = [
-  { name: 'Present', value: attendanceOverview.today.present, color: 'oklch(0.65 0.16 162)' },
-  { name: 'Late', value: attendanceOverview.today.late, color: 'oklch(0.7 0.15 75)' },
-  { name: 'Absent', value: attendanceOverview.today.absent, color: 'oklch(0.62 0.2 25)' },
-  { name: 'Leave', value: attendanceOverview.today.leave, color: 'oklch(0.7 0.15 200)' },
-]
-
-// Realistic student count per class — used by the Class-wise Report table.
-export const CLASS_TOTALS = [48, 52, 56, 96, 99, 64, 68, 70, 72, 74]
-export function classTotalForIndex(i: number): number {
-  return CLASS_TOTALS[i] ?? 60
-}
 
 /** Format a (year, month) as a readable label. */
 export function formatMonthLabel(year: number, month: number): string {

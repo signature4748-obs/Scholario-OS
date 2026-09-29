@@ -598,3 +598,23 @@ html[data-reduce-motion='true'] *::after {
 html[data-text-size='large'] {
   font-size: 17px;
 }
+
+/* ============================================================
+   ASSET GUARD — critical-CSS applied probe (root-cause fix for
+   the raw/unstyled "Demo of Scholario" page flash).
+   The inline watchdog (components/shared/asset-guard) appends a
+   <div class="scholario-asset-probe"> to <body>. While this
+   stylesheet is applied the probe computes to display:none; if
+   the critical CSS chunk fails to load the probe stays visible,
+   which tells the watchdog to retry the stylesheet / show the
+   branded recovery screen instead of letting the browser render
+   the app in default (Times New Roman) styling.
+   ============================================================ */
+.scholario-asset-probe {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  width: 1px;
+  height: 1px;
+  display: none;
+}

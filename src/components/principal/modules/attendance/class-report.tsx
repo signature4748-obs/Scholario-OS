@@ -19,34 +19,43 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { FileSpreadsheet } from 'lucide-react'
 import { GlassCard } from '@/components/shared/ui'
-import { attendanceOverview, classSections } from '@/lib/mock/attendance'
+import { classSections } from '@/lib/mock/attendance'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
-import { classTotalForIndex } from './data'
 
-export function ClassReport({ onExport: _onExport, classFilter = 'all' }: {
+/** attendance-overview-real — school-wide per grade-group rows derived from
+ *  GET /api/attendance/overview `byClass` (all-record rate + real counts).
+ *  Passed by the parent (StudentWorkspace); the per-class branch below still
+ *  reads classSections (per-class roster workstream). */
+export interface ClassReportRow {
+  class: string
+  rate: number
+  total: number
+  present: number
+  late: number
+  absent: number
+  leave: number
+}
+
+export function ClassReport({ onExport: _onExport, classFilter = 'all', schoolRows }: {
   onExport?: () => void
   classFilter?: string
+  /** REAL grade-group rows for the All-Classes view (latest-record rates). */
+  schoolRows?: ClassReportRow[]
 }) {
   // Build the rows based on classFilter
-  let rows: { class: string; rate: number; total: number; present: number; late: number; absent: number; leave: number }[]
+  let rows: ClassReportRow[]
   if (classFilter === 'all') {
-    // Show school-wide byClass list (existing behavior)
-    rows = attendanceOverview.byClass.slice(0, 10).map((r, i) => {
-      const total = classTotalForIndex(i)
-      const presentCount = Math.round(total * r.rate / 100)
-      const lateCount = 2
-      const absentCount = Math.max(0, total - presentCount - lateCount)
-      const leaveCount = Math.max(0, Math.round(total * 0.005))
-      return {
-        class: r.class,
-        rate: r.rate,
-        total,
-        present: presentCount,
-        late: lateCount,
-        absent: absentCount,
-        leave: leaveCount,
-      }
-    })
+    // attendance-overview-real — school-wide grade-group summary from the
+    // canonical Attendance rows (first 10 groups, same footprint as before).
+    rows = (schoolRows ?? []).slice(0, 10).map((r) => ({
+      class: r.class,
+      rate: r.rate,
+      total: r.total,
+      present: r.present,
+      late: r.late,
+      absent: r.absent,
+      leave: r.leave,
+    }))
   } else {
     // Filter: show only the selected class section
     const section = classSections.find((c) => c.id === classFilter)

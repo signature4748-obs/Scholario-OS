@@ -27,12 +27,20 @@ import {
   formatMonthLabelCompact,
 } from './data'
 import { CalendarLegend, SelectedDayPanel } from './shared'
+import type { AttendanceDayRecord } from './use-attendance-overview'
 
 type HeatmapProps = {
   selectedDay: number | null
   setSelectedDay: (d: number | null) => void
   /** Callback fired when user clicks "View full attendance →" (Brief §19). */
   onViewFullAttendance?: (dateStr: string) => void
+  /** attendance-overview-real — every recorded date's school-wide breakdown
+   *  (GET /api/attendance/overview `daily`). Cell colors + the selected-day
+   *  panel render REAL rates; unrecorded days show "no attendance yet". */
+  daily?: AttendanceDayRecord[]
+  /** Month the calendar opens on — defaults to the latest recorded month
+   *  when daily data is present (falls back to December 2025 legacy). */
+  initialMonth?: { year: number; month: number }
 }
 
 interface MonthState {
@@ -40,14 +48,31 @@ interface MonthState {
   month: number
 }
 
-export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAttendance }: HeatmapProps) {
+export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAttendance, daily, initialMonth }: HeatmapProps) {
   const reduce = useReducedMotion()
-  // Brief PART 6: month navigation state. Default = December 2025.
-  const [monthState, setMonthState] = useState<MonthState>({ year: 2025, month: 12 })
+  // Brief PART 6: month navigation state. Default = the latest recorded
+  // month (real data) or December 2025 (legacy, no data yet).
+  const [monthState, setMonthState] = useState<MonthState>(
+    initialMonth ?? { year: 2025, month: 12 },
+  )
   const { year, month } = monthState
 
+  // attendance-overview-real — real per-date rates for the calendar cells.
+  const recordedRates = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const d of daily ?? []) map[d.date] = d.rate
+    return map
+  }, [daily])
+  // `daily` provided (even empty) ⇒ REAL mode — unrecorded days honestly
+  // show "no attendance yet". The legacy deterministic fallback only applies
+  // when the caller passes no daily data at all.
+  const dailyProvided = daily !== undefined
+
   // Brief PART 7: rebuild the calendar for the current month.
-  const calendar = useMemo(() => buildMonthCalendar(year, month), [year, month])
+  const calendar = useMemo(
+    () => buildMonthCalendar(year, month, dailyProvided ? recordedRates : undefined),
+    [year, month, recordedRates, dailyProvided],
+  )
 
   // Brief PART 8: when month changes, clear the selected day if it's no
   // longer valid (i.e., not in the current month).
@@ -85,6 +110,14 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
     ? calendar.find((c) => c.day === selectedDay)
     : null
   const selectedDateStr = selectedCell?.dateStr ?? ''
+
+  // attendance-overview-real — the selected day's REAL recorded breakdown
+  // (null when that date has no attendance rows).
+  const selectedStats = useMemo(() => {
+    if (!daily || !selectedDateStr) return null
+    const rec = daily.find((d) => d.date === selectedDateStr)
+    return rec ?? null
+  }, [daily, selectedDateStr])
 
   // Brief PART 19: pass the date string (not just the day number) to the
   // "View full attendance" callback so History can pre-fill correctly.
@@ -194,6 +227,7 @@ export function AttendanceHeatmap({ selectedDay, setSelectedDay, onViewFullAtten
           selectedDay={selectedDay}
           dateStr={selectedDateStr}
           holiday={selectedCell.holiday}
+          stats={selectedStats}
           onViewFullAttendance={handleViewFullAttendance}
         />
       )}

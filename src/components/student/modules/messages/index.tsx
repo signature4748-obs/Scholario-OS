@@ -31,10 +31,9 @@ import {
   useStudentMessagingStore, isConversationUnread, countUnreadConversations,
   type StudentConversation,
 } from '@/lib/store/student-messaging-store'
-import { useStudentsStore, type StudentRecord, type ClassRecord } from '@/lib/store/students-store'
+import { useStudentsStore, useMyStudentRecord, type StudentRecord, type ClassRecord } from '@/lib/store/students-store'
 import type { SubjectDef } from '@/lib/mock/academic'
 import { teachers } from '@/lib/mock/teachers'
-import { DEMO_STUDENT_ID } from '../applications/student'
 
 /** Timestamp label for a message bubble — time today, date otherwise. */
 function messageStamp(iso: string): string {
@@ -81,7 +80,10 @@ export function StudentMessagesModule() {
   const seenAt = useStudentMessagingStore((s) => s.seenAt)
   const markConversationSeen = useStudentMessagingStore((s) => s.markConversationSeen)
 
-  const student = useStudentsStore((s) => s.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // Canonical identity — the session user's own roster record (server
+  // sync stamps the userId/email link fields; the legacy demo record
+  // covers the pre-sync paint).
+  const student = useMyStudentRecord()
   const classes = useStudentsStore((s) => s.classes)
   const subjects = useStudentsStore((s) => s.academicSubjects)
 

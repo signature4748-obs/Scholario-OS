@@ -19,30 +19,35 @@ import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Crown, Megaphone, ListTodo, ChevronRight, CheckCircle2, Circle, Flag, CalendarClock } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useStudentsStore, useMyStudentRecord } from '@/lib/store/students-store'
 import { useClassResponsibilityStore } from '@/lib/store/class-responsibility-store'
 import { POSITION_DEFS, hasCapability, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession } from '@/lib/academic-session'
 import { formatDate } from '@/lib/format'
-import { DEMO_STUDENT_ID } from '../applications/student'
 import { dueLabel } from './data'
 
 export function LeadershipPanel({ onNavigate }: { onNavigate: (key: string) => void }) {
+  // ── Canonical identity — the session user's own roster record ──────
+  const me = useMyStudentRecord()
+  const myId = me?.id ?? ''
+
   // ── Active appointment (session-scoped resolver) ───────────────────
   const allPositions = useStudentsStore((s) => s.studentPositions)
   const sessionId = useAcademicSession().id
   const positions = useMemo(
-    () => filterActivePositions(allPositions, DEMO_STUDENT_ID, sessionId),
-    [allPositions, sessionId],
+    () => filterActivePositions(allPositions, myId, sessionId),
+    [allPositions, myId, sessionId],
   )
 
   // ── Staff-assigned responsibility tasks (PHASE 16) ─────────────────
   const tasks = useClassResponsibilityStore((s) => s.responsibilityTasks)
   const myTasks = useMemo(
-    () => tasks.filter((t) => t.studentId === DEMO_STUDENT_ID).slice(0, 3),
-    [tasks],
+    () => tasks.filter((t) => t.studentId === myId).slice(0, 3),
+    [tasks, myId],
   )
 
+  // No active position for this student in the live session → the panel
+  // is honestly absent (never fabricated, never a crash on a missing id).
   if (positions.length === 0) return null
   const primary = positions[0]
   const def = POSITION_DEFS[primary.key]

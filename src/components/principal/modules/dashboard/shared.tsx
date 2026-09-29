@@ -12,10 +12,11 @@
  *     KPIs, so they live here as a quiet summary instead of as 2 of 8 cards)
  */
 
-import { attendanceOverview } from '@/lib/mock/attendance'
-import { studentStats } from '@/lib/mock/students'
 import { school } from '@/lib/mock/school'
+import { useSchoolStats } from './use-school-stats'
 import { useAuth } from '@/lib/store/auth-store'
+import { useStudentsStore } from '@/lib/store/students-store'
+import { useAttendanceOverview } from '../attendance/use-attendance-overview'
 import { Users, GraduationCap } from 'lucide-react'
 
 export interface WelcomeBannerProps {
@@ -24,8 +25,27 @@ export interface WelcomeBannerProps {
 
 export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
   const { user } = useAuth()
+  // attendance-overview-real — the sub-meta attendance rate reads the
+  // canonical Attendance table (session-cached hook, same fetch as the
+  // KPI row); "—" while in flight.
+  const { data: attendance } = useAttendanceOverview()
+  // REAL teacher figure — /api/dashboard (canonical db.teacher.count);
+  // falls back to an honest "—" while in flight instead of the retired
+  // mock school.totalTeachers constant (production data reduction).
+  const schoolStats = useSchoolStats()
   const firstName = user?.name?.split(' ').slice(0, 2).join(' ') ?? 'Principal'
-  const today = new Date().toLocaleDateString('en-IN', {
+  // REAL student figures — derived from the canonical roster in the students
+  // store (DB-hydrated): total = ACTIVE students; birthdays = ACTIVE students
+  // whose dob ('YYYY-MM-DD') falls on today's month/day.
+  const activeStudents = useStudentsStore((s) => s.students).filter(
+    (s) => s.status === 'Active',
+  )
+  const now = new Date()
+  const birthdaysToday = activeStudents.filter((s) => {
+    const parts = s.dob.split('-').map(Number)
+    return parts[1] === now.getMonth() + 1 && parts[2] === now.getDate()
+  }).length
+  const today = now.toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
 
@@ -37,7 +57,7 @@ export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
           Good morning, {firstName}
         </h1>
         <p className="text-xs text-muted-foreground mt-1">
-          {school.shortName} · Attendance {attendanceOverview.today.rate}% · {studentStats.birthdaysToday} birthdays today
+          {school.shortName} · Attendance {attendance ? attendance.today.rate : '—'}% · {birthdaysToday} birthdays today
         </p>
       </div>
       <div className="flex items-center gap-3 shrink-0 text-sm">
@@ -50,7 +70,7 @@ export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
             <Users className="h-3.5 w-3.5" />
           </span>
           <span className="leading-tight">
-            <span className="block font-semibold text-foreground tabular-nums">{studentStats.total.toLocaleString('en-IN')}</span>
+            <span className="block font-semibold text-foreground tabular-nums">{activeStudents.length.toLocaleString('en-IN')}</span>
             <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Students</span>
           </span>
         </button>
@@ -64,7 +84,7 @@ export function WelcomeBanner({ onNavigate }: WelcomeBannerProps) {
             <GraduationCap className="h-3.5 w-3.5" />
           </span>
           <span className="leading-tight">
-            <span className="block font-semibold text-foreground tabular-nums">{school.totalTeachers}</span>
+            <span className="block font-semibold text-foreground tabular-nums">{schoolStats ? schoolStats.teachers.toLocaleString('en-IN') : '—'}</span>
             <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Teachers</span>
           </span>
         </button>

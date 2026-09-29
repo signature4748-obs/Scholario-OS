@@ -14,6 +14,7 @@ import { SegmentedTabs } from './shared/segmented-tabs'
 import { OverviewTab } from './students/overview-tab'
 import { DirectoryTab } from './students/directory-tab'
 import { StudentProfilePage } from './students/student-profile-page'
+import { useStudentProfileDetail } from './students/use-student-profile-detail'
 import { ClassesView } from './classes'
 import { ClassDetailsPage } from './classes/class-details'
 import { AddClassPage } from './classes/add-class-page'
@@ -42,9 +43,18 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
   }
   const closeProfile = () => setProfileStudent(null)
 
+  // Principal-authorized real profile data (GET /api/students/[id]) —
+  // undefined while the fetch is in flight or after a silent failure, in
+  // which case the canonical profile renders the store record exactly as
+  // before. One wiring covers every principal entry point (directory /
+  // overview / classes / archived / global-search deep-link): they all
+  // open the profile through openProfile above.
+  const { detail: profileDetail } = useStudentProfileDetail(profileStudent?.id ?? null)
+
   // Deep-link: command palette student results open the profile directly.
-  // DB ids don't exist in the demo roster, so match by id → admission no →
-  // name; fall back to the directory with an explanatory toast.
+  // Store ids ARE canonical DB ids (roster sync), so match by id first;
+  // admission no → name remain as fallbacks for pre-sync records. Fall
+  // back to the directory with an explanatory toast when nothing matches.
   const focus = useFocusStore((s) => s.focus)
   const clearFocus = useFocusStore((s) => s.clearFocus)
   const handledFocusTs = useRef<number | null>(null)
@@ -54,6 +64,7 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
     clearFocus()
     const dbId = focus.id.startsWith('stu-') ? focus.id.slice(4) : focus.id
     const match =
+      store.students.find((st) => st.id === dbId) ??
       store.students.find((st) => (st as StudentRecord & { dbId?: string }).dbId === dbId) ??
       store.students.find((st) => focus.title.includes(st.admissionNo ?? '\u0000')) ??
       store.students.find((st) => st.name.toLowerCase() === focus.title.toLowerCase()) ??
@@ -94,9 +105,9 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
     if (fresh && profileStudent?.id === transferTarget.id) setProfileStudent(fresh)
   }
 
-  const totalStudents = store.classes.reduce(
-    (a, c) => a + c.sections.reduce((sa, s) => sa + getVirtualOccupied(s.id, s.capacity), 0), 0,
-  )
+  // Real roster count — ACTIVE students in the store (DB-hydrated), not a
+  // virtual seat-occupancy estimate.
+  const totalStudents = store.students.filter((st) => st.status === 'Active').length
 
   // Archive / Transfer dialogs — mounted in EVERY branch. The profile
   // view's Archive/Transfer buttons set the same state; mounting only in
@@ -161,6 +172,7 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
       <>
         <StudentProfilePage
           student={profileStudent}
+          detail={profileDetail}
           onBack={closeProfile}
           onArchive={(st) => { setArchiveTarget(st); setArchiveReason('Graduation') }}
           onRestore={handleRestore}
@@ -234,6 +246,6 @@ export function StudentsClassesModule({ initialTab = 'overview' }: { initialTab?
 }
 
 // Late imports to avoid circular deps
-import { useStudentsStore, getVirtualOccupied } from '@/lib/store/students-store'
+import { useStudentsStore } from '@/lib/store/students-store'
 import { school } from '@/lib/mock/school'
 import { formatNumber } from '@/lib/format'

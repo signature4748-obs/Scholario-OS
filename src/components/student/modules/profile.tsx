@@ -31,7 +31,7 @@ import {
 import { GlassCard, StatusBadge, GradientAvatar } from '@/components/shared/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useStudentsStore } from '@/lib/store/students-store'
+import { useStudentsStore, useMyStudentRecord } from '@/lib/store/students-store'
 import type { StudentRecord } from '@/lib/store/students-store'
 import { useStudentAttendanceStore, computeStats, studentRecords } from '@/lib/store/student-attendance-store'
 import { useFeeStore } from '@/lib/store/fee-store'
@@ -39,7 +39,6 @@ import { useCertificatesStore } from '@/lib/store/certificates-store'
 import { POSITION_DEFS, filterActivePositions } from '@/lib/student-positions'
 import { useAcademicSession, ACTIVE_SESSION_ID, formatSessionLabel } from '@/lib/academic-session'
 import { useMyResults, fmtPct } from '@/lib/store/student-results-store'
-import { DEMO_STUDENT_ID } from './applications/student'
 import { useEnrollmentIdentity, type EnrollmentIdentity } from './shared/enrollment'
 import { formatDate } from '@/lib/format'
 import { StudentIdCardDialog } from '@/components/student/shell/student-id-card'
@@ -55,8 +54,9 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
   const [activeTab, setActiveTab] = useState<TabKey>('personal')
   const [idOpen, setIdOpen] = useState(false)
 
-  // ── Canonical identity (one roster, every role — STU-B) ──────────────
-  const student = useStudentsStore((st) => st.students.find((x) => x.id === DEMO_STUDENT_ID))
+  // ── Canonical identity (session user → roster record — one universe) ──
+  const student = useMyStudentRecord()
+  const studentId = student?.id
   const allPositions = useStudentsStore((st) => st.studentPositions)
 
   // STU-RES — the ONE canonical results store (same source as the Results
@@ -70,26 +70,30 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
   // module: Success transactions for this student).
   const allTxns = useFeeStore((s) => s.transactions)
   const feePaid = useMemo(
-    () => allTxns.filter((t) => t.studentId === DEMO_STUDENT_ID && t.status === 'Success')
+    () => allTxns.filter((t) => t.studentId === studentId && t.status === 'Success')
       .reduce((sum, t) => sum + t.amount, 0),
-    [allTxns],
+    [allTxns, studentId],
   )
 
   // STU-ATT — attendance derives LIVE from the canonical attendance records
   // (the same rows Teacher/Principal write), so a correction anywhere updates
   // the profile snapshot — it can never disagree with the Attendance module.
+  // Canonical fallback: when the legacy store has no rows for THIS student
+  // (e.g. the DB-synced roster), the roster record's server-derived pct
+  // (canonical Attendance derivation) is the honest number — never a fake 0%.
   const allAttendance = useStudentAttendanceStore((s) => s.records)
-  const attendancePct = useMemo(
-    () => computeStats(studentRecords(allAttendance, DEMO_STUDENT_ID)).percent,
-    [allAttendance],
-  )
+  const attendancePct = useMemo(() => {
+    const mine = studentRecords(allAttendance, studentId ?? '')
+    if (mine.length > 0) return computeStats(mine).percent
+    return student?.attendance ?? 0
+  }, [allAttendance, studentId, student?.attendance])
 
   // Certificates — the same store My Certificates reads (raw array +
   // useMemo — zustand v5 selectors must return stable refs).
   const allDocs = useCertificatesStore((s) => s.documents)
   const myDocs = useMemo(
-    () => allDocs.filter((d) => d.studentId === DEMO_STUDENT_ID || d.admissionNo === 'DSO2024058'),
-    [allDocs],
+    () => allDocs.filter((d) => d.studentId === studentId || d.admissionNo === student?.admissionNo),
+    [allDocs, studentId, student?.admissionNo],
   )
 
   // Positions held by THIS student — only ACTIVE ones in the live session
@@ -97,19 +101,19 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
   // selectors on stable refs).
   const sessionId = useAcademicSession().id
   const positions = useMemo(
-    () => filterActivePositions(allPositions, DEMO_STUDENT_ID, sessionId),
-    [allPositions, sessionId],
+    () => filterActivePositions(allPositions, studentId ?? '', sessionId),
+    [allPositions, studentId, sessionId],
   )
 
   // SD-3b — server-first identity (session truth): class, roll, admission
-  // number and personal particulars come from /api/auth/me; the seed
-  // record only fills the gaps, so this profile can never disagree with
-  // the sidebar / dashboard / ID card.
+  // number and personal particulars come from /api/auth/me; the resolved
+  // roster record only fills the gaps, so this profile can never disagree
+  // with the sidebar / dashboard / ID card.
   const identity = useEnrollmentIdentity({
-    className: 'Class 2',
-    section: 'A',
-    rollNo: student?.rollNo ?? '18',
-    admissionNo: student?.admissionNo ?? 'DSO2024058',
+    className: student?.className ?? '—',
+    section: student?.section ?? '—',
+    rollNo: student?.rollNo ?? '—',
+    admissionNo: student?.admissionNo ?? '—',
     dob: student?.dob,
     gender: student?.gender,
     bloodGroup: student?.bloodGroup,
@@ -126,8 +130,11 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
   }
 
   const s = student
-  const feePending = Math.max(0, s.feeTotal - feePaid)
-  const feeStatus = feePending === 0 ? 'Paid' : feePaid > 0 ? 'Partial' : 'Pending'
+  // Honest fee status: a student with NO billed fees shows “—”, not a
+  // fabricated “Paid” (₹0/₹0 ≠ paid).
+  const feePending = s.feeTotal > 0 ? Math.max(0, s.feeTotal - feePaid) : 0
+  const feeStatus =
+    s.feeTotal === 0 ? '—' : feePending === 0 ? 'Paid' : feePaid > 0 ? 'Partial' : 'Pending'
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-4xl">
@@ -211,6 +218,14 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
               color="text-violet-600 dark:text-violet-400"
               bg="bg-violet-500/10 text-violet-600 dark:text-violet-400"
             />
+          ) : s.academics.overallPercent > 0 ? (
+            <SnapshotStat
+              label="Last Exam"
+              value={`${s.academics.overallPercent}% · ${s.academics.overallGrade}`}
+              icon={<GraduationCap className="h-4 w-4" />}
+              color="text-violet-600 dark:text-violet-400"
+              bg="bg-violet-500/10 text-violet-600 dark:text-violet-400"
+            />
           ) : (
             <SnapshotStat
               label="Last Exam"
@@ -228,6 +243,14 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
               color="text-amber-600 dark:text-amber-400"
               bg="bg-amber-500/10 text-amber-600 dark:text-amber-400"
             />
+          ) : s.academics.rankInClass > 0 ? (
+            <SnapshotStat
+              label="Class Rank"
+              value={`#${s.academics.rankInClass}`}
+              icon={<TrendingUp className="h-4 w-4" />}
+              color="text-amber-600 dark:text-amber-400"
+              bg="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+            />
           ) : (
             <SnapshotStat
               label="Class Rank"
@@ -241,8 +264,8 @@ export function ProfileModule({ onNavigate }: { onNavigate?: (key: string) => vo
             label="Fees"
             value={feeStatus}
             icon={<IndianRupee className="h-4 w-4" />}
-            color={feeStatus === 'Paid' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}
-            bg={feeStatus === 'Paid' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}
+            color={feeStatus === 'Paid' ? 'text-emerald-600 dark:text-emerald-400' : feeStatus === '—' ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400'}
+            bg={feeStatus === 'Paid' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : feeStatus === '—' ? 'bg-muted text-muted-foreground' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}
           />
         </div>
       </GlassCard>

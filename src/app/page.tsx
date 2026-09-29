@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/lib/store/auth-store'
 import { installApiBearerInterceptor } from '@/lib/auth-session-token'
+import { AssetErrorBoundary } from '@/components/shared/asset-guard/asset-error-boundary'
+import { syncStudentsFromServer } from '@/lib/store/students-store'
 
 // Install once, before any component can fire an API call. In embedded
 // (cross-site iframe) contexts the session cookie is blocked, so API auth
@@ -53,7 +55,25 @@ export default function Home() {
     setMounted(true)
     useAuth.persist.rehydrate()
     useAuth.setState({ hydrated: true })
+    // Asset Guard (JS-boot probe): the inline watchdog waits for this
+    // flag to confirm the React application actually booted. If the
+    // scripts fail to load (dev-server restart window) the watchdog
+    // replaces the dead skeleton with the branded recovery screen.
+    document.documentElement.setAttribute('data-app-hydrated', '1')
   }, [])
+
+  // Canonical roster sync (Seed → DB → API → UI): replace the mock
+  // STU-xxx store universe with the real database roster for the roles
+  // that own it. Teacher panels stay on their scoped /api/teacher/*
+  // surfaces. Once per session; failures keep the existing store data.
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const role = user.role
+      if (role === 'principal' || role === 'student') {
+        void syncStudentsFromServer()
+      }
+    }
+  }, [isAuthenticated, user?.role])
 
   // Handle URL hash or path parameters if needed
   useEffect(() => {
@@ -78,26 +98,56 @@ export default function Home() {
 
   // If user is logged in, show their dashboard directly
   if (isAuthenticated && user) {
-    if (user.role === 'principal') return <PrincipalPanel />
-    if (user.role === 'teacher') return <TeacherPanel />
-    if (user.role === 'student') return <StudentPanel />
-    if (user.role === 'superadmin') return <SuperAdminPanel />
+    if (user.role === 'principal')
+      return (
+        <AssetErrorBoundary>
+          <PrincipalPanel />
+        </AssetErrorBoundary>
+      )
+    if (user.role === 'teacher')
+      return (
+        <AssetErrorBoundary>
+          <TeacherPanel />
+        </AssetErrorBoundary>
+      )
+    if (user.role === 'student')
+      return (
+        <AssetErrorBoundary>
+          <StudentPanel />
+        </AssetErrorBoundary>
+      )
+    if (user.role === 'superadmin')
+      return (
+        <AssetErrorBoundary>
+          <SuperAdminPanel />
+        </AssetErrorBoundary>
+      )
   }
 
   // Unauthenticated public views
   if (viewState === 'portal') {
-    return <LoginPage onBackToWebsite={() => setViewState('website')} />
+    return (
+      <AssetErrorBoundary>
+        <LoginPage onBackToWebsite={() => setViewState('website')} />
+      </AssetErrorBoundary>
+    )
   }
 
   if (viewState === 'platform') {
-    return <PlatformLanding onBackToSchool={() => setViewState('website')} />
+    return (
+      <AssetErrorBoundary>
+        <PlatformLanding onBackToSchool={() => setViewState('website')} />
+      </AssetErrorBoundary>
+    )
   }
 
   // Default: Public School Website (the registered school)
   return (
-    <PublicWebsite
-      onOpenPortal={() => setViewState('portal')}
-      onOpenPlatform={() => setViewState('platform')}
-    />
+    <AssetErrorBoundary>
+      <PublicWebsite
+        onOpenPortal={() => setViewState('portal')}
+        onOpenPlatform={() => setViewState('platform')}
+      />
+    </AssetErrorBoundary>
   )
 }

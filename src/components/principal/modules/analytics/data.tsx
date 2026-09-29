@@ -7,7 +7,6 @@
 import {
   CalendarCheck, IndianRupee, Award, Wallet, GraduationCap, UserPlus,
 } from 'lucide-react'
-import { attendanceOverview } from '@/lib/mock/attendance'
 import { teachers } from '@/lib/mock/teachers'
 import { departments } from '@/lib/mock/school'
 
@@ -21,9 +20,6 @@ export const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'teacher', label: 'Teachers', icon: <GraduationCap className="h-4 w-4" /> },
   { key: 'admission', label: 'Admissions', icon: <UserPlus className="h-4 w-4" /> },
 ]
-
-// Mock monthly attendance trend (Apr–Nov)
-export const attendanceMonthlyTrend = attendanceOverview.monthly.map((m) => ({ name: m.month, value: m.rate }))
 
 // Mock weekly heatmap (15 weeks x Mon-Sat) — rate per cell
 const heatmapRows = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
