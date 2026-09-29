@@ -1,52 +1,36 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf } from '@/lib/teacher-hub'
+import { getTeacherSubjectAssignments } from '@/lib/teacher-scope'
 
 export const runtime = 'nodejs'
 
 /**
  * GET /api/teacher/marks-entry — exams this teacher can enter marks for:
  * every exam with an ExamClass for one of her classes, restricted to the
- * subjects she actually teaches. The picker source for the module.
+ * subjects she is APPOINTED to teach (canonical CSA teacherUserId — with
+ * the timetable fallback during migration; see lib/teacher-scope).
+ *
+ * IQ3000 Phase 8: the class-teacher role alone does NOT grant subject
+ * marks entry — only actual subject assignments do.
  */
 export async function GET() {
   return withUser(
     async (user) => {
       const schoolId = schoolScoped(user)
-      const teacherName = (user.name || '').trim().toLowerCase()
 
-      // The teacher's (class, subject) teaching assignments — validated
-      // against the Principal's ACTIVE ClassSubjectAssignments (same gate
-      // as the Lesson Planner / My Timetable): a subject the Principal has
-      // not configured for the class can never become editable here.
-      const ttRows = teacherName
-        ? await db.timetable.findMany({
-            where: { schoolId, teacherName: { not: null } },
-            select: {
-              classId: true,
-              subjectId: true,
-              teacherName: true,
-              class: { select: { name: true, section: true } },
-            },
-          })
-        : []
-      const activeCSA = new Set(
-        (await db.classSubjectAssignment.findMany({
-          where: { schoolId, isActive: true },
-          select: { classId: true, subjectId: true },
-        })).map((c) => `${c.classId}|${c.subjectId}`)
-      )
-      const mine = new Set(
-        ttRows
-          .filter(
-            (r) =>
-              (r.teacherName || '').trim().toLowerCase() === teacherName &&
-              r.subjectId &&
-              activeCSA.has(`${r.classId}|${r.subjectId}`)
-          )
-          .map((r) => `${r.classId}|${r.subjectId}`)
-      )
-      const classLabels = new Map(ttRows.map((r) => [r.classId, r.class]))
+      // The teacher's (class, subject) teaching assignments — the SHARED
+      // scope resolver (CSA appointments + timetable fallback), validated
+      // against the Principal's ACTIVE ClassSubjectAssignments.
+      const mine = await getTeacherSubjectAssignments(user, schoolId)
+      if (mine.length === 0) return { exams: [] }
+      const mineSet = new Set(mine.map((a) => `${a.classId}|${a.subjectId}`))
+
+      const classes = await db.class.findMany({
+        where: { schoolId, id: { in: mine.map((a) => a.classId) } },
+        select: { id: true, name: true, section: true },
+      })
+      const classLabels = new Map(classes.map((c) => [c.id, c]))
 
       const examClasses = await db.examClass.findMany({
         where: { exam: { schoolId } },
@@ -58,7 +42,6 @@ export async function GET() {
         where: { exam: { schoolId } },
         include: { subject: { select: { name: true } } },
       })
-      const configByKey = new Map(configs.map((c) => [`${c.examId}|${c.classId}|${c.subjectId}`, c]))
 
       const examMap = new Map<
         string,
@@ -79,9 +62,10 @@ export async function GET() {
 
       for (const ec of examClasses) {
         const label = classLabels.get(ec.classId)
-        const clsLabel = label ? classLabelOf(label) : 'Class'
+        if (!label) continue // class outside the teacher's scope
+        const clsLabel = classLabelOf(label)
         const subjects = configs
-          .filter((c) => c.examId === ec.examId && c.classId === ec.classId && mine.has(`${ec.classId}|${c.subjectId}`))
+          .filter((c) => c.examId === ec.examId && c.classId === ec.classId && mineSet.has(`${ec.classId}|${c.subjectId}`))
           .sort((a, b) => a.subject.name.localeCompare(b.subject.name))
           .map((c) => ({ id: c.subjectId, name: c.subject.name, maxMarks: c.maxMarks, passMarks: Math.round(c.passMarks) }))
         if (subjects.length === 0) continue

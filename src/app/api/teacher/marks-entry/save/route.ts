@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
+import { teacherCanEnterMarks } from '@/lib/teacher-scope'
 
 export const runtime = 'nodejs'
 
@@ -37,11 +38,11 @@ export async function POST(request: Request) {
         throw new Error('examId, classId, subjectId and entries are required')
       }
 
-      const teacherName = (user.name || '').trim().toLowerCase()
-      const ttRow = await db.timetable.findFirst({
-        where: { schoolId, classId: body.classId, subjectId: body.subjectId, teacherName: { not: null } },
-      })
-      if (!ttRow || (ttRow.teacherName || '').trim().toLowerCase() !== teacherName) {
+      // IQ3000 Phase 8 — canonical assignment guard (CSA appointment with
+      // timetable fallback; see lib/teacher-scope). The old name-only
+      // timetable check would miss CSA-appointed teachers without cells.
+      const allowed = await teacherCanEnterMarks(user, schoolId, body.classId, body.subjectId)
+      if (!allowed) {
         throw new Error('FORBIDDEN')
       }
 

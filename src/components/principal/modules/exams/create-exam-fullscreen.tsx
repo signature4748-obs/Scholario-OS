@@ -48,7 +48,7 @@ import {
 import { useTeachersStore } from '@/lib/store/teachers-store'
 import { useSchoolProfile } from '@/lib/school-profile'
 
-import { useCreateExamMock } from '@/lib/exams/use-exams-mock'
+import { useCreateExam } from '@/lib/exams/use-exams'
 import { TemplateSelection } from './tabs/template-selection'
 import { type ExamTemplate } from './tabs/exam-templates'
 import {
@@ -243,7 +243,10 @@ export function CreateExamFullScreen({ classes, academicYear, onBack, onCreated 
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [examTime, setExamTime] = useState('09:00')
-  const { create, loading } = useCreateExamMock()
+  // REAL data (iq3000-2b): POST /api/exams — the created examination is a
+  // canonical DB row (real ids), immediately visible in the server-backed
+  // exam list. The old mock create wrote the in-memory seed store only.
+  const { create, loading } = useCreateExam()
 
   // FEE-EXAM — exam fee auto-resolution + override state.
   // `examFeeOverride` holds the user-entered override amount (or null when

@@ -44,8 +44,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { EXAM_TYPES, type ExamDTO } from '@/lib/exams/types'
 import { InlineLoading } from '../inline-loading'
-import { useUpdateExam } from '@/lib/exams/use-exams'
-import { useDeleteExamMock as useDeleteExam } from '@/lib/exams/use-exams-mock'
+import { useUpdateExam, useDeleteExam } from '@/lib/exams/use-exams'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -66,7 +65,9 @@ export function ExamsListTab({ exams, loading, error, onOpenExam, onReload, onCr
 
   // Mutation hooks for status transitions
   const { update: updateExam } = useUpdateExam()
-  const { deleteExam } = useDeleteExam()
+  // REAL data (iq3000-2b): DELETE /api/exams/[id] — drafts are removed from
+  // the canonical DB, keeping the server-backed list coherent.
+  const { remove: deleteExam } = useDeleteExam()
 
   // Confirmation dialogs
   const [publishTarget, setPublishTarget] = useState<ExamDTO | null>(null)

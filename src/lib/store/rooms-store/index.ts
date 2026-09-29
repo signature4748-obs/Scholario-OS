@@ -2,6 +2,14 @@
  * Rooms store — the centralized school room registry (Students & Classes
  * production pass §5).
  *
+ * DEPRECATED (IQ3000 Phase 2): the room registry now lives on the SERVER
+ * (Prisma Room model + GET/POST /api/rooms · PATCH /api/rooms/[id], with
+ * Class.roomId as the canonical link). Every UI consumer (RoomsDialog via
+ * the shared RoomsManager, the Facilities settings tab, the RoomSelect
+ * picker) reads/writes the server through @/lib/rooms/client — this
+ * persisted store is no longer read or written by anything and is kept
+ * only for reference. Do NOT add new consumers.
+ *
  * ONE source of truth for the school's physical rooms. Rooms are referenced
  * BY NAME from the canonical class/section records (SectionRecord.room /
  * ClassRecord.room) — the registry adds the managed vocabulary: building,

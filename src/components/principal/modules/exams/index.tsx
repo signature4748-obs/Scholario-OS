@@ -33,7 +33,7 @@ import { ChevronDown, Archive as ArchiveIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PageTransition } from '@/components/shared/ui'
 import { SegmentedTabs } from '../shared/segmented-tabs'
-import { useExamsListMock } from '@/lib/exams/use-exams-mock'
+import { useExamsList } from '@/lib/exams/use-exams'
 import { AVAILABLE_SESSIONS } from '@/lib/exams/session-toppers-data'
 import { ExamsOverviewTab } from './tabs/overview-tab'
 import { ExamsListTab } from './tabs/exams-list-tab'
@@ -79,33 +79,32 @@ const SECTION_TABS = [
 ]
 
 /**
- * Convert mock-resolved ExamLevelClass[] to the ClassDTO[] shape that
- * CreateExamFullScreen expects (Spec §1 / §15 / §28).
+ * Convert the server's class payload (GET /api/exams → classes) to the
+ * ClassDTO[] shape that CreateExamFullScreen expects.
  *
- * Each ExamLevelClass is already an exam-level entry (sections collapsed
- * inside the ClassRecord), so we emit ONE ClassDTO per entry. `section` is
- * set to null — Examination must NOT show sections (Spec §3 / §15).
- *
- * Mock subjects are hydrated with default fullMarks=100 / passMarks=33
- * (matching the Examination service defaults).
+ * The server rows are canonical DB classes (real ids, live student counts,
+ * ClassSubjectAssignment subjects with isCore/examinable/displayOrder).
+ * Each row is already an exam-level entry (sections are separate Class
+ * rows), so we emit ONE ClassDTO per entry. `section` is set to null —
+ * Examination must NOT show sections (Spec §3 / §15).
  */
-function toClassDTOs(classes: Array<{ id: string; name: string; gradeLevel: string | null; section: string | null; stream: string | null; studentCount: number; subjects: Array<{ id: string; name: string; code: string | null; fullMarks: number; passMarks: number }> }>): ClassDTO[] {
+function toClassDTOs(classes: Array<{ id: string; name: string; gradeLevel: string | null; section: string | null; stream: string | null; studentCount: number; subjects: Array<{ id: string; name: string; code: string | null; fullMarks: number; passMarks: number; isCore?: boolean; examinable?: boolean; displayOrder?: number }> }>): ClassDTO[] {
   return classes.map((c) => ({
     id: c.id,
     name: c.name,
     gradeLevel: c.gradeLevel,
     section: null,
     stream: c.stream,
-    studentCount: 0,
+    studentCount: c.studentCount,
     subjects: c.subjects.map((s) => ({
       id: s.id,
       name: s.name,
       code: s.code,
-      fullMarks: 100,
-      passMarks: 33,
-      isCore: true,
-      examinable: true,
-      displayOrder: 0,
+      fullMarks: s.fullMarks,
+      passMarks: s.passMarks,
+      isCore: s.isCore ?? true,
+      examinable: s.examinable ?? true,
+      displayOrder: s.displayOrder ?? 0,
     })),
   }))
 }
@@ -113,16 +112,19 @@ function toClassDTOs(classes: Array<{ id: string; name: string; gradeLevel: stri
 export function ExamsModule() {
   const [section, setSection] = useState<SectionTab>('overview')
   const [view, setView] = useState<View>({ kind: 'list' })
-  // Active session picker drives the Session Top Performers section in Overview.
-  // Mock mode (Spec §2): exams + classes + academicYear all come from the
-  // in-memory mock store — NO /api/exams call, NO auth required.
-  const { exams, classes: mockClasses, academicYear, loading, error, reload } = useExamsListMock()
+  // REAL data (iq3000-2b): the examination list comes from the server
+  // (GET /api/exams → { exams, classes, academicYear }). The Principal
+  // picks REAL examinations here, so the workspace (and its marks
+  // workflow) receives canonical DB exam ids. The old useExamsListMock
+  // read the in-memory seed store whose ids never existed in the DB.
+  const { exams, classes: serverClasses, academicYear, loading, error, reload } = useExamsList()
   const [session, setSession] = useState<string>(academicYear || '2025-2026')
 
-  // Spec §1 / §15 / §28: classes + subjects for Create Exam come from the
-  // shared mock academic source (Students & Classes Zustand store). The
-  // mock hook already returns them — we just shape into ClassDTO[].
-  const classes = useMemo(() => toClassDTOs(mockClasses), [mockClasses])
+  // Classes + subjects for Create Exam come from the SAME server payload
+  // (canonical DB classes with their ClassSubjectAssignment subjects) —
+  // shaped into the ClassDTO[] the Create Exam form expects. Real ids flow
+  // through, so the created examination references real DB classes.
+  const classes = useMemo(() => toClassDTOs(serverClasses), [serverClasses])
 
   // Full-screen views take over the entire content area
   if (view.kind === 'exam') {

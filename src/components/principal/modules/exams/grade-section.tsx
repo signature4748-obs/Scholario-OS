@@ -15,7 +15,7 @@ import { BookOpen, ChevronRight, Download, FileText, Filter, RotateCcw, Users, X
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { useMockMarksStore } from '@/lib/exams/mock-marks-data'
+import { useExamMarksAll } from './marks-hooks'
 import { DEFAULT_GRADE_BOUNDARIES, getGradeForPercentage, type ExamDTO } from '@/lib/exams/types'
 import { generateClassResultPDF, generateGradeAnalysisPDF, generateStudentResultPDF } from '@/lib/exams/result-pdf'
 import { useDismissOnEscape } from '@/hooks/use-dismiss-on-escape'
@@ -545,8 +545,11 @@ export function GradeSection({ exam }: { exam: ExamDTO }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null)
   const [selectedSubjectPaper, setSelectedSubjectPaper] = useState<{ classId: string; subjectId: string; subjectName: string; className: string } | null>(null)
-  const storeMarks = useMockMarksStore((s) => s.marks)
-  const allMarks = useMemo(() => storeMarks.filter((m) => m.examId === exam.id), [storeMarks, exam.id])
+  // IQ3000 — REAL marks (canonical ExamMark rows via the class-results
+  // surface); the mock store is retired from this tab. Same shape, so
+  // every derivation below (donut, drill-downs, rankings) is untouched.
+  const { allMarks: realMarks, loading: marksLoading } = useExamMarksAll(exam)
+  const allMarks = useMemo(() => realMarks.filter((m) => m.examId === exam.id), [realMarks, exam.id])
 
   // Use the central grading configuration (DEFAULT_GRADE_BOUNDARIES from types.ts).
   // In production this would come from the school's GradeScale table.
@@ -689,6 +692,12 @@ export function GradeSection({ exam }: { exam: ExamDTO }) {
 
   return (
     <div className="space-y-4">
+      {/* Real-marks loading gate — no fabricated distribution while fetching. */}
+      {marksLoading && allMarks.length === 0 && (
+        <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+          Loading grade analysis…
+        </div>
+      )}
       {/* Summary */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         <Stat label="Students" value={String(gradeData.totalStudents)} />

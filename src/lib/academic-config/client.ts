@@ -40,6 +40,8 @@ export interface DbClassInfo {
   section: string | null
   label: string
   room: string | null
+  /** Canonical link to the Room registry (IQ3000 — null = no homeroom). */
+  roomId: string | null
   classTeacher: { id: string; name: string } | null
   subjects: DbSubjectInfo[]
 }
@@ -51,9 +53,23 @@ export interface DbCatalogSubject {
   status: string
 }
 
+/** A registry room as returned by the academic configuration payload. */
+export interface DbRoomInfo {
+  id: string
+  name: string
+  code: string | null
+  building: string | null
+  floor: string | null
+  capacity: number | null
+  type: string
+  active: boolean
+}
+
 export interface AcademicConfig {
   academicSession: string | null
   catalog: DbCatalogSubject[]
+  /** The school's canonical room registry (IQ3000 Phase 2). */
+  rooms: DbRoomInfo[]
   teachers: { id: string; name: string; email: string }[]
   classes: DbClassInfo[]
 }

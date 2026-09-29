@@ -662,6 +662,19 @@ export async function setMark(
     throw new Error('Cannot modify marks after results are declared')
   }
 
+  // ── IQ3000 Phase 8 — assignment-driven marks authorization ──────────
+  // PRINCIPAL/MANAGEMENT hold school-wide authority. A TEACHER must be
+  // APPOINTED to teach this (class, subject) — the class-teacher role
+  // alone does NOT grant subject marks entry. Server-side enforcement:
+  // the client's picker restriction is never trusted.
+  if (user && user.role === 'TEACHER') {
+    const { teacherCanEnterMarks } = await import('@/lib/teacher-scope')
+    const allowed = await teacherCanEnterMarks(user, schoolId, input.classId, input.subjectId)
+    if (!allowed) {
+      throw new Error('You are not appointed to teach this subject for this class — marks entry is not permitted.')
+    }
+  }
+
   // Validate marks against max
   const subjectConfig = await db.examSubjectConfig.findFirst({
     where: { examId, classId: input.classId, subjectId: input.subjectId },

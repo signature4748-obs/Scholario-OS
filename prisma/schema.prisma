@@ -67,6 +67,7 @@ model School {
   parentGrievances     ParentGrievance[]
   homeworkSurveys      HomeworkSurvey[]
   subjectAssignments   ClassSubjectAssignment[]
+  rooms                Room[]
   masterFeeHeads       MasterFeeHead[]
   feeStructures        FeeStructure[]
   feeHeads             FeeHead[]
@@ -164,6 +165,11 @@ model User {
   // needs-reply persist in the DB, never in React state or localStorage)
   ownedDirectThreadStates     DirectThreadState[] @relation("DirectThreadStateOwner")
   counterpartDirectThreadStates DirectThreadState[] @relation("DirectThreadStateCounterpart")
+
+  // IQ3000 Phase 4 — canonical subject-teacher appointments + timetable
+  // cells taught by this user (effective permissions derive from these).
+  subjectsTaught      ClassSubjectAssignment[] @relation("SubjectTeacher")
+  timetableSlotsTaught Timetable[]             @relation("TimetableTeacher")
 }
 
 model Teacher {
@@ -233,6 +239,41 @@ model Student {
   growthEvents     GrowthEvent[]
 }
 
+// ─── Room — school-level master facility registry (IQ3000 Phase 1) ──────
+//
+// Rooms are SCHOOL MASTER DATA, Principal-managed (Settings → School
+// Configuration → Facilities, plus the Classes toolbar). One registry per
+// school (multi-tenant: School A's rooms never appear for School B).
+// Class/section homerooms reference the canonical room via Class.roomId;
+// `Class.room` keeps a denormalized display name so legacy readers never
+// break. Exam seating / timetable rooms keep their own free-text strings —
+// they are point-in-time scheduling snapshots, not homeroom assignments.
+model Room {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// Room name/number as displayed — unique WITHIN the school.
+  name      String
+  /// Stable human code (e.g. RM-10A) — informational.
+  code      String?
+  building  String?
+  floor     String?
+  capacity  Int?
+  /// Classroom | Science Lab | Computer Lab | Library | Auditorium |
+  /// Music Room | Art Room | Sports Facility | Staff Room | Other
+  type      String   @default("Classroom")
+  /// Archived rooms stay queryable (historical records remain valid) but
+  /// are excluded from new assignment pickers.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classes   Class[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId, active])
+}
+
 model Class {
   id             String   @id @default(cuid())
   schoolId       String
@@ -242,6 +283,13 @@ model Class {
   section        String?
   stream         String? // Science-PCM | Science-PCB | Science-PCMB | Commerce | Humanities | General
   capacity       Int?     @default(40)
+  /// Canonical room assignment (Phase 2 — the relational truth). `room`
+  /// below stays as the denormalized DISPLAY NAME, kept in sync by the
+  /// assignment API whenever roomId changes (legacy readers untouched).
+  roomId         String?
+  roomRef        Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  /// Display name of the assigned room (projection of roomId). Historical
+  /// values remain readable even after a room is archived.
   room           String?
   classTeacherId String?
   createdAt      DateTime @default(now())
@@ -318,6 +366,13 @@ model ClassSubjectAssignment {
   class        Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
   subjectId    String
   subject      Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  /// The teacher APPOINTED to teach this subject in this class — the
+  /// canonical subject-teacher assignment (Phase 4). Teacher's USER id,
+  /// matching Class.classTeacherId's convention. Null = vacant slot.
+  /// Effective permissions (marks entry, attendance scope, directory
+  /// scope) derive from THIS column — never from display strings.
+  teacherUserId String?
+  teacherUser   User?     @relation("SubjectTeacher", fields: [teacherUserId], references: [id], onDelete: SetNull)
   // Spec §34: distinguishes core/default subjects from additional/optional ones.
   isCore       Boolean   @default(true)
   // Spec §18/§35: an inactive assignment is excluded from new examinations
@@ -731,6 +786,10 @@ model Timetable {
   period      Int
   startTime   String?
   endTime     String?
+  /// Relational teacher reference (Phase 4). Display name stays for
+  /// rendering; scope resolution joins on the id where present.
+  teacherUserId String?
+  teacherUser   User?   @relation("TimetableTeacher", fields: [teacherUserId], references: [id], onDelete: SetNull)
   teacherName String?
   room        String?
   createdAt   DateTime @default(now())

@@ -124,6 +124,25 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      // 4b — resolve TEACHER names to relational ids (IQ3000 Phase 4):
+      //     each draft's teacherName is matched against the school's
+      //     Teacher roster (case-insensitive) so the published rows carry
+      //     BOTH the display name and the canonical teacherUserId that
+      //     scope resolution joins on. Unresolvable names stay display-only.
+      const teacherRoster = await db.teacher.findMany({
+        where: { schoolId },
+        select: { userId: true, user: { select: { name: true } } },
+      })
+      const teacherIdByName = new Map<string, string>()
+      for (const t of teacherRoster) {
+        const n = (t.user.name ?? '').trim().toLowerCase()
+        if (n) teacherIdByName.set(n, t.userId)
+      }
+      const draftsResolved = drafts.map((d) => ({
+        ...d,
+        teacherUserId: d.teacherName ? (teacherIdByName.get(d.teacherName.trim().toLowerCase()) ?? null) : null,
+      }))
+
       // 5 — replace-all within the school (publish = the new truth).
       //     The publish IS a Principal configuration act: every (class,
       //     subject) it schedules becomes ACTIVE ClassSubjectAssignment
@@ -158,7 +177,7 @@ export async function POST(req: NextRequest) {
 
       const removed = await db.timetable.deleteMany({ where: { schoolId } })
       const written = await db.timetable.createMany({
-        data: drafts.map((d) => ({
+        data: draftsResolved.map((d) => ({
           schoolId,
           classId: classByKey.get(d.className)!.id,
           subjectId: subjectByKey.get(d.subject)?.id ?? null,
@@ -166,6 +185,7 @@ export async function POST(req: NextRequest) {
           period: d.period,
           startTime: d.startTime,
           endTime: d.endTime,
+          teacherUserId: d.teacherUserId,
           teacherName: d.teacherName,
           room: d.room || null,
         })),

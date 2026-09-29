@@ -38,6 +38,15 @@ export const runtime = 'nodejs'
  *   · classTeacher.set { classId, teacherName|null } → appoint/remove the
  *                       class teacher (capability gating for My Class).
  *
+ *   · subjectTeacher.set { classId, subjectId, teacherUserId|null }
+ *                       → appoint/remove the SUBJECT TEACHER for a
+ *                       class's subject (the canonical ClassSubjectAssignment
+ *                         .teacherUserId — Phase 4). Marks entry /
+ *                       attendance / directory scope derive from this.
+ *   · room.assign     { classId, roomId|null } → assign/clear the class's
+ *                       homeroom from the canonical Room registry
+ *                       (Phase 2). Class.room display name follows.
+ *
  * PERMISSIONS: PRINCIPAL only, school-scoped. Teachers/students can never
  * write academic configuration; nothing here is client-fabricated.
  */
@@ -93,11 +102,23 @@ export async function GET() {
         load.set(k, cur)
       }
 
+      // Canonical rooms (the school registry) + per-CSA appointed teacher.
+      const rooms = await db.room.findMany({
+        where: { schoolId },
+        orderBy: [{ active: 'desc' }, { name: 'asc' }],
+        select: {
+          id: true, name: true, code: true, building: true, floor: true,
+          capacity: true, type: true, active: true,
+        },
+      })
+      const teacherNameById = new Map(teachers.map((t) => [t.userId, t.user.name ?? t.user.email]))
+
       return {
         academicSession: schoolRow?.academicYear ?? null,
         catalog: catalog.map((s) => ({ id: s.id, name: s.name, code: s.code, status: s.status })),
+        rooms,
         teachers: teachers
-          .map((t) => ({ id: t.id, name: t.user.name ?? t.user.email, email: t.user.email }))
+          .map((t) => ({ id: t.id, userId: t.userId, name: t.user.name ?? t.user.email, email: t.user.email }))
           .sort((a, b) => a.name.localeCompare(b.name)),
         classes: classes.map((c) => {
           const classTeacher = c.classTeacherId ? teacherByUserId.get(c.classTeacherId) : null
@@ -107,6 +128,7 @@ export async function GET() {
             section: c.section,
             label: c.section ? `${c.name.replace(/\s*[-–]\s*[A-Z]$/u, '')} · ${c.section}` : c.name,
             room: c.room,
+            roomId: c.roomId,
             classTeacher: classTeacher ? { id: classTeacher.id, name: classTeacher.user.name ?? '' } : null,
             subjects: c.subjectAssignments.map((a) => {
               const l = load.get(`${c.id}|${a.subjectId}`)
@@ -117,6 +139,8 @@ export async function GET() {
                 isCore: a.isCore,
                 examinable: a.examinable,
                 periodsPerWeek: l?.periods ?? 0,
+                teacherUserId: a.teacherUserId ?? null,
+                teacherName: a.teacherUserId ? (teacherNameById.get(a.teacherUserId) ?? null) : null,
                 teachers: l ? [...l.teachers].sort() : [],
               }
             }),
@@ -139,6 +163,8 @@ interface ActionBody {
   name?: string
   code?: string
   teacherName?: string | null
+  teacherUserId?: string | null
+  roomId?: string | null
 }
 
 export async function POST(req: NextRequest) {
@@ -305,6 +331,90 @@ export async function POST(req: NextRequest) {
             },
           })
           return { ok: true, classId, classTeacherId: teacherUserId }
+        }
+
+        // ── Appoint / remove the SUBJECT TEACHER for a class (Phase 4) ──
+        case 'subjectTeacher.set': {
+          const classId = body.classId?.trim()
+          const subjectId = body.subjectId?.trim()
+          if (!classId || !subjectId) throw new Error('MISSING_FIELDS')
+          const cls = await ensureClass(classId)
+          const subject = await ensureSubject(subjectId)
+          const csa = await db.classSubjectAssignment.findUnique({
+            where: { classId_subjectId: { classId, subjectId } },
+            select: { id: true, teacherUserId: true },
+          })
+          if (!csa) throw new Error('SUBJECT_NOT_CONFIGURED_FOR_CLASS')
+
+          let teacherUserId: string | null = null
+          let teacherLabel = ''
+          if (body.teacherUserId != null && `${body.teacherUserId}`.trim() !== '') {
+            const match = await db.teacher.findFirst({
+              where: { userId: body.teacherUserId, schoolId },
+              include: { user: { select: { name: true } } },
+            })
+            if (!match) throw new Error('TEACHER_NOT_FOUND')
+            teacherUserId = match.userId
+            teacherLabel = match.user.name ?? 'Teacher'
+          }
+
+          if ((csa.teacherUserId ?? null) === teacherUserId) {
+            return { ok: true, alreadyApplied: true, classId, subjectId, teacherUserId }
+          }
+          await db.classSubjectAssignment.update({
+            where: { id: csa.id },
+            data: { teacherUserId },
+          })
+          // Keep the timetable display in step: the class's cells for this
+          // subject follow the appointment (the schedule stays coherent
+          // with the canonical configuration).
+          await db.timetable.updateMany({
+            where: { schoolId, classId, subjectId },
+            data: { teacherUserId, ...(teacherLabel ? { teacherName: teacherLabel } : {}) },
+          })
+          await db.activityLog.create({
+            data: {
+              schoolId,
+              userId: user.id,
+              action: 'ACADEMIC_CONFIG_UPDATED',
+              detail: teacherUserId
+                ? `${teacherLabel} appointed subject teacher for ${subject.name} · ${cls.name}${cls.section ? ` (${cls.section})` : ''}`
+                : `Subject teacher released for ${subject.name} · ${cls.name}${cls.section ? ` (${cls.section})` : ''}`,
+            },
+          })
+          return { ok: true, classId, subjectId, teacherUserId }
+        }
+
+        // ── Assign / clear a class's homeroom (Phase 2) ──────────────
+        case 'room.assign': {
+          const classId = body.classId?.trim()
+          if (!classId) throw new Error('MISSING_FIELDS')
+          const cls = await ensureClass(classId)
+          let roomId: string | null = null
+          if (body.roomId != null && `${body.roomId}`.trim() !== '') {
+            const room = await db.room.findFirst({ where: { id: body.roomId, schoolId } })
+            if (!room) throw new Error('ROOM_NOT_FOUND')
+            if (!room.active) throw new Error('ROOM_ARCHIVED — archived rooms cannot be assigned')
+            roomId = room.id
+          }
+          const roomName = roomId
+            ? (await db.room.findUnique({ where: { id: roomId } }))?.name ?? null
+            : null
+          await db.class.update({
+            where: { id: classId },
+            data: { roomId, room: roomName },
+          })
+          await db.activityLog.create({
+            data: {
+              schoolId,
+              userId: user.id,
+              action: 'ACADEMIC_CONFIG_UPDATED',
+              detail: roomName
+                ? `Room ${roomName} assigned to ${cls.name}${cls.section ? ` (${cls.section})` : ''}`
+                : `Room cleared for ${cls.name}${cls.section ? ` (${cls.section})` : ''}`,
+            },
+          })
+          return { ok: true, classId, roomId, roomName }
         }
 
         default:

@@ -20,8 +20,8 @@
 //   · Fixed the Library tab to persist through the real `updateLibrary`
 //     action (previously corrupted `general` via an `as any` cast).
 //
-// Live tabs: General Profile · Academics · Timetable · Fees Structure ·
-// Uniforms · Library · ID Cards · My Account (PR-SEC —
+// Live tabs: General Profile · Academics · Facilities · Timetable · Fees
+// Structure · Uniforms · Library · ID Cards · My Account (PR-SEC —
 // principal-side login & security, parity with Teacher/Student settings).
 // Admission config does NOT live here — it moved to the Admissions module's
 // own Settings (General + Seats), the single source of truth for the
@@ -31,7 +31,7 @@
 
 import { useState } from 'react'
 import {
-  Settings as SettingsIcon, School, BookOpen, Clock, IndianRupee,
+  Settings as SettingsIcon, School, BookOpen, DoorOpen, Clock, IndianRupee,
   Shirt, BookMarked, IdCard, ShieldCheck,
 } from 'lucide-react'
 import { SectionHeading } from '@/components/shared/ui'
@@ -41,6 +41,7 @@ import {
 
 import { GeneralTab } from './general-tab'
 import { AcademicsTab } from './academics-tab'
+import { FacilitiesTab } from './facilities-tab'
 import { TimetableTab } from './timetable-tab'
 import { FeesTab } from './fees-tab'
 import { UniformsTab } from './uniforms-tab'
@@ -63,6 +64,7 @@ export function SchoolSettingsModule() {
         <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/60 p-1.5 rounded-xl border border-border">
           <TabsTrigger value="general" className="gap-1.5 text-xs"><School className="h-3.5 w-3.5" /> General</TabsTrigger>
           <TabsTrigger value="academics" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" /> Academics</TabsTrigger>
+          <TabsTrigger value="facilities" className="gap-1.5 text-xs"><DoorOpen className="h-3.5 w-3.5" /> Facilities</TabsTrigger>
           <TabsTrigger value="timetable" className="gap-1.5 text-xs"><Clock className="h-3.5 w-3.5" /> Timetable</TabsTrigger>
           <TabsTrigger value="fees" className="gap-1.5 text-xs"><IndianRupee className="h-3.5 w-3.5" /> Fees</TabsTrigger>
           <TabsTrigger value="uniforms" className="gap-1.5 text-xs"><Shirt className="h-3.5 w-3.5" /> Uniforms</TabsTrigger>
@@ -73,6 +75,7 @@ export function SchoolSettingsModule() {
 
         <TabsContent value="general"><GeneralTab /></TabsContent>
         <TabsContent value="academics"><AcademicsTab /></TabsContent>
+        <TabsContent value="facilities"><FacilitiesTab /></TabsContent>
         <TabsContent value="timetable"><TimetableTab /></TabsContent>
         <TabsContent value="fees"><FeesTab /></TabsContent>
         <TabsContent value="uniforms"><UniformsTab /></TabsContent>

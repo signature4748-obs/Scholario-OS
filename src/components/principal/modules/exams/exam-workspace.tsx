@@ -19,8 +19,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InlineLoading } from './inline-loading'
-import { useExamMock as useExam } from '@/lib/exams/use-exams-mock'
-import { useInitMockMarks } from '@/lib/exams/use-marks-mock'
+import { useExam } from '@/lib/exams/use-exams'
 import { cn } from '@/lib/utils'
 import {
   GraceSection,
@@ -84,9 +83,12 @@ const TABS = TAB_GROUPS.flatMap((g) => g.items)
 
 export function ExamWorkspace({ examId, onBack, onMutated }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
+  // REAL data (iq3000-2b): the workspace loads the examination from the
+  // server (GET /api/exams/[id]) so every section — marks above all —
+  // operates on the canonical DB row. The old useExamMock read the
+  // in-memory seed store (ids like "exam-a-1" that don't exist in the DB),
+  // which made every real marks call fail with "Exam not found".
   const { exam, loading, error, reload } = useExam(examId)
-  // Initialize mock marks when the exam loads.
-  useInitMockMarks(exam)
 
   // Keyboard shortcuts: 1-9 switches tabs, Esc goes back.
   useEffect(() => {
@@ -181,15 +183,20 @@ export function ExamWorkspace({ examId, onBack, onMutated }: Props) {
         </div>
       </div>
 
-      {/* Main content — full available width */}
+      {/* Main content — full available width.
+          Stale-while-revalidate: the loader/error card only gate the FIRST
+          load (no exam yet). Background refetches (every marks-section
+          mutation calls onReload) keep the current exam mounted — otherwise
+          the whole tab tree, including the marks ENTRY drawer and its
+          unsaved drafts, would unmount and flash on every single save. */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {loading ? (
+        {!exam && loading ? (
           <InlineLoading label="Loading examination…" />
-        ) : error ? (
+        ) : !exam && error ? (
           <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
             <p className="text-xs text-rose-700">{error}</p>
           </div>
-        ) : !exam ? null : (
+        ) : exam ? (
           <AnimatePresence mode="wait">
             <motion.div
               key={tab}
@@ -210,7 +217,7 @@ export function ExamWorkspace({ examId, onBack, onMutated }: Props) {
               {tab === 'audit' && <AuditSection examId={exam.id} />}
             </motion.div>
           </AnimatePresence>
-        )}
+        ) : null}
       </div>
     </div>
   )

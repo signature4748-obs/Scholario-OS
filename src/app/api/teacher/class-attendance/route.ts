@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { withUser, schoolScoped } from '@/lib/api'
 import { classLabelOf } from '@/lib/teacher-hub'
+import { getTeacherSubjectAssignments } from '@/lib/teacher-scope'
 
 export const runtime = 'nodejs'
 
@@ -9,16 +10,18 @@ export const runtime = 'nodejs'
  * attendance for:
  *   • classes where she is the CLASS TEACHER (she owns the daily baseline
  *     for the whole class), and
- *   • classes she teaches subjects in (subject-session attendance only,
- *     prefilled from the class teacher's baseline).
+ *   • classes she is APPOINTED to teach subjects in (subject-session
+ *     attendance only, prefilled from the class teacher's baseline).
  * Class-teacher and subject-teacher capabilities live in ONE workspace —
  * the flag drives the available workflow, not a separate app.
+ *
+ * IQ3000 Phase 4: subject scope now resolves through the canonical CSA
+ * appointments (lib/teacher-scope), timetable name-match as fallback.
  */
 export async function GET() {
   return withUser(
     async (user) => {
       const schoolId = schoolScoped(user)
-      const teacherName = (user.name || '').trim().toLowerCase()
 
       const classTeacherOf = await db.class.findMany({
         where: { schoolId, classTeacherId: user.id },
@@ -26,22 +29,21 @@ export async function GET() {
         orderBy: { name: 'asc' },
       })
 
-      // Classes with the teacher's cells on the timetable.
-      const ttRows = teacherName
-        ? await db.timetable.findMany({
-            where: { schoolId, teacherName: { not: null }, subjectId: { not: null } },
-            select: {
-              classId: true,
-              subjectId: true,
-              teacherName: true,
-              class: { select: { name: true, section: true } },
-              subject: { select: { name: true } },
-            },
+      const mine = await getTeacherSubjectAssignments(user, schoolId)
+      const subjectRows = mine.length
+        ? await db.subject.findMany({
+            where: { schoolId, id: { in: mine.map((a) => a.subjectId) } },
+            select: { id: true, name: true },
           })
         : []
-      const mine = ttRows.filter(
-        (r) => (r.teacherName || '').trim().toLowerCase() === teacherName && r.subjectId
-      ) as (typeof ttRows[number] & { subjectId: string; subject: { name: string } })[]
+      const subjectById = new Map(subjectRows.map((s) => [s.id, s]))
+      const classRows = mine.length
+        ? await db.class.findMany({
+            where: { schoolId, id: { in: mine.map((a) => a.classId) } },
+            select: { id: true, name: true, section: true },
+          })
+        : []
+      const classById = new Map(classRows.map((c) => [c.id, c]))
 
       const classesMap = new Map<
         string,
@@ -50,19 +52,21 @@ export async function GET() {
       for (const c of classTeacherOf) {
         classesMap.set(c.id, { classId: c.id, label: classLabelOf(c), isClassTeacher: true, subjects: [] })
       }
-      for (const r of mine) {
-        if (!r.subjectId) continue
-        const existing = classesMap.get(r.classId)
+      for (const a of mine) {
+        const subj = subjectById.get(a.subjectId)
+        const cls = classById.get(a.classId)
+        if (!subj || !cls) continue
+        const existing = classesMap.get(a.classId)
         if (existing) {
-          if (!existing.subjects.some((s) => s.id === r.subjectId)) {
-            existing.subjects.push({ id: r.subjectId, name: r.subject.name })
+          if (!existing.subjects.some((s) => s.id === a.subjectId)) {
+            existing.subjects.push({ id: a.subjectId, name: subj.name })
           }
         } else {
-          classesMap.set(r.classId, {
-            classId: r.classId,
-            label: classLabelOf(r.class),
+          classesMap.set(a.classId, {
+            classId: a.classId,
+            label: classLabelOf(cls),
             isClassTeacher: false,
-            subjects: [{ id: r.subjectId, name: r.subject.name }],
+            subjects: [{ id: a.subjectId, name: subj.name }],
           })
         }
       }
