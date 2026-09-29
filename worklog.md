@@ -2691,3 +2691,20 @@ Stage Summary:
 - Growth system bootstrapped (20 rules, settings, 14 migrated legacy events); phantom-draft race fixed server-side; schema extended additively with Task D data intact.
 - Deferred (documented, not regressions): lineage-1's student-panel upgrades (results/fees/bus-tracking server-truth modules) and principal attendance/fees/finance module upgrades were NOT restored this pass — the current chain's Task-D-verified student panel and base principal modules remain; restoring those lineage-1 upgrades is the recommended next phase (recoverable from the same 30c81c2 tree).
 - Evidence: qa-shots/restore/01-07 (My Class overview, canonical profile from hub, OCR scan workspace, class attendance, directory canonical profile, 390px mobile, timetable).
+
+---
+Task ID: github-push
+Agent: Z.ai Code (main orchestrator)
+Task: Push the current workspace version to https://github.com/signature4748-obs/Scholario-OS (user-provided token).
+
+Work Log:
+- Updated origin remote URL with the user's fresh token (old token in remote config had expired).
+- Verified history relationship before pushing: local main was 5 commits ahead / 0 behind origin/main (merge-base b9d3833) — clean fast-forward, no force push needed.
+- Committed the one dirty file (db/custom.db — latest post-restore QA state) as f8b93ba "db: latest workspace state (post teacher-panel restoration QA)".
+- Pushed main → origin: b9d3833..f8b93ba, 6 commits total (5 workspace commits + db snapshot).
+- Post-push verification: git fetch + rev-parse → local main == origin/main == f8b93bad8001d28431e24c61ab0b5d6c6115efec, 0/0 ahead/behind. Remote also carries the archive/snapshot-20260928-pre-restore safety branch.
+
+Stage Summary:
+- GitHub repo signature4748-obs/Scholario-OS main branch now holds the FULL latest workspace: teacher-panel restoration (fa69d12: OCR Marks Scan, Student Growth v2.16, Class Hub tabs, canonical attendance workflow, Communication Hub, simple salary, canonical StudentProfilePage wiring, growth bootstrap) + latest principal work + Task D QA data snapshot in db/custom.db.
+- Push was additive (fast-forward) — no remote history rewritten; pre-existing remote commits b9d3833 and earlier fully preserved.
+- Token is embedded in the local git remote config; rotate it on GitHub if this workspace is ever shared.
