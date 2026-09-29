@@ -2794,3 +2794,38 @@ Stage Summary:
 - ONE canonical student universe: 152 real DB students flow Seed → DB → API → UI across all three panels; zero orphans; all KPIs derive from the actual dataset (707/811/1,842/1,719/93.3%/47/96/"Pre-Board" all eliminated).
 - Raw/unstyled page flash root-caused and eliminated: Asset Guard (retry + branded recovery + JS probe) at the app layer + branded gateway error page prepared in Caddyfile (the sandbox's root-managed caddy can't be reloaded from the app — documented).
 - Known limitations (documented, not regressions): principal Attendance History/staff tabs still consume per-date mock exports (headline KPIs real); Teachers module roster is the separate mock teachers universe (out of Part 1 student scope); principal Exams module pickers now read the canonical store roster; gateway 502 branding pending environment support.
+
+---
+Task ID: lazy-compilation-console-error-fix
+Agent: Z.ai Code (main orchestrator)
+Task: Fix the reported console error "Problem communicating active modules to the server: undefined undefined:undefined:undefined undefined" (Next.js 16.1.3, Webpack).
+
+Work Log:
+- ROOT-CAUSED the error to webpack lazyCompilation's browser client (src/lazy-compilation/lazy-client.js, the project's custom gateway-aware replacement for next/dist/compiled/webpack/lazy-compilation-web.js):
+  1. Mechanism: every lazily-compiled module opens a Server-Sent-Events connection to the lazy backend (:3777). On ANY EventSource error the client reports to webpack's onError, which REJECTS the still-pending first-visit module promise (webpack codegen: inactive-branch `onError = reject`) → unhandled rejection → the exact console error. The "undefined undefined:undefined:undefined" tail is upstream's formatting of SSE error events (they carry no message/filename/lineno/colno/error fields).
+  2. Trigger chain: 4GB cgroup OOM-kills the dev server (kernel log: "Out of memory: Killed process (next-server, anon-rss ~2.2GB)"; 5 keepalive respawns 04:34–05:26 + 2 more during this QA) → during each death window (40–90s) the SSE breaks → any panel in its first-compile pending window rejects. Secondary path: v1 client fell back gateway→direct `http://localhost:3777` for REMOTE visitors too (localhost = the VISITOR's machine → guaranteed fail → error).
+  3. Also confirmed webpack IGNORES onError for active modules (`function onError() { /* ignore */ }`) — so the error only ever surfaced for pending first-visits, matching the symptom.
+- FIX 1 — src/lazy-compilation/lazy-client.js (v2, resilient lifecycle; keepAlive/onError contract byte-compatible with upstream):
+  · Local-origin detection (localhost/127.0.0.1/[::1]/*.localhost): connects DIRECT to :3777 immediately (kills the old guaranteed-fail localhost fallback for remote visitors AND the wasted same-origin 404 round trip for local ones).
+  · On SSE error: internal retry loop (2s cadence) that tears down and re-creates the EventSource — required because the gateway answers death windows with a 502 HTML page, which makes the browser's built-in auto-reconnect give up (fatal, not retryable).
+  · Error is reported to webpack ONLY after a SUSTAINED 30s outage, ONCE per outage, with an honest message ("backend was unreachable for 30s (direct|gateway mode); the dev server is likely restarting") instead of the undefined-fields garbage. Retrying continues even after a report — pending modules still resolve when the backend returns.
+- FIX 2 — src/lazy-compilation/backend.js (SSE liveness):
+  · `retry: 2000` reconnect hint at connection start (2s instead of browser-default ~3s).
+  · `: ping` comment heartbeat every 15s per connection (HEARTBEAT_MS) — stops intermediary proxies in the gateway chain from idling out silent streams (~30–60s idle kills were one disconnect source).
+  · `cache-control: no-cache`; write-guarded frames (res.destroyed/writableEnded checks, try/catch) + res 'error' sink + interval cleanup on socket close — a dropped client can never turn its heartbeat into an unhandled stream error (dev-server crash).
+- Restarted via config-driven restart (touch next.config.ts); verified `[lazy-compilation] SSE backend open` on the new code.
+- LIVE VERIFICATION (agent-browser, named session):
+  · curl: direct :3777 SSE → `retry: 2000` + `: ping` heartbeat at 15s ✓; gateway :81?XTransformPort=3777 → same frames ✓ (query-string stripping intact).
+  · Principal login → Dashboard/Students&Classes/Fee Management/Attendance/Examinations/Library panels load; 6 reload cycles → 0 console errors, 0 page errors.
+  · REAL death window mid-QA: dev server OOM-died during reload cycles (ERR_CONNECTION_REFUSED) → keepalive respawned → reload → principal panel fully restored, 0 console errors.
+  · TRANSIENT OUTAGE TEST (network route-abort of */lazy-compilation-using-*): opened uncompiled Examinations panel with SSE blocked 12s → panel showed honest Loading, client retried silently, ZERO errors → unblocked → panel compiled and rendered fully (tabs + data). Old client would have rejected within seconds.
+  · SUSTAINED OUTAGE TEST: blocked >30s on uncompiled Library panel → exactly ONE honest report after 30s, caught by the app's ModuleErrorBoundary (<Lazy> component), no spam → unblocked → panel recovered fully (Catalogue/Issued 13/Overdue 5/Fines 5/Reports, TOTAL BOOKS 213).
+  · Network panel: all lazy SSE connections HTTP 200, direct-mode URLs for the local browser (no more :3000 404 noise).
+  · Teacher (rohan.mehta): full panel incl. Student Directory + Student Growth → 0 errors. Student (aarav.sharma): canonical identity Grade 9-A, Attendance + My Profile → 0 errors. Final 5 reload cycles as student → 0 problem/chunk/unhandled errors.
+- GATES: bun run lint → clean · bunx tsc --noEmit → 0 errors · dev.log clean (no errors after restart settle).
+- NOTE (pre-existing, NOT a regression from this fix, observed while QA-ing): on a freshly-restarted dev server, the FIRST "Login Portal" click can trigger a Fast-Refresh FULL RELOAD (lazy proxy-module graph swap isn't hot-acceptable) which resets the unauthenticated viewState back to the public website — the second click works (module now active). Earlier sessions' QA hit this too but tolerated it via double-clicks / already-active modules. viewState is not hash-persisted on programmatic open (only #portal/#platform deep links are). Candidate future fix: set location.hash when opening the portal so the mount effect restores the view after the reload.
+
+Stage Summary:
+- The console error is eliminated at its root: transient lazy-compilation SSE breaks (OOM death windows, proxy idle kills) now retry silently and self-heal; only genuine 30s+ outages surface — once, honestly, via the app's error boundary — and recovery continues afterwards. The bogus localhost fallback for remote visitors is gone.
+- Heartbeat + retry-hint keep long-lived SSE streams alive through the gateway chain; dropped clients can't crash the backend.
+- All three role panels re-verified post-fix (principal/teacher/student, multi-panel, reload cycles, outage simulations, real OOM death window) with zero console/page errors and full recovery behavior.

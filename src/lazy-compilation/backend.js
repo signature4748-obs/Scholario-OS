@@ -42,6 +42,7 @@ const http = require('http')
 const PORT = Number(process.env.SCHOLARIO_LAZY_PORT || 3777)
 const PREFIX = '/lazy-compilation-using-'
 const DISPOSE_GRACE_MS = 120_000 // upstream default: 2min decay
+const HEARTBEAT_MS = 15_000 // SSE comment keepalive (gateway idle-kill guard)
 
 /** Same encoding as upstream — keys must be byte-identical. */
 function encodeModuleId(identifier) {
@@ -84,11 +85,44 @@ function createBackend() {
     req.socket.setNoDelay(true)
     res.writeHead(200, {
       'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': '*',
       'Access-Control-Allow-Headers': '*',
     })
-    res.write('\n')
+    // SSE LIVENESS (v2 — fix for transient lazy-compilation disconnects):
+    //   · `retry:` — tell browsers to re-attempt a dropped connection after
+    //     2s instead of the ~3s platform default (tighter heal window).
+    //   · `: ping` comment heartbeat every 15s — intermediaries between the
+    //     visitor and this backend (sandbox gateway chain) idle out silent
+    //     streams after ~30-60s and kill them; a comment frame keeps the
+    //     connection alive. Comments are ignored by every EventSource.
+    //   · guard writes + an 'error' sink — a dropped client must never turn
+    //     its heartbeat into an unhandled stream error (dev-server crash).
+    res.on('error', () => {})
+    let heartbeat = null
+    const writeFrame = (chunk) => {
+      if (res.destroyed || res.writableEnded) return false
+      try {
+        return res.write(chunk)
+      } catch {
+        return false
+      }
+    }
+    writeFrame('retry: 2000\n\n')
+    writeFrame('\n')
+    heartbeat = setInterval(() => {
+      if (!writeFrame(': ping\n\n') && heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = null
+      }
+    }, HEARTBEAT_MS)
+    req.socket.on('close', () => {
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = null
+      }
+    })
 
     let needsCompile = false
     for (const key of keys) {
